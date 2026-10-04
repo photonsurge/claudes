@@ -20,9 +20,11 @@ const GENERATE_TIMEOUT_MS = 90_000;
 const isWaitTimeout = (msg: string) => /timed out before finishing/i.test(msg);
 
 /**
- * POST /api/shorts/generate { scope, include?, budgetMs?, title? } — write a
- * draft script from the lineup template. The worker does the work
- * (`short-video.generate`); this enqueues it and waits for the result.
+ * POST /api/shorts/generate { formatId?, scope?, include?, budgetMs?, title? }
+ * — write a draft script from the lineup template in a format (default the
+ * default format). Scope, switches and budget left out come from the format's
+ * template. The worker does the work (`short-video.generate`); this enqueues
+ * it and waits for the result.
  *
  *  • 200 `{ id, title, clips, durationMs }` — the saved draft.
  *  • 422 `{ error }` — the job failed; `error` is the worker's message verbatim
@@ -40,14 +42,19 @@ async function POST__impl(req: Request) {
     /* falls through to validation */
   }
 
-  const scope = sanitizeScope(body.scope);
-  if (!scope) {
+  // Absent = the format's; present must be valid.
+  const scope = body.scope == null ? undefined : sanitizeScope(body.scope);
+  if (scope === null) {
     return NextResponse.json(
       { error: 'scope must be { type: "country" | "area", id } or { type: "globe" }' },
       { status: 400, headers: NO_CACHE },
     );
   }
-  const data: Record<string, unknown> = { scope, include: sanitizeInclude(body.include) };
+  const data: Record<string, unknown> = {};
+  const formatId = typeof body.formatId === "string" ? body.formatId.trim() : "";
+  if (formatId) data.formatId = formatId;
+  if (scope) data.scope = scope;
+  if (body.include != null) data.include = sanitizeInclude(body.include);
   if (typeof body.budgetMs === "number" && Number.isFinite(body.budgetMs) && body.budgetMs > 0) data.budgetMs = body.budgetMs;
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (title) data.title = title;

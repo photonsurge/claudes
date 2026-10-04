@@ -72,13 +72,20 @@ async function PATCH__impl(req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json(merged, { status: 200, headers: NO_CACHE });
 }
 
-/** DELETE /api/scenes/:id — remove a named scene (the main scene is protected). */
+/** DELETE /api/scenes/:id — remove a named scene (the main scene and short format scenes are protected). */
 async function DELETE__impl(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (id === MAIN_SCENE_ID || id === BROADCAST_STATE_ID) {
     return NextResponse.json({ error: "the main scene cannot be deleted" }, { status: 400, headers: NO_CACHE });
   }
   const db = await getAppDb();
+  // A short format's scene goes with its format (/admin/shorts), never on its own.
+  if (await db.shortFormats.get(id)) {
+    return NextResponse.json(
+      { error: "this is a short format's scene — delete the format on /admin/shorts instead" },
+      { status: 409, headers: NO_CACHE },
+    );
+  }
   const ok = await db.deleteScene(id);
   if (!ok) {
     return NextResponse.json({ error: "no such scene" }, { status: 404, headers: NO_CACHE });

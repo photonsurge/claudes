@@ -23,6 +23,7 @@ import { getQueue } from "@photonsurge/shared/bull/bull";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { encoderKeyForRun, isScriptRun, runIsActive, runIsFinished, type Run, type RunScript } from "@photonsurge/shared/runs";
 import { playFor, type ShortScriptPlay } from "@photonsurge/shared/short-script";
+import { DEFAULT_LEAD_IN_MS, DEFAULT_LEAD_OUT_MS } from "@photonsurge/shared/short-format";
 import { log } from "@photonsurge/shared/utill/logger";
 import { endRunAfter, finishRun } from "./lifecycle";
 import { restoreEncoderScene } from "./encoders";
@@ -33,8 +34,7 @@ import { renderRunLive, renderRunSettled } from "./render-queue";
 const TAG = "script-run";
 
 /** Format timing defaults (§6.3): script starts 3 s after live, run ends 5 s after it. */
-export const DEFAULT_LEAD_IN_MS = 3_000;
-export const DEFAULT_LEAD_OUT_MS = 5_000;
+export { DEFAULT_LEAD_IN_MS, DEFAULT_LEAD_OUT_MS };
 
 const envNum = (name: string, dflt: number): number => {
   const n = Number(process.env[name]);

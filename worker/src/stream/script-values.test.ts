@@ -8,7 +8,7 @@ jest.mock("../director/script-scope", () => ({
   scopeVolcanoes: jest.fn(async () => []),
 }));
 jest.mock("../director/script-template", () => ({
-  roundupText: (r: any) => [r.summary, r.stateOfPlay].filter(Boolean).join(" "),
+  roundupText: (r: any, depth = "full") => (depth === "summary" ? r.summary : [r.summary, r.stateOfPlay].filter(Boolean).join(" ")),
 }));
 
 import type { AppDb } from "@photonsurge/shared/db/index";
@@ -61,6 +61,11 @@ describe("scriptValues", () => {
       top: "Red wind warning",
     });
     expect((db.countryRoundups.latestForPlace as jest.Mock)).toHaveBeenCalledWith("gb"); // keyed by ISO
+  });
+
+  it("%{roundup} follows the format's round-up depth", async () => {
+    const v = await scriptValues(db, { scope: { type: "country", id: "uk" }, include: NONE, clips: [] }, { roundupDepth: "summary" });
+    expect(v.roundup).toBe("Wet and windy in the west. Drier east.");
   });
 
   it("counts the globe's event clips instead of scanning the planet; a missing round-up leaves values out", async () => {

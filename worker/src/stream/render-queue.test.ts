@@ -4,10 +4,18 @@
 
 jest.mock("@photonsurge/shared/utill/logger", () => ({ log: jest.fn() }));
 jest.mock("./encoders", () => ({ watchBaseUrl: () => "https://wx.example" }));
-jest.mock("./channel-youtube", () => ({
-  channelYoutubeSettings: jest.fn(async () => ({ title: "", description: "", thumbnailUrl: "" })),
+// Formats come from db.shortFormats through generate's own lookup (WP5).
+const formats = new Map<string, any>();
+jest.mock("../director/script-generate", () => ({
+  generateShortScript: jest.fn(),
+  generateFormat: jest.fn(async (_db: unknown, id?: string) => {
+    const { defaultShortFormat } = jest.requireActual("@photonsurge/shared/short-format");
+    const fid = id || "shorts";
+    if (formats.has(fid)) return formats.get(fid);
+    if (fid === "shorts") return defaultShortFormat();
+    throw new Error(`short-video: no format "${fid}" — pick one from /admin/shorts`);
+  }),
 }));
-jest.mock("../director/script-generate", () => ({ generateShortScript: jest.fn() }));
 jest.mock("./script-values", () => ({
   ...jest.requireActual("./script-values"),
   scriptValues: jest.fn(async () => ({ place: "Europe", placeId: "europe", kind: "round-up" })),
@@ -124,6 +132,7 @@ beforeEach(() => {
   renders.clear();
   runs.clear();
   scripts.clear();
+  formats.clear();
   encoders.length = 0;
   slots.length = 0;
   paused.clear();
@@ -392,7 +401,7 @@ describe("the run a render creates", () => {
       { ...req("x"), what: { type: "generate", formatId: "shorts", scope: { type: "area", id: "europe" }, include: { alerts: true, quakes: false, volcanoes: false } }, skipIfQuiet: true } as any,
       NOW,
     );
-    expect(generateShortScript).toHaveBeenCalledWith(db, { scope: { type: "area", id: "europe" }, include: { alerts: true, quakes: false, volcanoes: false }, sceneId: "shorts" });
+    expect(generateShortScript).toHaveBeenCalledWith(db, { formatId: "shorts", scope: { type: "area", id: "europe" }, include: { alerts: true, quakes: false, volcanoes: false } });
     expect(renders.get(quiet.id)).toMatchObject({ status: "skipped", note: "quiet: nothing active in scope" });
     (generateShortScript as jest.Mock).mockReset();
   });
@@ -487,5 +496,61 @@ describe("controls", () => {
     expect(jobs).toEqual([{ event: "stop", data: { runId } }]);
     await endRun(runId, "stopped");
     expect(renders.get(a.id)).toMatchObject({ status: "failed", note: "stopped by operator" });
+  });
+});
+
+describe("the format (WP5)", () => {
+  const { defaultShortFormat } = jest.requireActual("@photonsurge/shared/short-format");
+  const uk = () => ({
+    ...defaultShortFormat("short-uk", "UK round-up"),
+    opener: { ...defaultShortFormat().opener, roundupDepth: "summary" },
+    video: {
+      ...defaultShortFormat().video,
+      title: "%{flag} %{place} · %d %B",
+      description: "Today: %{headline}",
+      tags: ["uk", "weather"],
+      categoryId: "28",
+      playlistId: "PL-UK",
+      thumbnail: { source: "image", url: "/thumbs/%{placeId}.png" },
+      chapters: false,
+    },
+    timing: { leadInMs: 2_000, leadOutMs: 7_000 },
+    render: { accountId: "UC2" },
+  });
+
+  it("takes the video card, timing and account from the script's format — not the scene's channel card", async () => {
+    videoEncoder("obs-v1");
+    accounts.push({ id: "UC2" });
+    formats.set("short-uk", uk());
+    script("s1", { formatId: "short-uk", values: { place: "United Kingdom", placeId: "uk", flag: "🇬🇧", headline: "Gales." } });
+    const r = await queueRender(req("s1", { publishAs: "public" }), NOW);
+    expect(renders.get(r.id).formatId).toBe("short-uk"); // stamped when queued
+    const run = runs.get(renders.get(r.id).runId);
+    expect(run).toMatchObject({
+      sceneId: "short-uk",
+      title: "🇬🇧 United Kingdom · 04 October",
+      description: "Today: Gales.\n\nWatch the map live: https://wx.example",
+      platforms: { youtube: { accountId: "UC2" } },
+      durationMs: 66_000 + 2_000 + 7_000 + 120_000,
+      script: { leadInMs: 2_000, leadOutMs: 7_000, tags: ["uk", "weather"], categoryId: "28", playlistId: "PL-UK", chapters: false, thumbnailUrl: "/thumbs/uk.png", publishAs: "public" },
+    });
+    accounts.pop();
+  });
+
+  it("stamps values with the format's name and round-up depth", async () => {
+    const { scriptValues } = jest.requireMock("./script-values");
+    videoEncoder("obs-v1");
+    formats.set("short-uk", uk());
+    script("s1", { formatId: "short-uk" });
+    formats.get("short-uk").render = {};
+    await queueRender(req("s1"), NOW);
+    expect(scriptValues).toHaveBeenCalledWith(db, expect.objectContaining({ id: "s1" }), expect.objectContaining({ formatName: "UK round-up", roundupDepth: "summary" }));
+  });
+
+  it("fails a video whose format doesn't exist", async () => {
+    videoEncoder("obs-v1");
+    const r = await queueRender({ ...req("x"), what: { type: "generate", formatId: "short-gone", scope: { type: "globe" } } } as any, NOW);
+    expect(renders.get(r.id)).toMatchObject({ status: "failed", note: expect.stringMatching(/no format "short-gone"/), formatId: "short-gone" });
+    expect(db.createRun).not.toHaveBeenCalled();
   });
 });

@@ -23,8 +23,8 @@ const calls: string[] = [];
 beforeEach(() => {
   calls.length = 0;
   list = {
-    scripts: [{ id: "s1", title: "World round-up", scope: { type: "globe" }, status: "draft", clipCount: 1, durationMs: 60_000 }],
-    preview: { sceneId: "shorts-preview", exists: true, watchToken: "tok", mode: "off" },
+    scripts: [{ id: "s1", formatId: "shorts", title: "World round-up", scope: { type: "globe" }, status: "draft", clipCount: 1, durationMs: 60_000 }],
+    formats: [{ id: "shorts", name: "Round-up", preview: { sceneId: "shorts", exists: true, watchToken: "tok", mode: "off" } }],
   };
   global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const u = String(url);
@@ -32,7 +32,7 @@ beforeEach(() => {
     const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
     if (u === "/api/shorts") return json(list);
     if (u === "/api/shorts/s1/play") {
-      list = { ...list, preview: { ...list.preview, mode: "script", scriptId: "s1", playNonce: 9 } };
+      list = { ...list, formats: [{ ...list.formats[0], preview: { ...list.formats[0].preview, mode: "script", scriptId: "s1", playNonce: 9 } }] };
       return json({ ok: true, playNonce: 9 });
     }
     if (u === "/api/shorts/s1") return json(script);
@@ -45,7 +45,7 @@ afterEach(() => jest.useRealTimers());
 it("selects the newest script and lists its clips", async () => {
   render(<ShortsPage />);
   expect(await screen.findByText("World round-up spin")).toBeInTheDocument();
-  expect(screen.getByTitle("Short preview")).toHaveAttribute("src", "/watch/shorts-preview?token=tok");
+  expect(screen.getByTitle("Short preview")).toHaveAttribute("src", "/watch/shorts?token=tok");
 });
 
 it("previews a script, then polls while it plays", async () => {

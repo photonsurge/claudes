@@ -35,7 +35,7 @@ it("disables Play without a selected script", () => {
 
 it("explains how to create a missing preview scene instead of an empty frame", () => {
   render(<PreviewPane preview={{ sceneId: "shorts-preview", exists: false, mode: "off" }} script={script} onPlay={jest.fn()} onStop={jest.fn()} />);
-  expect(screen.getByText(/yarn seed:short-scenes/)).toBeInTheDocument();
+  expect(screen.getByText(/yarn seed:short-format/)).toBeInTheDocument();
   expect(screen.getByText(/restart the worker/)).toBeInTheDocument();
   expect(screen.queryByTitle("Short preview")).toBeNull();
   expect(screen.getByRole("button", { name: "Play" })).toBeDisabled();

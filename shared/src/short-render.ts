@@ -8,27 +8,11 @@
  * Pure contract + helpers; persistence is `db.shortRenders`.
  */
 import type { YoutubePrivacy } from "./runs";
+import type { ShortFormat } from "./short-format";
 import { sanitizeInclude, sanitizeScope, type ShortInclude, type ShortScope } from "./short-script";
 
-/**
- * The YouTube video settings of a format (§5.2 `ShortFormat["video"]`).
- * Mirrored here because the formats branch (WP5) adds `ShortFormat` in
- * shared/src/short-format.ts concurrently: after that merge, replace this with
- * `ShortFormat["video"]`. Keep the two identical until then.
- */
-export interface ShortFormatVideo {
-  /** "%{place} round-up · %A %e %B" */
-  title: string;
-  description: string;
-  /** IANA zone the date codes resolve in, or "place" for the video's own place. */
-  timezone: string;
-  thumbnail: { source: "image"; url: string } | { source: "frame"; atMs: number };
-  tags: string[];
-  categoryId: string;
-  playlistId?: string;
-  publishAs: YoutubePrivacy;
-  chapters: boolean;
-}
+/** The YouTube video settings of a format (§5.2). */
+export type ShortFormatVideo = ShortFormat["video"];
 
 /** `auto` scope: pick the country or area with the most going on (§8, WP9a). */
 export interface ShortAutoScope {
@@ -80,7 +64,15 @@ export interface ShortRender {
   assignedEncoderId?: string;
   /** Set on a retry: the render this one repeats. */
   retryOf?: string;
+  /** The format it renders in, stamped when queued (a script's format, or the
+   *  generate request's). Drives "one video per format", the preview refusal
+   *  (§5.3) and the format delete guard. */
+  formatId?: string;
 }
+
+/** The format a render makes its video in, when known without loading a script. */
+export const renderFormatId = (r: Pick<ShortRender, "formatId" | "what">): string | undefined =>
+  r.formatId ?? (r.what.type === "generate" ? r.what.formatId : undefined);
 
 /** Queue state for one encoder (§6.7 Pause / Resume). */
 export interface ShortRenderQueueState {
@@ -105,7 +97,7 @@ export const renderCanRetry = (s: ShortRenderStatus): boolean => s === "failed" 
 /** What a caller (the Render form, a schedule) sends to queue a video. */
 export type ShortRenderRequest = Omit<
   ShortRender,
-  "id" | "status" | "queuedAt" | "startedAt" | "endedAt" | "scriptId" | "runId" | "videoUrl" | "note" | "assignedEncoderId" | "retryOf"
+  "id" | "status" | "queuedAt" | "startedAt" | "endedAt" | "scriptId" | "runId" | "videoUrl" | "note" | "assignedEncoderId" | "retryOf" | "formatId"
 >;
 
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");

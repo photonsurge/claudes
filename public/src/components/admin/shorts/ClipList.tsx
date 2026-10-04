@@ -78,6 +78,7 @@ export default function ClipList({ script, play }: Props) {
                     <Chip size="small" variant="outlined" label={`dwell ${formatDuration(c.tourDwellMs)}/stop`} />
                   )}
                   {c.leadSlide && <Chip size="small" variant="outlined" label={`leads with ${c.leadSlide}`} />}
+                  {c.roundupDepth && <Chip size="small" variant="outlined" label={`round-up: ${c.roundupDepth}`} />}
                 </Stack>
                 {reason && (
                   <Typography variant="caption" color="warning.main" sx={{ display: "block", mt: 0.5 }}>

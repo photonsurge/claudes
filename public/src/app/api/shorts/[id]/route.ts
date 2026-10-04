@@ -1,7 +1,7 @@
 import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
-import { SHORTS_PREVIEW_SCENE_ID } from "@photonsurge/shared/short-scenes";
+import { sceneIdForScript } from "@photonsurge/shared/short-script";
 import { requireAdmin } from "../../../../lib/require-admin";
 import { NO_CACHE, stopPreviewPlay } from "../preview";
 
@@ -23,7 +23,7 @@ async function GET__impl(_req: Request, { params }: Ctx) {
 }
 
 /**
- * DELETE /api/shorts/:id — remove a script. If the preview scene is playing
+ * DELETE /api/shorts/:id — remove a script. If its format's scene is playing
  * it, the play is stopped first so the scene isn't left on a missing script.
  */
 async function DELETE__impl(_req: Request, { params }: Ctx) {
@@ -32,8 +32,11 @@ async function DELETE__impl(_req: Request, { params }: Ctx) {
   }
   const { id } = await params;
   const db = await getAppDb();
-  const cfg = await db.getOrInitDirectorConfig(SHORTS_PREVIEW_SCENE_ID);
-  if (cfg.mode === "script" && cfg.script?.scriptId === id) await stopPreviewPlay(db);
+  const script = await db.shortScripts.get(id);
+  if (!script) return NextResponse.json({ error: "no such script" }, { status: 404, headers: NO_CACHE });
+  const sceneId = sceneIdForScript(script);
+  const cfg = await db.getOrInitDirectorConfig(sceneId);
+  if (cfg.mode === "script" && cfg.script?.scriptId === id) await stopPreviewPlay(db, sceneId);
   const removed = await db.shortScripts.remove(id);
   if (!removed) return NextResponse.json({ error: "no such script" }, { status: 404, headers: NO_CACHE });
   return NextResponse.json({ ok: true }, { status: 200, headers: NO_CACHE });

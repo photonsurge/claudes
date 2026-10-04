@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * The saved short scripts, newest first: title, scope, length, clip count,
- * when it was made, and how its last PREVIEW play went. Clicking a row selects
- * it; Preview plays it on the preview scene; Delete asks first.
+ * The saved short scripts, newest first: title, format, scope, length, clip
+ * count, when it was made, and how its last play on its format's scene went.
+ * Clicking a row selects it; Preview plays it on its format's scene; Delete
+ * asks first.
  */
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -17,11 +18,12 @@ import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import {
   formatDuration,
+  previewForFormat,
   previewPlayState,
   scopeLabel,
   type PreviewPlayState,
+  type ShortFormatRow,
   type ShortListItem,
-  type ShortPreviewInfo,
 } from "../../../lib/shorts";
 import { font } from "../../../theme/tokens";
 
@@ -48,7 +50,8 @@ const fmtTime = (iso?: string): string => {
 
 interface Props {
   scripts: ShortListItem[];
-  preview: ShortPreviewInfo;
+  /** Every format with its scene's state — each row reads its own format's. */
+  formats: ShortFormatRow[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onPreview: (id: string) => void;
@@ -61,7 +64,7 @@ interface Props {
 
 export default function ScriptsTable({
   scripts,
-  preview,
+  formats,
   selectedId,
   onSelect,
   onPreview,
@@ -78,6 +81,7 @@ export default function ScriptsTable({
         <TableHead>
           <TableRow>
             <TableCell>Title</TableCell>
+            <TableCell>Format</TableCell>
             <TableCell>Scope</TableCell>
             <TableCell sx={numHead}>Length</TableCell>
             <TableCell sx={numHead}>Clips</TableCell>
@@ -88,7 +92,9 @@ export default function ScriptsTable({
         </TableHead>
         <TableBody>
           {scripts.map((s) => {
+            const preview = previewForFormat({ formats }, s.formatId);
             const state = previewPlayState(s, preview);
+            const formatName = formats.find((f) => f.id === s.formatId)?.name ?? s.formatId;
             const skipped = state === "starting" ? 0 : (s.previewPlay?.skipped.length ?? 0);
             return (
               <TableRow
@@ -99,6 +105,7 @@ export default function ScriptsTable({
                 sx={{ cursor: "pointer" }}
               >
                 <TableCell sx={{ fontWeight: 600 }}>{s.title}</TableCell>
+                <TableCell>{formatName}</TableCell>
                 <TableCell>{scopeLabel(s.scope)}</TableCell>
                 <TableCell sx={numCell}>{formatDuration(s.durationMs)}</TableCell>
                 <TableCell sx={numCell}>{s.clipCount}</TableCell>
@@ -133,7 +140,7 @@ export default function ScriptsTable({
           })}
           {!scripts.length && (
             <TableRow>
-              <TableCell colSpan={7} sx={{ color: "text.disabled" }}>
+              <TableCell colSpan={8} sx={{ color: "text.disabled" }}>
                 No scripts yet — generate a round-up above.
               </TableCell>
             </TableRow>

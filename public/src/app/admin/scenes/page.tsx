@@ -32,7 +32,7 @@ export default function ScenesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setScenes(await listScenes());
+    setScenes(await listScenes({ kind: "channel" }));
   }, []);
 
   useEffect(() => {

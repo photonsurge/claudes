@@ -26,12 +26,14 @@ const mockGetScene = jest.fn();
 const mockDeleteScene = jest.fn();
 const mockDeleteDirectorConfig = jest.fn();
 const mockUpsertByID = jest.fn();
+const mockGetFormat = jest.fn();
 jest.mock("@photonsurge/shared/db/index", () => ({
   getAppDb: async () => ({
     getOrInitBroadcastState: (...a: unknown[]) => mockGetOrInit(...a),
     getScene: (...a: unknown[]) => mockGetScene(...a),
     deleteScene: (...a: unknown[]) => mockDeleteScene(...a),
     deleteDirectorConfig: (...a: unknown[]) => mockDeleteDirectorConfig(...a),
+    shortFormats: { get: (...a: unknown[]) => mockGetFormat(...a) },
     broadcastState: { upsertByID: (...a: unknown[]) => mockUpsertByID(...a) },
   }),
 }));
@@ -53,6 +55,7 @@ beforeEach(() => {
   mockDeleteScene.mockReset();
   mockDeleteDirectorConfig.mockReset();
   mockUpsertByID.mockReset();
+  mockGetFormat.mockReset().mockResolvedValue(null);
 });
 
 describe("GET /api/scenes/:id", () => {
@@ -148,5 +151,13 @@ describe("DELETE /api/scenes/:id", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, id: "atlantic-wind" });
     expect(mockDeleteDirectorConfig).toHaveBeenCalledWith("atlantic-wind");
+  });
+
+  it("409s a short format's scene — the format owns it", async () => {
+    mockGetFormat.mockResolvedValue({ id: "shorts", name: "Round-up" });
+    const res = await deleteReq("shorts");
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/\/admin\/shorts/);
+    expect(mockDeleteScene).not.toHaveBeenCalled();
   });
 });

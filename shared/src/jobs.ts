@@ -141,19 +141,19 @@ const BASEMAP_JOBS: TriggerableJob[] = [
 
 /**
  * Scripted short videos (docs/short-video-plan.md). Seeding comes first: nothing
- * plays until the two hidden scenes exist. The generate buttons are presets of
- * the same handler the /admin/shorts form calls — a quick way to make a
- * round-up script without opening that page.
+ * plays until the default format and its hidden scene exist. The generate
+ * buttons are presets of the same handler the /admin/shorts form calls — a
+ * quick way to make a round-up script without opening that page.
  */
 const SHORT_VIDEO_JOBS: TriggerableJob[] = [
   {
-    id: "short-video-seed-scenes",
-    label: "Seed short video scenes",
+    id: "short-video-seed-format",
+    label: "Seed default short format",
     description:
-      "Create the two hidden scenes short videos play on (shorts, shorts-preview). Skips a scene that already exists, so it never overwrites an operator's look — run it once per deployment.",
+      "Create the default short format and the hidden scene it plays on (shorts). Skips what already exists, so it never overwrites an operator's look or settings — run it once per deployment.",
     domain: "shorts",
     type: "short-video",
-    event: "seedScenes",
+    event: "seedFormat",
     group: "Short videos",
   },
   {

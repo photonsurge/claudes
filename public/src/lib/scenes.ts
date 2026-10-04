@@ -16,16 +16,22 @@ import {
   SCENE_STATE,
   MAIN_SCENE_ID,
   type ControlState,
+  type SceneKind,
   type SceneMeta,
   type SceneStatePayload,
 } from "@photonsurge/shared/control";
 import { useSocket } from "./socket-provider";
 import { useLoadAndResync } from "./use-resync";
 
-/** List all scenes (main first, then by name). */
-export async function listScenes(): Promise<SceneMeta[]> {
+/**
+ * List scenes (main first, then by name) — all of them, or one kind: the
+ * channel lists (/admin/scenes, the stream and slot forms) pass
+ * `{ kind: "channel" }` so short format scenes stay off them.
+ */
+export async function listScenes(opts: { kind?: SceneKind } = {}): Promise<SceneMeta[]> {
   try {
-    const res = await fetch("/api/scenes", { cache: "no-store" });
+    const qs = opts.kind ? `?kind=${encodeURIComponent(opts.kind)}` : "";
+    const res = await fetch(`/api/scenes${qs}`, { cache: "no-store" });
     if (!res.ok) return [];
     const json = await res.json();
     return Array.isArray(json?.scenes) ? json.scenes : [];

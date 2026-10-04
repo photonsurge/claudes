@@ -43,11 +43,13 @@ import {
   ANY_ENCODER,
   renderCanRetry,
   renderIsActive,
+  renderFormatId,
   type ShortFormatVideo,
   type ShortRender,
   type ShortRenderRequest,
 } from "@photonsurge/shared/short-render";
-import { scriptDurationMs, type ShortScript } from "@photonsurge/shared/short-script";
+import { sceneIdForScript, scriptDurationMs, type ShortScript } from "@photonsurge/shared/short-script";
+import { PLACE_TIMEZONE, type ShortFormat } from "@photonsurge/shared/short-format";
 import { countryShot } from "@photonsurge/shared/director-countries";
 import {
   clipYouTubeDescription,
@@ -57,11 +59,9 @@ import {
   VIDEO_TEXT_TIMEZONE,
 } from "@photonsurge/shared/video-text";
 import { log } from "@photonsurge/shared/utill/logger";
-import { generateShortScript } from "../director/script-generate";
+import { generateFormat, generateShortScript } from "../director/script-generate";
 import { exhaustedUntil, fmtResetTime, quotaSnapshot } from "../youtube/quota";
-import { channelYoutubeSettings } from "./channel-youtube";
 import { watchBaseUrl } from "./encoders";
-import { formatForScript, sceneForScript } from "./script-scene";
 import { formatDuration, scriptValues } from "./script-values";
 
 const TAG = "render-queue";
@@ -83,8 +83,6 @@ export const renderEnv = {
   prepareTimeoutMs: () => envNum("RENDER_PREPARE_TIMEOUT_MS", 10 * 60_000),
 };
 
-/** Timing defaults until formats carry them (ShortFormat.timing, §5.2). */
-const DEFAULT_TIMING = { leadInMs: 3_000, leadOutMs: 5_000 };
 /** The video title when neither the format nor the render names one. */
 export const DEFAULT_VIDEO_TITLE = "%{place} %{kind} · %A %e %B";
 
@@ -101,47 +99,26 @@ class RenderOutcome extends Error {
 
 const errMsg = (err: unknown) => String((err as Error)?.message ?? err);
 
-// ---- adapters onto code the formats branch (WP5) is rewriting ----
-
-/** What the queue needs from a format. */
-export interface FormatRenderSettings {
-  name: string;
-  video: ShortFormatVideo;
-  timing: { leadInMs: number; leadOutMs: number };
-  render: { accountId?: string };
-}
+// ---- the format and the generate path ----
 
 /**
- * A format's render settings. ADAPTER: formats (ShortFormat, §5.2) arrive with
- * WP5; until then a "format" is its scene, and its YouTube video settings start
- * from the scene's own YouTube card (title, description, thumbnail image) with
- * the §5.2 defaults for the rest. After the merge: read `db.shortFormats`.
+ * The format a render is made in (§5.2): its YouTube video card, timing and
+ * render defaults come from `db.shortFormats` — never the scene's channel
+ * YouTube card. The default format works before it is seeded (its defaults);
+ * an unknown format fails the video.
  */
-export async function formatRenderSettings(db: AppDb, formatId: string): Promise<FormatRenderSettings> {
-  const yt = await channelYoutubeSettings(formatId).catch(() => ({ title: "", description: "", thumbnailUrl: "" }));
-  const scene = (await db.getScene(formatId).catch(() => null)) as { name?: string } | null;
-  return {
-    name: scene?.name ?? formatId,
-    video: {
-      title: yt.title || DEFAULT_VIDEO_TITLE,
-      description: yt.description || "",
-      timezone: VIDEO_TEXT_TIMEZONE,
-      thumbnail: { source: "image", url: yt.thumbnailUrl || "" },
-      tags: [],
-      categoryId: "",
-      publishAs: "unlisted",
-      chapters: true,
-    },
-    timing: { ...DEFAULT_TIMING },
-    render: {},
-  };
+export async function loadRenderFormat(db: AppDb, formatId: string): Promise<ShortFormat> {
+  try {
+    return await generateFormat(db, formatId);
+  } catch (err) {
+    throw new RenderOutcome("failed", errMsg(err));
+  }
 }
 
 /**
- * Generate at the front of the queue — the ONE call into the generate path.
- * ADAPTER: passes the format id as the scene id for now (a format's id is its
- * scene's id); after WP5 it passes `formatId`. `auto` scope (pick the busiest
- * place) belongs to scheduling (WP9a) and fails here until then.
+ * Generate at the front of the queue — the ONE call into the generate path, in
+ * the render's format. `auto` scope (pick the busiest place) belongs to
+ * scheduling (WP9a) and fails here until then.
  */
 export async function generateForRender(
   db: AppDb,
@@ -150,7 +127,7 @@ export async function generateForRender(
   if (what.scope.type === "auto") {
     throw new RenderOutcome("failed", "auto scope is not available yet (it arrives with scheduling, WP9a)");
   }
-  return generateShortScript(db, { scope: what.scope, include: what.include, sceneId: what.formatId });
+  return generateShortScript(db, { formatId: what.formatId, scope: what.scope, include: what.include });
 }
 
 // ---- pure helpers ----
@@ -177,7 +154,8 @@ export function resolveVideoText(
   siteUrl: string = watchBaseUrl(),
 ): ResolvedVideoText {
   // "place" = the video's own zone: no per-place zone is stored yet, so London.
-  const tz = video.timezone && video.timezone !== "place" && isValidTimeZone(video.timezone) ? video.timezone : VIDEO_TEXT_TIMEZONE;
+  const tz =
+    video.timezone && video.timezone !== PLACE_TIMEZONE && isValidTimeZone(video.timezone) ? video.timezone : VIDEO_TEXT_TIMEZONE;
   const vals = { ...values, duration: formatDuration(durationMs) };
   const title = trimVideoTitle(formatVideoText(video.title || DEFAULT_VIDEO_TITLE, vals, now, tz)) || "Untitled video";
   let description = formatVideoText(video.description || "", vals, now, tz).trim();
@@ -296,11 +274,12 @@ async function staleRoundup(db: AppDb, render: ShortRender, now: number): Promis
 
 /** The format a render plays in, when it can be known without generating. */
 async function formatOfRender(db: AppDb, r: ShortRender, scripts: Map<string, ShortScript | null>): Promise<string | undefined> {
-  if (r.what.type === "generate") return r.what.formatId;
+  const known = renderFormatId(r);
+  if (known || r.what.type !== "script") return known;
   const id = r.scriptId ?? r.what.scriptId;
   if (!scripts.has(id)) scripts.set(id, await db.shortScripts.get(id).catch(() => null));
   const s = scripts.get(id);
-  return s ? formatForScript(s as { formatId?: string }) : undefined;
+  return s ? sceneIdForScript(s) : undefined;
 }
 
 async function enqueueLifecycle(event: string, data: Record<string, unknown>): Promise<void> {
@@ -325,13 +304,24 @@ async function settle(db: AppDb, render: ShortRender, patch: Partial<ShortRender
  */
 async function startRender(db: AppDb, render: ShortRender, encoderId: string, now: number): Promise<boolean> {
   try {
-    // 1. Quota, before anything is created (a live video only).
+    // 1. The format (a saved script names its own) — its YouTube card, timing
+    //    and render defaults shape everything below.
+    let saved: ShortScript | null = null;
+    if (render.what.type === "script") {
+      saved = await db.shortScripts.get(render.what.scriptId);
+      if (!saved) throw new RenderOutcome("failed", `script ${render.what.scriptId} not found`);
+    }
+    const formatId = render.what.type === "generate" ? render.what.formatId : sceneIdForScript(saved!);
+    const format = await loadRenderFormat(db, formatId);
+
+    // 2. Quota, before anything is created on YouTube (a live video only). The
+    //    account: the render's pick, else the format's render default.
     let accountId: string | undefined;
-    const formatId = render.what.type === "generate" ? render.what.formatId : undefined;
     if (!render.offline) {
-      const account = await db.getYoutubeAccount(render.accountId);
+      const wanted = render.accountId ?? format.render.accountId;
+      const account = await db.getYoutubeAccount(wanted);
       if (!account) {
-        throw new RenderOutcome("failed", render.accountId ? `YouTube channel ${render.accountId} is not connected` : "no connected YouTube channel");
+        throw new RenderOutcome("failed", wanted ? `YouTube channel ${wanted} is not connected` : "no connected YouTube channel");
       }
       if (account.authError) throw new RenderOutcome("failed", `YouTube channel ${account.id} needs reconnecting: ${account.authError.message}`);
       const quota = await quotaAllowsRender(account.id, now);
@@ -339,11 +329,10 @@ async function startRender(db: AppDb, render: ShortRender, encoderId: string, no
       accountId = account.id;
     }
 
-    // 2. The script: saved, or the freshness check and generate, at the front.
-    let script: ShortScript | null;
-    if (render.what.type === "script") {
-      script = await db.shortScripts.get(render.what.scriptId);
-      if (!script) throw new RenderOutcome("failed", `script ${render.what.scriptId} not found`);
+    // 3. The script: saved, or the freshness check and generate, at the front.
+    let script: ShortScript;
+    if (saved || render.what.type !== "generate") {
+      script = saved!;
     } else {
       const stale = await staleRoundup(db, render, now);
       if (stale && render.roundup!.ifStale === "skip") throw new RenderOutcome("skipped", stale);
@@ -364,22 +353,20 @@ async function startRender(db: AppDb, render: ShortRender, encoderId: string, no
       if (render.skipIfQuiet && wantsEvents && !hasEvents) throw new RenderOutcome("skipped", "quiet: nothing active in scope");
     }
     if (!script.clips.length) throw new RenderOutcome("failed", "the script has no clips");
-    await db.shortRenders.update(render.id, { scriptId: script.id });
+    await db.shortRenders.update(render.id, { scriptId: script.id, formatId: sceneIdForScript(script) });
 
-    // 3. Values (stamped at generate, §6.8) and the format's settings.
-    const fmtId = formatId ?? formatForScript(script as { formatId?: string });
-    const settings = await formatRenderSettings(db, fmtId);
+    // 4. Values (stamped at generate, §6.8), with the format's round-up depth.
     let values = script.values;
     if (!values) {
-      values = await scriptValues(db, script as ShortScript & { formatId?: string }, { formatName: settings.name, now });
+      values = await scriptValues(db, script, { formatName: format.name, roundupDepth: format.opener.roundupDepth, now });
       await db.shortScripts.stampValues(script.id, values).catch((err) => log(TAG, `values stamp failed ${script!.id}`, errMsg(err)));
     }
-    const video: ShortFormatVideo = { ...settings.video, ...(render.video ?? {}) } as ShortFormatVideo;
+    const video: ShortFormatVideo = { ...format.video, ...(render.video ?? {}) } as ShortFormatVideo;
     const durationMs = scriptDurationMs(script.clips);
     const text = resolveVideoText(video, values, durationMs, new Date(now));
 
-    // 4. The run: on the script's scene, unlisted, no chat, nothing announced.
-    const sceneId = sceneForScript(script as { formatId?: string });
+    // 5. The run: on the script's scene, unlisted, no chat, nothing announced.
+    const sceneId = sceneIdForScript(script);
     const onScene = await db.activeRunForScene(sceneId);
     if (onScene) {
       // The planner saw the format free; a run appeared since. Back in line.
@@ -391,7 +378,7 @@ async function startRender(db: AppDb, render: ShortRender, encoderId: string, no
       log(TAG, `render ${render.id}: scene ${sceneId} became busy (run ${onScene.id}) — back in the queue`);
       return true;
     }
-    const { leadInMs, leadOutMs } = settings.timing;
+    const { leadInMs, leadOutMs } = format.timing;
     const run = await db.createRun({
       sceneId,
       encoderId: encoderId === ENV_ENCODER_ID ? undefined : encoderId,
@@ -527,10 +514,17 @@ export function advanceRenderQueues(now = Date.now()): Promise<AdvanceResult> {
   );
 }
 
+/** The format a request renders in: the generate request's, or the saved script's. */
+async function requestFormatId(db: AppDb, req: Pick<ShortRenderRequest, "what">): Promise<string | undefined> {
+  if (req.what.type === "generate") return req.what.formatId;
+  const script = await db.shortScripts.get(req.what.scriptId).catch(() => null);
+  return script ? sceneIdForScript(script) : undefined;
+}
+
 /** Queue a video (Render now, a schedule's batch, Retry) and advance at once. */
 export async function queueRender(req: ShortRenderRequest, now = Date.now()): Promise<ShortRender> {
   const db = await getAppDb();
-  const render = await db.shortRenders.create(req, now);
+  const render = await db.shortRenders.create({ ...req, formatId: await requestFormatId(db, req) }, now);
   log(TAG, `queued render ${render.id} on ${render.encoderId}`);
   await advanceRenderQueues(now);
   return (await db.shortRenders.get(render.id)) ?? render;
@@ -594,7 +588,7 @@ export async function controlRender(c: RenderControl): Promise<{ ok: boolean; er
       ...(r.batchId ? { batchId: r.batchId } : {}),
       // A retry is "now": the original start-by window has passed by definition.
     };
-    const created = await db.shortRenders.create(req);
+    const created = await db.shortRenders.create({ ...req, formatId: r.formatId ?? (await requestFormatId(db, req)) });
     await db.shortRenders.update(created.id, { retryOf: r.id });
     await advanceRenderQueues();
     return { ok: true, render: (await db.shortRenders.get(created.id)) ?? created };

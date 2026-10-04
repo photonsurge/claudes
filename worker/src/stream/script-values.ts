@@ -6,21 +6,20 @@
  * date codes are filled at render time, not here; `%{n}` belongs to schedules
  * (WP9) and is left out.
  *
- * Stamped at the front of the render queue right after generate (the generate
- * path itself is being rewritten by the formats branch, WP5 — once it lands,
- * generate can call `scriptValues` itself).
+ * Stamped at the front of the render queue right after generate. `%{roundup}`
+ * follows the format's round-up depth (`opener.roundupDepth`): the summary
+ * only, or all of it.
  */
 import type { AppDb } from "@photonsurge/shared/db/index";
 import type { iPlaceRoundupModel } from "@photonsurge/shared/db/place-roundup-model";
 import { countryShot } from "@photonsurge/shared/director-countries";
 import { regionShot } from "@photonsurge/shared/director-regions";
-import type { ShortScript } from "@photonsurge/shared/short-script";
+import { sceneIdForScript, type RoundupDepth, type ShortScript } from "@photonsurge/shared/short-script";
 import { VIDEO_TEXT_TIMEZONE } from "@photonsurge/shared/video-text";
 import { log } from "@photonsurge/shared/utill/logger";
 import { roundupText } from "../director/script-template";
 import { sceneDirectorConfig } from "../director/script-generate";
 import { resolveScope, scopeAlerts, scopeQuakes, scopeVolcanoes } from "../director/script-scope";
-import { sceneForScript } from "./script-scene";
 
 const TAG = "script-values";
 
@@ -64,7 +63,7 @@ const hhmm = (d: Date, timeZone: string) =>
 export async function scriptValues(
   db: AppDb,
   script: Pick<ShortScript, "scope" | "include" | "clips"> & { formatId?: string },
-  opts: { formatName?: string; now?: number } = {},
+  opts: { formatName?: string; roundupDepth?: RoundupDepth; now?: number } = {},
 ): Promise<Record<string, string>> {
   const now = opts.now ?? Date.now();
   const v: Record<string, string> = { kind: kindOf(script.include), places: "1" };
@@ -88,7 +87,7 @@ export async function scriptValues(
     if (shot) roundup = await db.regionRoundups.latestForPlace(shot.id).catch(() => null);
   }
   if (roundup) {
-    const text = roundupText(roundup);
+    const text = roundupText(roundup, opts.roundupDepth ?? "full");
     if (text) v.roundup = text;
     const headline = firstSentence(roundup.summary?.trim() || text);
     if (headline) v.headline = headline;
@@ -107,7 +106,7 @@ export async function scriptValues(
       }
     } else {
       const rs = await resolveScope(db, scope);
-      const cfg = await sceneDirectorConfig(db, sceneForScript(script), true);
+      const cfg = await sceneDirectorConfig(db, sceneIdForScript(script), true);
       const [alerts, quakes, volcanoes] = await Promise.all([
         scopeAlerts(db, cfg, rs),
         scopeQuakes(db, cfg, rs, now),

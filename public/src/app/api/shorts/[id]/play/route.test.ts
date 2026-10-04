@@ -1,8 +1,8 @@
 /** @jest-environment node */
 
 /**
- * POST /api/shorts/:id/play — starts an editor preview on the PREVIEW scene
- * only: mode script, fresh nonce, record off, fromClip clamped.
+ * POST /api/shorts/:id/play — starts an editor preview on the script's FORMAT
+ * scene: mode script, fresh nonce, record off, fromClip clamped.
  */
 jest.mock("../../../../../lib/api-log", () => ({ withApiLog: (h: unknown) => h }));
 jest.mock("../../../../../lib/require-admin", () => ({ requireAdmin: jest.fn() }));
@@ -12,6 +12,8 @@ const mockDb = {
   getScene: jest.fn(),
   getOrInitDirectorConfig: jest.fn(),
   saveDirectorConfig: jest.fn(),
+  shortRenders: { countByFormat: jest.fn() },
+  activeRunForScene: jest.fn(),
 };
 jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: async () => mockDb }));
 
@@ -28,8 +30,29 @@ beforeEach(() => {
   jest.resetAllMocks();
   (requireAdmin as jest.Mock).mockResolvedValue(true);
   mockDb.shortScripts.get.mockResolvedValue(script);
-  mockDb.getScene.mockResolvedValue({ id: "shorts-preview" });
+  mockDb.getScene.mockResolvedValue({ id: "shorts" });
   mockDb.getOrInitDirectorConfig.mockResolvedValue({ mode: "off" });
+  mockDb.shortRenders.countByFormat.mockResolvedValue(0);
+  mockDb.activeRunForScene.mockResolvedValue(null);
+});
+
+it("409s while a render of the script's format is preparing or live, saying why (§5.3)", async () => {
+  mockDb.shortScripts.get.mockResolvedValue({ ...script, formatId: "short-uk" });
+  mockDb.shortRenders.countByFormat.mockResolvedValue(1);
+  const res = await post("s1");
+  expect(res.status).toBe(409);
+  expect((await res.json()).error).toMatch(/a video is rendering in this format/);
+  expect(mockDb.shortRenders.countByFormat).toHaveBeenCalledWith("short-uk", ["preparing", "live"]);
+  expect(mockDb.saveDirectorConfig).not.toHaveBeenCalled();
+});
+
+it("409s while a render run is active on the format's scene, naming it; a channel run there doesn't block", async () => {
+  mockDb.activeRunForScene.mockResolvedValue({ id: "run9", status: "live", title: "Europe round-up", script: { scriptId: "s2" } });
+  const res = await post("s1");
+  expect(res.status).toBe(409);
+  expect((await res.json()).error).toMatch(/Europe round-up, live/);
+  mockDb.activeRunForScene.mockResolvedValue({ id: "run8", status: "live" });
+  expect((await post("s1")).status).toBe(200);
 });
 
 it("401s for non-admins without writing", async () => {
@@ -49,22 +72,31 @@ it("400s a script with no clips", async () => {
   expect(mockDb.saveDirectorConfig).not.toHaveBeenCalled();
 });
 
-it("409s with the seed instructions when the preview scene doesn't exist", async () => {
+it("409s with the seed instructions when the default format's scene doesn't exist", async () => {
   mockDb.getScene.mockResolvedValue(null);
   const res = await post("s1");
   expect(res.status).toBe(409);
-  expect((await res.json()).error).toMatch(/yarn seed:short-scenes/);
+  expect((await res.json()).error).toMatch(/Seed default short format/);
+  expect(mockDb.getScene).toHaveBeenCalledWith("shorts");
   expect(mockDb.saveDirectorConfig).not.toHaveBeenCalled();
 });
 
-it("starts the play on the preview scene with record off and a fresh nonce", async () => {
+it("plays on the script's own format scene", async () => {
+  mockDb.shortScripts.get.mockResolvedValue({ ...script, formatId: "short-uk" });
+  const body = await (await post("s1")).json();
+  expect(body.sceneId).toBe("short-uk");
+  expect(mockDb.getScene).toHaveBeenCalledWith("short-uk");
+  expect(mockDb.saveDirectorConfig).toHaveBeenCalledWith("short-uk", expect.objectContaining({ mode: "script" }));
+});
+
+it("starts the play on the default format's scene with record off and a fresh nonce", async () => {
   const before = Date.now();
   const res = await post("s1", { fromClip: 1 });
   expect(res.status).toBe(200);
   const body = await res.json();
-  expect(body).toMatchObject({ ok: true, sceneId: "shorts-preview", fromClip: 1 });
+  expect(body).toMatchObject({ ok: true, sceneId: "shorts", fromClip: 1 });
   expect(body.playNonce).toBeGreaterThanOrEqual(before);
-  expect(mockDb.saveDirectorConfig).toHaveBeenCalledWith("shorts-preview", {
+  expect(mockDb.saveDirectorConfig).toHaveBeenCalledWith("shorts", {
     mode: "script",
     script: { scriptId: "s1", fromClip: 1, playNonce: body.playNonce, record: false },
   });

@@ -26,6 +26,7 @@ const KEYS: (keyof ShortRender)[] = [
   "note",
   "assignedEncoderId",
   "retryOf",
+  "formatId",
 ];
 
 /** Wire shape from a lean doc: known keys only, unset ones omitted. */
@@ -48,7 +49,7 @@ export function makeShortRenderRepo(model: Model<iShortRenderModel>, queueModel:
     model,
 
     /** Queue a video. Returns the stored render. */
-    async create(req: ShortRenderRequest, now = Date.now()): Promise<ShortRender> {
+    async create(req: ShortRenderRequest & { formatId?: string }, now = Date.now()): Promise<ShortRender> {
       const render: ShortRender = { ...req, id: uuidv4(), status: "queued", queuedAt: now };
       await model.create(render);
       return render;
@@ -94,6 +95,18 @@ export function makeShortRenderRepo(model: Model<iShortRenderModel>, queueModel:
         .lean()
         .exec();
       return doc ? toRender(doc as iShortRenderModel) : null;
+    },
+
+    /**
+     * Renders in `formatId` in one of `statuses` — default every unfinished one
+     * (the format delete guard). Pass ["preparing", "live"] for the renders that
+     * own the format's scene right now (the preview refusal, §5.3).
+     */
+    async countByFormat(
+      formatId: string,
+      statuses: ShortRenderStatus[] = ["queued", "preparing", "live"],
+    ): Promise<number> {
+      return model.countDocuments({ formatId, status: { $in: statuses } }).exec();
     },
 
     /** Encoders whose render queue is paused. */
