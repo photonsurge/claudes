@@ -480,3 +480,119 @@ describe("crossword.inject", () => {
     ).rejects.toThrow(/unknown command/);
   });
 });
+
+/** A promise the test resolves by hand. */
+function deferred<T = void>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
+const flush = () => new Promise((r) => setImmediate(r));
+
+describe("crossword runner — robustness", () => {
+  test("Next puzzle on a parked game is a no-op that says why, and stamps no play", async () => {
+    const f = fakeDb({ cfg: { playOffAir: false } });
+    const h = harness(f);
+    await h.first();
+    expect(h.game().phase).toBe("idle");
+    const res = await h.command("nextPuzzle");
+    expect(res).toEqual({ applied: false, note: expect.stringMatching(/not playing/) });
+    expect(f.db.crosswordPuzzles.startPlay).not.toHaveBeenCalled();
+    expect(h.game().phase).toBe("idle");
+    const inj = await handleInject({ sceneId: SCENE, kind: "command", command: "nextPuzzle" }, h.state, f.deps, h.now);
+    expect(inj).toEqual({ kind: "command", command: "nextPuzzle", applied: false, note: expect.stringMatching(/not playing/) });
+    expect(f.db.crosswordPuzzles.startPlay).not.toHaveBeenCalled();
+  });
+
+  test("a failed player write does not drop the batch; what was taken is saved and emitted", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    await h.run(13_000);
+    f.db.crosswordPlayers.touch.mockRejectedValueOnce(new Error("mongo down"));
+    f.db.crosswordSolves.append.mockRejectedValueOnce(new Error("mongo down"));
+    const res = await h.answer([
+      { name: "a", text: "rode", typedAt: h.now - 2 },
+      { name: "b", text: "cat", typedAt: h.now - 1 },
+    ]);
+    expect(res.solved).toEqual(["3A", "1A"]);
+    await flush();
+    expect(Object.keys(f.game!.solved).sort()).toEqual(["1A", "3A"]);
+    const last = states(f.emitted).at(-1)!;
+    expect(last.seq).toBe(h.game().seq);
+    expect(last.entries.filter((e) => e.solved).map((e) => e.id).sort()).toEqual(["1A", "3A"]);
+  });
+
+  test("a stuck save holds no scene: the state is emitted at once and both scenes keep their clocks", async () => {
+    const f = fakeDb();
+    f.db.crosswordScenes.mockResolvedValue([SCENE, "xw2"]);
+    f.db.crosswordGames.get.mockResolvedValue(null);
+    const h = harness(f);
+    await h.first();
+    const stuck = deferred();
+    const save = f.db.crosswordGames.save.getMockImplementation()!;
+    f.db.crosswordGames.save.mockImplementation((g: CrosswordGame) => (g.sceneId === SCENE ? stuck.promise.then(() => save(g)) : save(g)));
+    await h.run(13_000);
+    const rt1 = h.state.scenes.get(SCENE)!;
+    const rt2 = h.state.scenes.get("xw2")!;
+    expect(rt1.game.phase).toBe("playing");
+    expect(rt2.game.phase).toBe("playing");
+    expect(states(f.emitted).some((s) => s.sceneId === SCENE && s.phase === "playing")).toBe(true);
+    // One SCENE save is in flight; later ones wait in order behind it.
+    expect(rt1.saving).toBe(true);
+    await h.answer([{ name: "a", text: "rode" }]);
+    expect(rt1.saveQueue).toHaveLength(1);
+    expect(states(f.emitted).at(-1)).toMatchObject({ sceneId: SCENE, seq: rt1.game.seq });
+    stuck.resolve();
+    await flush();
+    expect(rt1.saveQueue).toHaveLength(0);
+    const scene1Saves = f.saved.filter((g) => g.sceneId === SCENE).map((g) => g.seq);
+    expect(scene1Saves).toEqual([...scene1Saves].sort((a, b) => a - b));
+    expect(scene1Saves.at(-1)).toBe(rt1.game.seq);
+  });
+
+  test("a scene removed while a write is in flight is not saved again (no orphan game)", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    await h.run(13_000);
+    const touched = deferred<CrosswordPlayer>();
+    f.db.crosswordPlayers.touch.mockReturnValueOnce(touched.promise);
+    const pending = h.answer([{ name: "a", text: "rode" }]);
+    f.db.crosswordScenes.mockResolvedValue([]);
+    // The poll drops the scene; this step's own advance waits behind the answer's lock.
+    const stepping = step(h.state, h.now + 1_000, f.deps);
+    await flush();
+    expect(h.state.scenes.has(SCENE)).toBe(false);
+    const saves = f.db.crosswordGames.save.mock.calls.length;
+    const emits = f.emitted.length;
+    touched.resolve({ id: "youtube:a", name: "a", hidden: false, firstSeen: h.now, lastSeen: h.now });
+    await pending;
+    await stepping;
+    await flush();
+    expect(f.db.crosswordGames.save.mock.calls.length).toBe(saves);
+    expect(f.emitted.length).toBe(emits);
+  });
+
+  test("rate-limit history older than the window is pruned", async () => {
+    const h = harness();
+    await h.first();
+    await h.run(13_000);
+    await h.answer([{ name: "a", text: "zebra" }, { name: "b", text: "zebra" }]);
+    const rt = h.state.scenes.get(SCENE)!;
+    expect(rt.rate.size).toBe(2);
+    await h.run(DEFAULT_CROSSWORD_CONFIG.rateWindowS * 1000 + 5_000);
+    expect(rt.rate.size).toBe(0);
+  });
+
+  test("an inject before the first poll polls once instead of failing", async () => {
+    const f = fakeDb();
+    const state = newCrosswordRunnerState();
+    const res = await handleInject({ sceneId: SCENE, kind: "command", command: "pause" }, state, f.deps, T0);
+    expect(res).toEqual({ kind: "command", command: "pause" });
+    expect(state.scenes.get(SCENE)!.game.paused).toBe(true);
+    await expect(handleInject({ sceneId: "nope", kind: "command", command: "pause" }, state, f.deps, T0)).rejects.toThrow(
+      /not running/,
+    );
+  });
+});

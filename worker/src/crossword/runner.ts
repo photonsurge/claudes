@@ -91,11 +91,20 @@ export interface SceneRuntime {
   stockNote: string | null;
   /** Serialises the tick, answers and commands on this scene. */
   lock: Promise<unknown>;
+  /** A step's advance is still running on this scene (a slow save); the next step passes it over. */
+  busy: boolean;
+  /** The poll took this runner down (scene gone or disabled): nothing more is saved or emitted. */
+  stopped: boolean;
+  /** Games waiting to be saved, oldest first; one save is in flight at a time. */
+  saveQueue: CrosswordGame[];
+  saving: boolean;
 }
 
 export interface CrosswordRunnerState {
   scenes: Map<string, SceneRuntime>;
   lastPollAt: number;
+  /** The poll in flight, so polls never overlap and an inject can wait on one. */
+  polling: Promise<void> | null;
 }
 
 export interface CrosswordRunnerDeps {
@@ -123,7 +132,18 @@ export interface SubmitResult {
   solved: string[];
 }
 
-export const newCrosswordRunnerState = (): CrosswordRunnerState => ({ scenes: new Map(), lastPollAt: -Infinity });
+/** What a Desk command did. `applied: false` carries why it was a no-op. */
+export interface CommandResult {
+  applied: boolean;
+  note?: string;
+}
+
+export const newCrosswordRunnerState = (): CrosswordRunnerState => ({ scenes: new Map(), lastPollAt: -Infinity, polling: null });
+
+/** A failed game save is retried this many times before it is logged and left to the next change. */
+const SAVE_RETRIES = 1;
+/** Saves queued behind a stuck one before the older ones are dropped (each is the whole game). */
+const SAVE_QUEUE_MAX = 20;
 
 /** Run `fn` after whatever is already running on this scene. */
 function locked<T>(rt: SceneRuntime, fn: () => Promise<T>): Promise<T> {
@@ -152,15 +172,60 @@ function syncFreeze(rt: SceneRuntime, now: number): boolean {
   return false;
 }
 
-/** Save and emit: seq bumped, `pub` rebuilt. A failed save is logged; the show goes on. */
+/**
+ * Emit and save: seq bumped, `pub` rebuilt. The state goes out at once and the
+ * save is queued behind the scene's earlier ones, so a slow save never holds
+ * the screen, the scene's clock or any other scene. A runner the poll has
+ * stopped neither emits nor saves, so a late commit cannot re-create the game
+ * of a scene that is gone.
+ */
 async function commit(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps): Promise<void> {
+  if (rt.stopped) return;
   rt.game = bumpAndProject(rt.puzzle, rt.game, { now, today: rt.today, inputLive: rt.inputLive });
-  try {
-    await deps.db.crosswordGames.save(rt.game);
-  } catch (err) {
-    log(TAG, `save failed`, { sceneId: rt.sceneId, err: String(err) });
-  }
   deps.emit(CROSSWORD_STATE, rt.game.pub);
+  if (rt.saveQueue.length >= SAVE_QUEUE_MAX) {
+    log(TAG, `save queue full — older saves dropped`, { sceneId: rt.sceneId, dropped: rt.saveQueue.length });
+    rt.saveQueue = [];
+  }
+  rt.saveQueue.push(rt.game);
+  if (!rt.saving) void drainSaves(rt, deps);
+}
+
+/**
+ * Write the scene's queued games in order, one at a time. A failed save is
+ * retried, then logged (the next change saves the whole game again).
+ */
+async function drainSaves(rt: SceneRuntime, deps: CrosswordRunnerDeps): Promise<void> {
+  rt.saving = true;
+  try {
+    while (rt.saveQueue.length && !rt.stopped) {
+      const game = rt.saveQueue.shift()!;
+      for (let attempt = 0; !rt.stopped; attempt++) {
+        try {
+          await deps.db.crosswordGames.save(game);
+          break;
+        } catch (err) {
+          if (attempt >= SAVE_RETRIES) {
+            log(TAG, `save failed`, { sceneId: rt.sceneId, seq: game.seq, err: String(err) });
+            break;
+          }
+        }
+      }
+    }
+    if (rt.stopped) rt.saveQueue = [];
+  } finally {
+    rt.saving = false;
+  }
+}
+
+/** Drop rate-limit history older than the window, as of `now`. */
+function pruneRate(rt: SceneRuntime, now: number): void {
+  const since = now - rt.cfg.rateWindowS * 1000;
+  for (const [id, times] of rt.rate) {
+    const kept = times.filter((t) => t > since);
+    if (kept.length) rt.rate.set(id, kept);
+    else rt.rate.delete(id);
+  }
 }
 
 /** Rebuild the today board (after solves, at load, at the UTC day's turn). */
@@ -336,6 +401,7 @@ async function advance(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps)
   }
   if (now - rt.lastBeatAt >= CROSSWORD_BEAT_MS) {
     rt.lastBeatAt = now;
+    pruneRate(rt, now);
     const beat: CrosswordBeat = { sceneId: rt.sceneId, seq: rt.game.seq, serverNow: now };
     deps.emit(CROSSWORD_BEAT, beat);
   }
@@ -377,6 +443,10 @@ async function loadScene(
     lastIdleCheckAt: -Infinity,
     stockNote: null,
     lock: Promise.resolve(),
+    busy: false,
+    stopped: false,
+    saveQueue: [],
+    saving: false,
   };
   if (isFrozen(rt) && game.phase !== "idle") rt.frozenAt = savedAt;
   await refreshToday(rt, now, deps);
@@ -384,15 +454,21 @@ async function loadScene(
   return rt;
 }
 
+/** Take a runner down: it saves and emits nothing more. */
+function stopScene(state: CrosswordRunnerState, sceneId: string, why: string): void {
+  const rt = state.scenes.get(sceneId);
+  if (!rt) return;
+  rt.stopped = true;
+  state.scenes.delete(sceneId);
+  log(TAG, `runner stopped (${why})`, { sceneId });
+}
+
 /** Mongo side of a step for one scene: config, live run, go-live, park, thaw. */
 async function pollScene(state: CrosswordRunnerState, sceneId: string, now: number, deps: CrosswordRunnerDeps): Promise<void> {
   const cfg = await deps.db.getOrInitCrosswordConfig(sceneId);
   const existing = state.scenes.get(sceneId);
   if (!cfg.enabled) {
-    if (existing) {
-      state.scenes.delete(sceneId);
-      log(TAG, `runner stopped (disabled)`, { sceneId });
-    }
+    stopScene(state, sceneId, "disabled");
     return;
   }
   const active = await deps.db.activeRunForScene(sceneId);
@@ -443,40 +519,50 @@ async function poll(state: CrosswordRunnerState, now: number, deps: CrosswordRun
   const scenes = await deps.db.crosswordScenes();
   const listed = new Set(scenes);
   for (const id of [...state.scenes.keys()]) {
-    if (!listed.has(id)) {
-      state.scenes.delete(id);
-      log(TAG, `runner stopped (scene gone)`, { sceneId: id });
-    }
+    if (!listed.has(id)) stopScene(state, id, "scene gone");
   }
-  for (const sceneId of scenes) {
-    try {
-      await pollScene(state, sceneId, now, deps);
-    } catch (err) {
-      log(TAG, `scene poll failed`, { sceneId, err: String(err) });
-    }
+  // Scenes side by side: one scene's slow save holds only that scene.
+  await Promise.all(
+    scenes.map((sceneId) =>
+      pollScene(state, sceneId, now, deps).catch((err) => log(TAG, `scene poll failed`, { sceneId, err: String(err) })),
+    ),
+  );
+}
+
+/** Poll now, or join the poll already running. Never throws. */
+export function pollNow(state: CrosswordRunnerState, now: number, deps: CrosswordRunnerDeps): Promise<void> {
+  if (state.polling) return state.polling;
+  state.lastPollAt = now;
+  state.polling = poll(state, now, deps)
+    .catch((err) => log(TAG, `poll failed`, String(err)))
+    .finally(() => {
+      state.polling = null;
+    });
+  return state.polling;
+}
+
+/** Advance one scene unless its last advance is still running. */
+async function advanceScene(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps): Promise<void> {
+  if (rt.busy) return;
+  rt.busy = true;
+  try {
+    await locked(rt, () => advance(rt, now, deps));
+  } catch (err) {
+    log(TAG, `advance failed`, { sceneId: rt.sceneId, err: String(err) });
+  } finally {
+    rt.busy = false;
   }
 }
 
 /**
- * One runner step: poll Mongo when a poll is due, then run each scene's phase
- * clock from memory. Never throws.
+ * One runner step: poll Mongo when a poll is due (and none is running), then
+ * run each scene's phase clock from memory, scenes side by side. A scene whose
+ * last advance is still running (a slow save) is passed over, so it never
+ * holds up the others. Never throws.
  */
 export async function step(state: CrosswordRunnerState, now: number, deps: CrosswordRunnerDeps): Promise<void> {
-  if (now - state.lastPollAt >= CROSSWORD_POLL_MS) {
-    state.lastPollAt = now;
-    try {
-      await poll(state, now, deps);
-    } catch (err) {
-      log(TAG, `poll failed`, String(err));
-    }
-  }
-  for (const rt of [...state.scenes.values()]) {
-    try {
-      await locked(rt, () => advance(rt, now, deps));
-    } catch (err) {
-      log(TAG, `advance failed`, { sceneId: rt.sceneId, err: String(err) });
-    }
-  }
+  if (!state.polling && now - state.lastPollAt >= CROSSWORD_POLL_MS) await pollNow(state, now, deps);
+  await Promise.all([...state.scenes.values()].map((rt) => advanceScene(rt, now, deps)));
 }
 
 /**
@@ -500,43 +586,15 @@ export async function submitAnswersTo(
     if (!puzzle || isFrozen(rt) || (rt.game.phase !== "playing" && rt.game.phase !== "finale")) {
       return { running: true, solved };
     }
-    const cfg = rt.cfg;
     for (const m of [...msgs].sort((a, b) => a.typedAt - b.typedAt)) {
-      const history = (rt.rate.get(m.playerId) ?? []).filter((t) => t > m.typedAt - cfg.rateWindowS * 1000);
-      if (!withinRate(history, m.typedAt, cfg.rateMax, cfg.rateWindowS)) continue;
-      rt.rate.set(m.playerId, [...history, m.typedAt]);
-      const name = cleanPlayerName(m.name, m.playerId, cfg.blocklist);
-      const player = await deps.db.crosswordPlayers.touch(m.playerId, name, now);
-      if (player.hidden) continue;
-      const res = applyAnswer(puzzle, rt.game, { playerId: m.playerId, name, text: m.text, typedAt: m.typedAt }, cfg, now);
-      if (res.kind === "none") continue;
-      let game = res.game;
-      if (res.kind === "solved" && game.spotlight?.entryId === res.entryId) {
-        // A viewer took the spotlight word: a short beat, then the next clue.
-        game = { ...game, spotlight: { ...game.spotlight, endsAt: now + cfg.solveBeatS * 1000 } };
-      }
-      rt.game = game;
-      solved.push(res.entryId);
-      const s = game.solved[res.entryId];
-      const solve: CrosswordSolve = {
-        id: `${sceneId}:${game.puzzleNo}:${res.entryId}`,
-        sceneId,
-        puzzleId: puzzle.id,
-        entryId: res.entryId,
-        playerId: m.playerId,
-        name,
-        points: res.points,
-        at: s.at,
-        ...(res.kind === "late" ? { late: true } : {}),
-        ...(m.sim ? { sim: true } : {}),
-      };
       try {
-        await deps.db.crosswordSolves.append(solve);
+        const entryId = await answerOne(rt, puzzle, m, now, deps);
+        if (entryId) solved.push(entryId);
       } catch (err) {
-        log(TAG, `solve log failed`, { sceneId, entryId: res.entryId, err: String(err) });
+        log(TAG, `answer failed`, { sceneId, playerId: m.playerId, err: String(err) });
       }
-      log(TAG, `${res.kind}`, { sceneId, entryId: res.entryId, playerId: m.playerId, points: res.points, sim: !!m.sim });
     }
+    // Whatever was taken is saved and shown, even if a later message failed.
     if (solved.length) {
       await refreshToday(rt, now, deps);
       await commit(rt, now, deps);
@@ -546,11 +604,66 @@ export async function submitAnswersTo(
 }
 
 /**
+ * One message against the open puzzle: the taken entry id, or null. Its side
+ * writes (the player record, the solve log) are best effort: a failure is
+ * logged and the word stays taken.
+ */
+async function answerOne(
+  rt: SceneRuntime,
+  puzzle: CrosswordPuzzle,
+  m: CrosswordChatAnswer,
+  now: number,
+  deps: CrosswordRunnerDeps,
+): Promise<string | null> {
+  const { sceneId, cfg } = rt;
+  const history = (rt.rate.get(m.playerId) ?? []).filter((t) => t > m.typedAt - cfg.rateWindowS * 1000);
+  if (!withinRate(history, m.typedAt, cfg.rateMax, cfg.rateWindowS)) return null;
+  rt.rate.set(m.playerId, [...history, m.typedAt]);
+  const name = cleanPlayerName(m.name, m.playerId, cfg.blocklist);
+  let hidden = false;
+  try {
+    hidden = (await deps.db.crosswordPlayers.touch(m.playerId, name, now)).hidden;
+  } catch (err) {
+    log(TAG, `player write failed`, { sceneId, playerId: m.playerId, err: String(err) });
+  }
+  if (hidden) return null;
+  const res = applyAnswer(puzzle, rt.game, { playerId: m.playerId, name, text: m.text, typedAt: m.typedAt }, cfg, now);
+  if (res.kind === "none") return null;
+  let game = res.game;
+  if (res.kind === "solved" && game.spotlight?.entryId === res.entryId) {
+    // A viewer took the spotlight word: a short beat, then the next clue.
+    game = { ...game, spotlight: { ...game.spotlight, endsAt: now + cfg.solveBeatS * 1000 } };
+  }
+  rt.game = game;
+  const s = game.solved[res.entryId];
+  const solve: CrosswordSolve = {
+    id: `${sceneId}:${game.puzzleNo}:${res.entryId}`,
+    sceneId,
+    puzzleId: puzzle.id,
+    entryId: res.entryId,
+    playerId: m.playerId,
+    name,
+    points: res.points,
+    at: s.at,
+    ...(res.kind === "late" ? { late: true } : {}),
+    ...(m.sim ? { sim: true } : {}),
+  };
+  try {
+    await deps.db.crosswordSolves.append(solve);
+  } catch (err) {
+    log(TAG, `solve log failed`, { sceneId, entryId: res.entryId, err: String(err) });
+  }
+  log(TAG, `${res.kind}`, { sceneId, entryId: res.entryId, playerId: m.playerId, points: res.points, sim: !!m.sim });
+  return res.entryId;
+}
+
+/**
  * A Desk command. pause / resume freeze and thaw the clock; skipClue moves the
  * spotlight on and leaves the word open; reveal has the host fill the
  * spotlight word; nextPuzzle finishes the puzzle now (the host fills the rest)
- * and goes to the finale — from the finale or idle it moves straight on.
- * Returns false when there is no runner for the scene.
+ * and goes to the finale — from the finale or idle it moves straight on. It
+ * acts only while the host plays: on a parked game it would stamp a play
+ * nobody sees. A no-op says why. Returns null when there is no runner.
  */
 export async function commandTo(
   state: CrosswordRunnerState,
@@ -558,25 +671,26 @@ export async function commandTo(
   command: CrosswordCommand,
   now: number,
   deps: CrosswordRunnerDeps,
-): Promise<boolean> {
+): Promise<CommandResult | null> {
   const rt = state.scenes.get(sceneId);
-  if (!rt) return false;
-  await locked(rt, async () => {
+  if (!rt) return null;
+  return locked(rt, async (): Promise<CommandResult> => {
     const g = rt.game;
     const clock = clockOf(rt, now);
+    const noop = (note: string): CommandResult => ({ applied: false, note });
     switch (command) {
       case "pause":
-        if (g.paused) return;
+        if (g.paused) return noop("already paused");
         rt.game = { ...g, paused: true };
         syncFreeze(rt, now);
         break;
       case "resume":
-        if (!g.paused) return;
+        if (!g.paused) return noop("not paused");
         rt.game = { ...g, paused: false };
         syncFreeze(rt, now);
         break;
       case "skipClue": {
-        if (g.phase !== "playing" || !rt.puzzle) return;
+        if (g.phase !== "playing" || !rt.puzzle) return noop("no clue is in play");
         const cur = g.spotlight?.entryId;
         moveSpotlight(rt, clock, cur && !g.solved[cur] ? cur : undefined);
         break;
@@ -584,12 +698,17 @@ export async function commandTo(
       case "reveal": {
         const spot = g.spotlight;
         const entry = spot && rt.puzzle?.entries.find((e) => e.id === spot.entryId);
-        if (g.phase !== "playing" || !spot || !entry || g.solved[entry.id]) return;
+        if (g.phase !== "playing" || !spot || !entry || g.solved[entry.id]) return noop("no open word in the spotlight");
         rt.game = { ...revealEntry(g, entry, clock), spotlight: { ...spot, endsAt: clock + rt.cfg.revealHoldS * 1000 } };
         break;
       }
       case "nextPuzzle":
-        if (g.phase === "idle") return startNext(rt, now, deps);
+        if (!hostPlays(rt)) return noop("the host is not playing (no live run, and Play off air is off)");
+        if (g.phase === "idle") {
+          await startNext(rt, now, deps);
+          log(TAG, `command ${command}`, { sceneId });
+          return rt.game.phase === "idle" ? noop(rt.stockNote ?? "no puzzle to play") : { applied: true };
+        }
         if (g.phase === "finale") {
           rt.game = { ...g, phaseEndsAt: clock };
         } else {
@@ -600,8 +719,8 @@ export async function commandTo(
     }
     log(TAG, `command ${command}`, { sceneId });
     await commit(rt, now, deps);
+    return { applied: true };
   });
-  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -611,7 +730,6 @@ export async function commandTo(
 
 let state = newCrosswordRunnerState();
 let timer: ReturnType<typeof setInterval> | null = null;
-let ticking = false;
 
 /** The live deps: the app db and the worker → socket relay. */
 export async function crosswordDeps(): Promise<CrosswordRunnerDeps> {
@@ -628,19 +746,20 @@ export async function submitAnswers(sceneId: string, msgs: CrosswordChatAnswer[]
 }
 
 /** A Desk command for a scene; see `commandTo`. */
-export async function runCommand(sceneId: string, command: CrosswordCommand): Promise<boolean> {
+export async function runCommand(sceneId: string, command: CrosswordCommand): Promise<CommandResult | null> {
   return commandTo(state, sceneId, command, Date.now(), await crosswordDeps());
 }
 
+/**
+ * Not guarded as a whole: `step` never overlaps a poll with a poll, or a
+ * scene's advance with its own last one, so one slow scene never holds the
+ * clock of the others.
+ */
 async function tick(): Promise<void> {
-  if (ticking) return; // a slow poll must never overlap the next tick
-  ticking = true;
   try {
     await step(state, Date.now(), await crosswordDeps());
   } catch (err) {
     log(TAG, `tick failed`, String(err));
-  } finally {
-    ticking = false;
   }
 }
 
@@ -651,7 +770,7 @@ export function startCrosswordRunner(): void {
   log(TAG, `started`, { tickMs: CROSSWORD_TICK_MS, pollMs: CROSSWORD_POLL_MS });
 }
 
-/** Stop the crossword host. Idempotent. Every change is already saved. */
+/** Stop the crossword host. Idempotent. Every change is saved or queued to be. */
 export function stopCrosswordRunner(): void {
   if (timer) clearInterval(timer);
   timer = null;

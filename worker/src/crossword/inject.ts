@@ -15,6 +15,7 @@ import {
   commandTo,
   crosswordDeps,
   crosswordRunnerState,
+  pollNow,
   submitAnswersTo,
   type CrosswordRunnerDeps,
   type CrosswordRunnerState,
@@ -34,6 +35,9 @@ export async function handleInject(
   const notRunning = () =>
     new UnrecoverableError(`crossword.inject: the host is not running on "${sceneId}" (not a crossword channel, or not enabled)`);
 
+  // Just after boot the runner may not have polled yet: poll once before failing.
+  if (!state.scenes.has(sceneId)) await pollNow(state, now, deps);
+
   if (payload.kind === "sim") {
     const name = String(payload.name ?? "").trim();
     const text = String(payload.text ?? "");
@@ -47,8 +51,12 @@ export async function handleInject(
     if (!CROSSWORD_COMMANDS.includes(payload.command)) {
       throw new UnrecoverableError(`crossword.inject: unknown command "${String(payload.command)}"`);
     }
-    if (!(await commandTo(state, sceneId, payload.command, now, deps))) throw notRunning();
-    return { kind: "command", command: payload.command };
+    const res = await commandTo(state, sceneId, payload.command, now, deps);
+    if (!res) throw notRunning();
+    // A no-op (e.g. Next puzzle on a parked game) says why; the Desk shows it.
+    return res.applied
+      ? { kind: "command", command: payload.command }
+      : { kind: "command", command: payload.command, applied: false, note: res.note };
   }
   throw new UnrecoverableError(`crossword.inject: unknown kind "${String((payload as { kind?: unknown })?.kind)}"`);
 }
