@@ -8,11 +8,12 @@
 
 ## Count summary
 
-**54 external-source entries** are documented:
+**59 external-source entries** are documented:
 
 - **43** APIs, feeds, buckets, or live-data integrations
 - **6** browser-fetched map/media services
 - **5** build-time or seed-time downloads
+- **5** sources behind the imported crossword word bank
 
 Some entries group multiple upstream models—for example DWD ICON and the
 Open-Meteo national-model family—so the number of individual datasets/models is
@@ -54,6 +55,7 @@ job running. Check the worker repeatable-job list and the latest Mongo timestamp
 | P1 | Nominatim results and Open-Meteo climate charts have no obvious on-screen credit. | Both services require attribution; public Nominatim also has strict usage limits. | Add OSM/Open-Meteo credits and cache/throttle geocoding to at most 1 request/second. |
 | P1 | IOC tide code uses an HTTP-only, keyless endpoint, while the current IOC help page asks API users to register. | Cleartext transport and access-policy drift are operational risks. | Ask IOC/VLIZ for the supported HTTPS/authenticated endpoint and migrate. |
 | P1 | Windy, TfL and National Highways attribution is rendered in `CamViewer`, but any other camera presentation must independently use that component or render `cam.attribution`. | Credits can vanish in alternate cards/broadcast compositions. | Centralise camera media + attribution rendering and test every display path. |
+| P1 | Crossword clues are written from Wiktionary definitions (CC BY-SA / GFDL), and the word bank carries wordfreq scores (CC BY-SA 4.0). | A clue paraphrased from a definition may be a derivative of share-alike text; both sources expect credit. | Credit Wiktionary and wordfreq on the crossword channel (About card or description) before puzzles air; see the crossword word bank section. |
 | P2 | Most service-specific environment variables are absent from `.env.sample` and the README. | Operators cannot easily tell what is active, keyed, or intentionally disabled. | Add a commented “external services” section generated from this register. |
 
 ## Weather and ocean model inputs
@@ -167,6 +169,25 @@ expose the viewer IP/referrer to the provider.
 Generated country bounds in `shared/src/countries.generated.ts` ultimately come
 from the local Natural Earth `countries.geojson` asset.
 
+## Crossword word bank (imported)
+
+The crossword channel's words come from the February prototype's word bank
+(`../crosswords`, `python/words-tools`), imported whole by the operator into
+`crosswordbankwords` / `crosswordbankclues` (docs/crossword-mode-plan.md §7.2).
+Nothing here is fetched by this app: the sources were used offline by the
+prototype's pipeline, and their data travels inside the imported documents
+(raw definitions, validation verdicts, frequency scores). The licences below
+were written from the projects' published terms as last known; confirm the
+exact versions the prototype pipeline downloaded and record them here.
+
+| Status | Source / owner | What it supplies | Where it enters | Credit / licence note | What to watch |
+| --- | --- | --- | --- | --- | --- |
+| **Manual (import)** | **Wiktionary** (Wikimedia contributors), extracted by **Kaikki.org** / wiktextract (Tatu Ylonen) | The word list itself (1,011,999 words ingested), parts of speech, senses and raw definitions; the stored clues were written from these definitions | Imported `crosswordbankwords.senses`; read by `db.crosswordBank` (Words admin, the puzzle builder) | Wiktionary text is dual-licensed **CC BY-SA 4.0** (older revisions 3.0) and **GFDL**; Kaikki's extracts carry the same licence. Credit `Definitions from Wiktionary (CC BY-SA)`. [Wiktionary licensing](https://en.wiktionary.org/wiki/Wiktionary:Copyrights), [Kaikki](https://kaikki.org/) | Share-alike reach of clues paraphrased from definitions (WP11's model polish works from them); definitions shown on admin pages only. |
+| **Manual (import)** | **WordNet** (Princeton University), or Open English WordNet | One of the four "is it a real word" checks | Validation verdict in `crosswordbankwords.validation` | Princeton WordNet 3.x: permissive WordNet licence (keep the copyright notice); Open English WordNet: **CC BY 4.0**. Confirm which one the pipeline used. [WordNet licence](https://wordnet.princeton.edu/license-and-commercial-use) | Credit if the Open English WordNet was the one used. |
+| **Manual (import)** | **SCOWL** (Spell Checker Oriented Word Lists, Kevin Atkinson) | Word-list check (accepted-word evidence) | Validation verdict | Permissive MIT-like licence; keep the copyright and licence file with any redistributed list. [SCOWL](http://wordlist.aspell.net/scowl-readme/) | Nothing airs from it directly. |
+| **Manual (import)** | **Hunspell** dictionaries (en_US / en_GB) | Spelling check (accepted-word evidence) | Validation verdict | Engine MPL 1.1 / GPL 2 / LGPL 2.1; the en_US dictionary derives from SCOWL, other English dictionaries vary (some LGPL). Used for checking only, not redistributed. [Hunspell](https://hunspell.github.io/) | Nothing airs from it directly. |
+| **Manual (import)** | **wordfreq** (Robyn Speer) | Zipf frequency score per word: the difficulty dial (`minZipf`) and the frequency bands on the Words page | `crosswordbankwords.validation.zipf`; the builder's candidate pick | Code Apache 2.0; the **data is CC BY-SA 4.0** and built from sources that include Wikipedia, OpenSubtitles and others. Credit `Word frequencies from wordfreq (CC BY-SA 4.0)`. [wordfreq](https://github.com/rspeer/wordfreq) | The project stopped updating its data in 2024; a re-import will not move scores. |
+
 ## External-service configuration index
 
 These are names only. Never put their values in this register or in tickets/logs.
@@ -236,6 +257,9 @@ only when the corresponding source is actually visible:
   PlaneSpotters photographer + source link.
 - Place/content: `© OpenStreetMap contributors`, `GeoNames`, `Open-Meteo`, and
   article/image-specific Wikimedia credits.
+- Crossword channel: `Definitions from Wiktionary (CC BY-SA)` and
+  `Word frequencies from wordfreq (CC BY-SA 4.0)` (plus Open English WordNet if
+  that was the WordNet used).
 - Cameras: the persisted `cam.attribution.requiredText` and link beside the
   media, not only in a separate legal page.
 
