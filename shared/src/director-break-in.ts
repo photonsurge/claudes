@@ -12,7 +12,7 @@
  * the 20 min / 6 h windows, quakes + storms + eruptions, round-ups off, and
  * thresholds that follow the channel's pool bar exactly.
  *
- * See docs/director-programme-plan.md §3.2 and §3.5.
+ * See docs/done/director-programme-plan.md §3.2 and §3.5.
  */
 import type { SeverityRank } from "./db/alert-model";
 import type { SegmentKind, VolcanoLevel } from "./director";

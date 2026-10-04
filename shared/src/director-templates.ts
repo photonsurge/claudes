@@ -7,7 +7,7 @@
  * channel's looks and slides (`kindLooks`, `kindSlides`, `activeSlideId`), its
  * break-in rules, or the live controls (`mode`, `skipNonce`).
  *
- * See docs/director-programme-plan.md §7.3.
+ * See docs/done/director-programme-plan.md §7.3.
  */
 import {
   DEFAULT_DIRECTOR_CONFIG,

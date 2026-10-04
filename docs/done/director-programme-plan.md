@@ -1,32 +1,67 @@
 # Director programme plan — per-channel config, break-ins, commands and viewer chat
 
-> **Status: Phases 1–9 BUILT** (combined 2026-10-04; phase 1 on
-> `claude/director-phase1-foundations`, phases 2–9 on
-> `claude/director-phase2-admin-cards`, one commit per phase). Still open from
-> phase 9: the `viewer` ticker kind (`chat.promoteToTicker` has no ticker
-> behind it yet) and Twitch/Kick (no pollers yet). Built differently from the
-> text below: a mod's `:clear` drops viewers' requests only, never the
-> operator's; a `:mode` look always waits for the next shot change; the
-> `ocean` template sets a slower depth cycle (`tempo.depthCycleS`) since there
-> is no depth-cycle switch; Copy from channel also leaves out `mode` and
-> `script`. Merged into `singleVideos` alongside scripted shorts: the single-item
-> builders live in `worker/src/director/builders.ts`, the "coming up" preview
-> in `upnext.ts`, and `cut.ts` is the script runner's entry to the one cut path
-> in `runner.ts`. Commands and viewer requests are refused while a script plays. This document
+> **Status: CLOSED** (2026-10-04). All nine phases built and merged into
+> `singleVideos` (`5c793eb`). What was built, and where it differs from the
+> plan text below, is in [What was done](#what-was-done) — read that first;
+> the rest of the document is the plan as written. This document
 > **replaces four plans** written on 2026-09-12 that kept pointing at each
 > other: the per-channel director config plan, the director break-ins plan,
 > the director commands plan and the viewer chat interaction plan. The
-> originals are in git history (`git log -- docs/director-break-in-plan.md`
-> and so on). Each section below notes which original it came from (`[cfg]`,
-> `[brk]`, `[cmd]`, `[chat]`) so earlier discussion can still be traced.
+> originals sit next to this file in `docs/done/`, marked closed. Each
+> section below notes which original it came from (`[cfg]`, `[brk]`, `[cmd]`,
+> `[chat]`) so earlier discussion can still be traced.
 >
 > Everything was re-checked against the code on `singleVideos` (`3fe9fca`).
 > The constants, the loop's cut path and the chat poller are still as the
 > originals described them. One thing has changed since: the
-> [scene settings refinement](./scene-settings-refinement-plan.md) shipped on
+> [scene settings refinement](../scene-settings-refinement-plan.md) shipped on
 > 2026-09-13. `/admin/scenes/:id` now has a draft that owns the data, a card
 > catalog and a group rail, so this plan uses that card contract (§7) rather
 > than the per-card fetch/`epoch` pattern the originals assumed.
+
+## What was done
+
+Built 2026-10-04, one commit per phase: phase 1 on
+`claude/director-phase1-foundations`, phases 2–9 on
+`claude/director-phase2-admin-cards`, then merged into `singleVideos` in
+`5c793eb` alongside the scripted-shorts work.
+
+| Phase | Commit | What shipped |
+|---|---|---|
+| 1 Foundations | `11fbc97` | `shared/director-tuning.ts` (rotation / pools / tours / tempo buckets, defaults = the old constants), `shared/director-break-in.ts` (`BreakInConfig`, `qualifiesAsBreakIn`), `Candidate.breakIn` replacing `breaking`, single-item builders, one `performCut`, `Segment.tempo` read by `/watch` |
+| 2 Admin cards | `7112db8` | Pacing, Holds, Pools, Tours, Looks and Break-ins cards in the Programme group; "director" card retitled Content |
+| 3 Operator commands | `06de299` | `director_commands` queue, `arbitrate`, Take / Go to / Hold / Pause / Skip / Clear routes, command bar and queue readout on `/control`, `AirEntry.command` |
+| 4 Break-ins | `7973c78` | `FreshEventWatch`, interrupt and boundary modes, burst grouping (`break-in-items` slide), as-run counters and chips |
+| 5 INCOMING reticle | `6f69628` | `incomingPhaseAt`, reticle pre-roll, deck badge "acquiring" ring |
+| 6 Places and round-ups | `42db2c5` | `director-places.ts` resolver, Go to a place / city, round-up targets, round-up break-ins, `leadSlide` |
+| 7 Chat foundation | `be4b32f` | `chat-policy.ts`, `viewer.ts` + `viewer_state`, `handleChatBatch`, music / palette picks with sweep, chat simulator, Viewers group card, viewer requests panel |
+| 8 Viewers steer the director | `9efbc52` | `:show` / `:go` / kind words / `:roundup` / `:mode <look>` / mod `:next` and `:clear` as viewer queue rows; `everyS` pacing; `requestedBy` "REQUESTED BY @x" on air; `Segment.mapTypes` |
+| 9 Templates and polish | `f8be2fd` | `director-templates.ts` (maps / events / ocean / full feed), Apply template and Copy from channel, top requesters |
+
+**Built differently from the text below**
+
+- A mod's `:clear` drops viewers' requests only, never the operator's.
+- A `:mode` look always waits for the next shot change, on every channel.
+- The `ocean` template slows the depth cycle (`tempo.depthCycleS`); there is
+  no depth-cycle on/off switch to set.
+- Copy from channel leaves out `mode` and `script` as well as `skipNonce` /
+  `activeSlideId`.
+- Round-up slides lead the whole deck, ahead of the lede (the scripted-shorts
+  rule from `singleVideos`), not straight after it.
+
+**Merged with scripted shorts (`singleVideos`)**
+
+- The single-item builders live in `worker/src/director/builders.ts` with that
+  branch's signatures; the "coming up" preview is in `upnext.ts`; `cut.ts` is
+  the script runner's entry to the one cut path in `runner.ts`.
+- A clip's own `tourDwellMs` beats the channel's `tempo.stopDwellMs`.
+- Operator commands and viewer requests are refused while a script plays
+  ("a scripted video is playing").
+
+**Not built (still open)**
+
+- The `viewer` ticker kind: `chat.promoteToTicker` has no ticker behind it yet.
+- Twitch / Kick chat: no pollers yet.
 
 ## What this delivers
 
@@ -49,6 +84,7 @@ One auto-director per channel that:
 
 ## Contents
 
+- What was done (built, differences, still open)
 0. What exists today
 1. Guiding decisions
 2. How the pieces fit: inputs, precedence, layers

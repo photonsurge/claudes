@@ -124,7 +124,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
   { id: "pace", title: "Reading pace", group: "presentation", bucket: "control", fields: ["readPaceCps"] },
 
   // Programme — the director. Titles carry no "Director:" prefix: the group
-  // heading already says what they are (docs/director-programme-plan.md §7.1).
+  // heading already says what they are (docs/done/director-programme-plan.md §7.1).
   {
     id: "director",
     title: "Content",

@@ -4,8 +4,8 @@
 > preview on `/admin/shorts`); not yet run against real data. Next: WP5 render. Planned on Fable, executed
 > by Opus sub-agents: the work packages in §10 are handed over one at a time.
 > Phase 1 is landscape video through a live run. Phase 2 is Shorts (§9).
-> Shares two refactors with [director-break-in-plan.md](./director-break-in-plan.md) and
-> [director-commands-plan.md](./director-commands-plan.md) (see §3). Whichever lands
+> Shares two refactors with [director-break-in-plan.md](./done/director-break-in-plan.md) and
+> [director-commands-plan.md](./done/director-commands-plan.md) (see §3). Whichever lands
 > first does them; the other reuses them.
 
 A routine makes a short, finite video. It opens on a place (a country, an area or the

@@ -9,7 +9,7 @@
  * default is the constant it replaced, verbatim — shipping this changes no
  * channel's behaviour until an operator saves a different number.
  *
- * See docs/director-programme-plan.md §3.1.
+ * See docs/done/director-programme-plan.md §3.1.
  */
 
 /** How far apart consecutive shots must be, and what selection remembers. */

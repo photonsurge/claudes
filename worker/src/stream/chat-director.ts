@@ -10,7 +10,7 @@
  *   :mode aurora (a map look, always at the next shot change)
  *   :next · :clear (mods, when the channel allows them)
  *
- * See docs/director-programme-plan.md §5.
+ * See docs/done/director-programme-plan.md §5.
  */
 import type { AppDb } from "@photonsurge/shared/db/index";
 import type { SegmentKind } from "@photonsurge/shared/director";
