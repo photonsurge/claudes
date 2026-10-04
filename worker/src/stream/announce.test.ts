@@ -149,6 +149,17 @@ describe("announceRun", () => {
     expect(runs.get("r1").announceError.message).toContain("HYDRA_SITEID");
   });
 
+  it("sends HYDRA_IMAGE_ID as imageID and links the watch URL in markdown", async () => {
+    process.env.HYDRA_IMAGE_ID = "img-1";
+    runs.set("r1", liveRun());
+    await announceRun("r1");
+    delete process.env.HYDRA_IMAGE_ID;
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.imageID).toBe("img-1");
+    expect(body.contentMarkdown).toContain("[Watch live on YouTube](https://youtu.be/abc)");
+  });
+
   it("clears a previous announceError on success", async () => {
     runs.set("r1", liveRun({ announceError: { at: 1, attempts: 2, message: "old" } }));
     await announceRun("r1");

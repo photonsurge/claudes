@@ -2,6 +2,8 @@
  * "Notify the world" — when an announce-flagged run commits live, publish a blog
  * post (and optional social fan-out) through hydra's site-content API:
  *
+ * Optional HYDRA_IMAGE_ID = hydra image id used as the post's hero image.
+ *
  *   POST ${HYDRA_ENDPOINT}/api/v1/sites/${HYDRA_SITEID}/blogs
  *   Authorization: Bearer ${HYDRA_API_TOKEN}   (a `hydra_site_…` site API key)
  *
@@ -26,6 +28,7 @@ interface HydraConfig {
   siteId: string;
   token: string;
   categoryId: string;
+  imageId: string;
   socialPageIds: string[];
   socialMode: "draft" | "send";
 }
@@ -41,6 +44,7 @@ function hydraConfig(): HydraConfig | null {
     siteId,
     token,
     categoryId,
+    imageId: (process.env.HYDRA_IMAGE_ID || "").trim(),
     socialPageIds: (process.env.HYDRA_SOCIAL_PAGE_IDS || "")
       .split(",")
       .map((s) => s.trim())
@@ -88,7 +92,7 @@ export function buildAnnouncement(
 
   return {
     name: `Live now: ${title}`.slice(0, 200),
-    description: `${sceneName} is live${on} — ${title}. Watch: ${extras.watchUrl}`.slice(0, 1000),
+    description: `${sceneName} is live${on} — ${title}.`.slice(0, 1000),
     categoryID: extras.categoryId,
     slug: ["live", slugify(title), run.id.slice(0, 8)].filter(Boolean).join("-"),
     contentMarkdown: [
@@ -96,9 +100,7 @@ export function buildAnnouncement(
       "",
       `${sceneName} is live on YouTube${on}, since ${when}.`,
       "",
-      "Watch live:",
-      "",
-      extras.watchUrl,
+      `[Watch live on YouTube](${extras.watchUrl})`,
       "",
       blurb + alwaysOn,
     ].join("\n"),
@@ -188,6 +190,7 @@ export async function announceRun(runId: string): Promise<void> {
   const post = buildAnnouncement(run, { watchUrl, sceneName, channelTitle, categoryId: cfg.categoryId });
   const body = {
     ...post,
+    ...(cfg.imageId ? { imageID: cfg.imageId } : {}),
     publish: true,
     ...(cfg.socialPageIds.length
       ? { social: { pageIDs: cfg.socialPageIds, count: 1, mode: cfg.socialMode } }
