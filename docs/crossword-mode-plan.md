@@ -939,6 +939,22 @@ What the first build has to change to match this plan:
   `/admin/crosswords/channels/:id` (Look, Game, YouTube) with one Save bar; per-row
   Settings / Control / YouTube channel on the Channels list.
 
+### Decisions taken during the rework, for the operator to confirm
+
+- **Replay rather than idle.** §4.4 says a channel goes idle once every ready puzzle is
+  among its last 30; §7.5 says a channel whose pool is too small replays. The build
+  follows §7.5: the no-repeat window is a preference, and when every eligible puzzle is
+  inside it the channel replays the one it played longest ago. It is idle only with no
+  eligible ready puzzle at all. Say if a live stream should rather show the holding card.
+- **Withdrawal cascade.** Rejecting a word or clue, returning it to pending, or editing an
+  approved clue takes every ready puzzle using it out of play; removing a family-friendly
+  tag clears the puzzle's tag. A puzzle withdrawn while on air finishes its current clue
+  and ends without revealing its open words.
+- **One host per channel.** Game saves are conditional on `seq`; a worker that loses a
+  write stands down from that channel, so two workers never run one game.
+- **Dev marker.** Puzzles built under `CROSSWORD_ALLOW_UNAPPROVED` are marked and never
+  play unless that switch is on.
+
 Notes that still hold from the first build:
 - **Spotlight tie-break**: most letters showing, then the longest word, then the lowest
   number, so that "the first pick is the longest word" holds.
