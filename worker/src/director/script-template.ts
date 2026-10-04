@@ -44,9 +44,11 @@ import {
   TARGET_WORLD_ROUNDUP,
   TARGET_WORLD_SPIN,
   TOUR_DWELL_MAX_MS,
+  shortPlaceName,
   type RoundupDepth,
   type ShortClip,
   type ShortInclude,
+  type ShortPlace,
   type ShortScope,
 } from "@photonsurge/shared/short-script";
 import {
@@ -102,7 +104,26 @@ export interface LineupOptions {
   readCps?: number;
   /** The format's opener and close; defaults to a new format's. */
   shape?: LineupShape;
+  /** Several places: open on the world round-up before the first place
+   *  (the format's `template.openWithWorld`). Ignored for other scopes. */
+  openWithWorld?: boolean;
   now?: number;
+}
+
+/** A place (or the world round-up) a several-places video left out, and why. */
+export interface SkippedPlace {
+  /** "country:usa" · "area:europe" · "world" (the world round-up opener). */
+  place: string;
+  /** Its display name ("United States"). */
+  name: string;
+  reason: string;
+}
+
+/** What `buildLineup` writes. `skipped` is only set for a several-places video. */
+export interface Lineup {
+  title: string;
+  clips: ShortClip[];
+  skipped?: SkippedPlace[];
 }
 
 type EventKind = keyof ShortInclude;
@@ -381,25 +402,105 @@ export function lineupTitle(rs: ResolvedScope, include: ShortInclude): string {
   return kinds.length ? `${name} — ${listWords(kinds.map((k) => KIND_WORDS[k]))}` : `${name} round-up`;
 }
 
+/** "Europe, United States and Asia round-up"; past three places, "Europe,
+ *  United States, Asia and 3 more round-up". */
+export function placesTitle(names: string[]): string {
+  const shown = names.length > 3 ? [...names.slice(0, 3), `${names.length - 3} more`] : names;
+  return `${listWords(shown)} round-up`;
+}
+
+/** Why a place's opener couldn't be built, in a few words for the result. */
+const skipReason = (err: unknown): string => {
+  const msg = String((err as Error)?.message ?? err);
+  if (/No usable round-up/.test(msg)) return "no usable round-up";
+  return msg;
+};
+
+/**
+ * Several places in one video (§4, `places` scope). Round-up only: the include
+ * switches are ignored. One clip per place, in the order given — each that
+ * place's opener (its tour, the round-up leading as the format says), as long
+ * as the round-up takes to read at the format's depth. The world round-up opens
+ * it when `openWithWorld` is set and one is fresh. It closes on a world spin
+ * (the format's close length; none when the format's close is off).
+ *
+ * A place with no usable round-up (or an id the catalog no longer knows) is
+ * left out and named in `skipped`; so is a world opener with nothing fresh.
+ * With no place left it is an error.
+ */
+async function buildPlacesLineup(
+  db: AppDb,
+  cfg: DirectorConfig,
+  places: ShortPlace[],
+  opts: { budgetMs: number; readCps: number; shape: LineupShape; openWithWorld: boolean; now: number },
+): Promise<Lineup> {
+  const { shape, readCps, now } = opts;
+  const skipped: SkippedPlace[] = [];
+  const clips: ShortClip[] = [];
+  const kept: string[] = [];
+  for (const place of places) {
+    const name = shortPlaceName(place);
+    try {
+      const rs = await resolveScope(db, place);
+      const { plan } = await bookends(db, cfg, rs, true, readCps, shape, now);
+      clips.push(sizeOpener(plan, plan.naturalMs, MAX_CLIP_MS));
+      kept.push(name);
+    } catch (err) {
+      skipped.push({ place: `${place.type}:${place.id}`, name, reason: skipReason(err) });
+    }
+  }
+  if (!clips.length) {
+    const why = skipped.map((s) => `${s.name}: ${s.reason}`).join("; ");
+    throw new Error(
+      `No usable round-up for any of the ${places.length} places (${why}). ` +
+        `Switch round-ups on at /admin/place-roundups and let them generate.`,
+    );
+  }
+
+  if (opts.openWithWorld) {
+    const world = await freshWorldRoundup(db, cfg, now);
+    if (world) {
+      const spinMs = kindHoldMs(cfg, "global");
+      const durationMs = Math.min(MAX_CLIP_MS, Math.max(spinMs, world.segment.holdMs));
+      clips.unshift({ id: randomUUID(), target: TARGET_WORLD_ROUNDUP, durationMs, label: refreshClipLabel(world.segment) });
+    } else {
+      skipped.push({ place: "world", name: "World", reason: "no fresh world round-up" });
+    }
+  }
+
+  if (shape.close.enabled) {
+    const spin = worldSpinCandidate(cfg).segment;
+    const closeMs = Math.max(MIN_CLIP_MS, Math.min(shape.close.ms, Math.floor(opts.budgetMs / 2)));
+    clips.push({ id: randomUUID(), target: TARGET_WORLD_SPIN, durationMs: closeMs, label: refreshClipLabel(spin) });
+  }
+  return { title: placesTitle(kept), clips, skipped };
+}
+
 /**
  * Write a lineup for `scope`: opener, events, close (when the format has one).
  * With events the total is at most the budget; round-up only, the opener takes
  * its natural length (up to MAX_CLIP_MS). A quiet scope is just the opener and
  * the close. Throws for an unknown country/area id, and for a round-up-only
- * video with no round-up.
+ * video with no round-up. A `places` scope is its own lineup
+ * (`buildPlacesLineup`): round-up only, whatever the switches say.
  */
-export async function buildLineup(
-  db: AppDb,
-  cfg: DirectorConfig,
-  opts: LineupOptions,
-): Promise<{ title: string; clips: ShortClip[] }> {
+export async function buildLineup(db: AppDb, cfg: DirectorConfig, opts: LineupOptions): Promise<Lineup> {
   const now = opts.now ?? Date.now();
-  const include = opts.include ?? ROUNDUP_ONLY;
-  const roundupOnly = isRoundupOnly(include);
   // Two clips need room to exist at all.
   const budgetMs = Math.max(2 * MIN_CLIP_MS, Math.round(opts.budgetMs ?? DEFAULT_SHORT_BUDGET_MS));
   const readCps = clampReadCps(opts.readCps ?? DEFAULT_READ_CPS);
   const shape = opts.shape ?? defaultShortFormat();
+  if (opts.scope.type === "places") {
+    return buildPlacesLineup(db, cfg, opts.scope.places, {
+      budgetMs,
+      readCps,
+      shape,
+      openWithWorld: opts.openWithWorld === true,
+      now,
+    });
+  }
+  const include = opts.include ?? ROUNDUP_ONLY;
+  const roundupOnly = isRoundupOnly(include);
   const rs = await resolveScope(db, opts.scope);
   const { plan, close } = await bookends(db, cfg, rs, roundupOnly, readCps, shape, now);
   const title = lineupTitle(rs, include);

@@ -203,6 +203,52 @@ describe("buildChapters", () => {
     expect(c.label.endsWith("…")).toBe(true);
   });
 
+  it("a six-place round-up video: one chapter per place, named for it, the short closing spin dropped", () => {
+    // As the script runner airs it (short-video plan §4, §6.3): a 3 s lead-in,
+    // one opener per place in order (country clips carry the flag), a 6 s
+    // world spin to close, then the lead-out.
+    const place = (segmentId: string, kind: string, title: string, subtitle: string, icon?: string) => ({
+      segmentId,
+      kind,
+      title,
+      subtitle,
+      ...(icon ? { icon } : {}),
+    });
+    const at = (entry: ReturnType<typeof place>, offsetS: number, endS: number): AsRunItem<ReturnType<typeof place>> => ({
+      type: "cut",
+      entry,
+      offsetMs: offsetS * 1000,
+      endOffsetMs: endS * 1000,
+      clippedStart: false,
+      clippedEnd: false,
+    });
+    const items = [
+      gap(0, 3),
+      at(place("region:europe", "region", "Europe", "Area tour · Regional weather"), 3, 61),
+      at(place("country:usa", "country", "United States", "Country tour · National weather", "🇺🇸"), 61, 112),
+      at(place("region:asia", "region", "Asia", "Area tour · Regional weather"), 112, 170),
+      at(place("country:australia", "country", "Australia", "Country tour · National weather", "🇦🇺"), 170, 215),
+      at(place("region:africa", "region", "Africa", "Area tour · Regional weather"), 215, 266),
+      at(place("region:south_america", "region", "South America", "Area tour · Regional weather"), 266, 318),
+      at(place("global:world", "global", "Global Weather", ""), 318, 324),
+      gap(324, 329),
+    ];
+    const chapters = buildChapters(items, { maxChars: 5000, openingLabel: "Main areas round-up", subtitles: false });
+    expect(chapters.length).toBeGreaterThanOrEqual(3);
+    expect(chapters.map((c) => c.line)).toEqual([
+      "0:00 Europe",
+      "1:01 🇺🇸 United States",
+      "1:52 Asia",
+      "2:50 🇦🇺 Australia",
+      "3:35 Africa",
+      "4:26 South America",
+    ]);
+    // A live channel keeps the caption.
+    expect(buildChapters(items, { maxChars: 5000, openingLabel: "x" })[1].label).toBe(
+      "🇺🇸 United States · Country tour · National weather",
+    );
+  });
+
   it("returns just the opener for a video with no usable cuts", () => {
     expect(buildChapters([gap(0, 600)], { maxChars: 5000, openingLabel: "Live globe" }).map((c) => c.line)).toEqual(["0:00 Live globe"]);
   });

@@ -1,6 +1,6 @@
 import type { Model } from "mongoose";
 import type { KindLook } from "../director";
-import type { ShortClip, ShortScript, ShortScriptPlay } from "../short-script";
+import type { ShortClip, ShortPlace, ShortScope, ShortScript, ShortScriptPlay } from "../short-script";
 import { DEFAULT_SHORT_FORMAT_ID } from "../short-scenes";
 import type { iShortScriptModel } from "./short-script-model";
 
@@ -53,7 +53,12 @@ function toValues(v: Record<string, unknown>): Record<string, string> {
 /** Canonical wire shape from a lean doc — drops `_id`/`__v`/timestamps and any
  *  unset optional path. */
 function toShortScript(doc: iShortScriptModel): ShortScript {
-  const scope = doc.scope.type === "globe" ? { type: "globe" as const } : { type: doc.scope.type, id: doc.scope.id };
+  const scope: ShortScope =
+    doc.scope.type === "globe"
+      ? { type: "globe" }
+      : doc.scope.type === "places"
+        ? { type: "places", places: (doc.scope.places ?? []).map((p: ShortPlace) => ({ type: p.type, id: p.id })) }
+        : { type: doc.scope.type, id: doc.scope.id };
   const script: ShortScript = {
     id: doc.id,
     formatId: doc.formatId || DEFAULT_SHORT_FORMAT_ID,

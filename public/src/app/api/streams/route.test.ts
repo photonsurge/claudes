@@ -16,14 +16,25 @@ const db = {
   ]),
   listStreamSlots: jest.fn(async () => []),
   shortRenders: { list: jest.fn(async () => [{ id: "y", encoderId: "obs-v1", status: "queued" }]) },
+  getOrInitBroadcastState: jest.fn(async () => ({ id: "default" })),
+  getScene: jest.fn(async (id: string) => ({ id })),
+  activeRunForScene: jest.fn(async () => null),
+  getStreamEncoder: jest.fn(async (id: string) =>
+    ({ "obs-v1": { id: "obs-v1", name: "gds1 video", url: "ws://b", enabled: true, use: "videos" }, "gpu-1": { id: "gpu-1", url: "ws://a", enabled: true } } as Record<string, unknown>)[id] ?? null,
+  ),
+  encoderForScene: jest.fn(async () => null),
+  createRun: jest.fn(async (r: any) => ({ id: "new-run", ...r })),
 };
 jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: jest.fn(async () => db) }));
 
 import { requireAdmin } from "../../../lib/require-admin";
-import { GET } from "./route";
+import { GET, POST } from "./route";
+import { sendToFore } from "@photonsurge/shared/bull/bull-queue";
 
 beforeEach(() => {
-  (requireAdmin as jest.Mock).mockResolvedValue(true);
+  (requireAdmin as jest.Mock).mockResolvedValue({ email: "op@example.com" });
+  db.createRun.mockClear();
+  (sendToFore as jest.Mock).mockClear();
 });
 
 it("returns each encoder's use and occupancy in the snapshot (short-video plan §6.2)", async () => {
@@ -42,4 +53,23 @@ it("still answers when the render queue can't be read", async () => {
   const res = await (GET as () => Promise<Response>)();
   expect(res.status).toBe(200);
   expect((await res.json()).encoders).toHaveLength(3);
+});
+
+describe("POST (channel go-live)", () => {
+  const post = (body: unknown) =>
+    (POST as (r: Request) => Promise<Response>)(new Request("http://x/api/streams", { method: "POST", body: JSON.stringify(body) }));
+
+  it("refuses an encoder assigned to videos with a clear 400, creating nothing", async () => {
+    const res = await post({ sceneId: "europe", encoderId: "obs-v1" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/encoder "gds1 video" is assigned to videos — a channel can't go live on it/);
+    expect(db.createRun).not.toHaveBeenCalled();
+    expect(sendToFore).not.toHaveBeenCalled();
+  });
+
+  it("goes live on a channel encoder", async () => {
+    const res = await post({ sceneId: "europe", encoderId: "gpu-1" });
+    expect(res.status).toBe(201);
+    expect(db.createRun).toHaveBeenCalledWith(expect.objectContaining({ sceneId: "europe", encoderId: "gpu-1" }));
+  });
 });

@@ -51,7 +51,7 @@ import {
   type ShortRender,
   type ShortRenderRequest,
 } from "@photonsurge/shared/short-render";
-import { sceneIdForScript, scriptDurationMs, type ShortScript } from "@photonsurge/shared/short-script";
+import { sceneIdForScript, scriptDurationMs, type ShortPlace, type ShortScript } from "@photonsurge/shared/short-script";
 import { PLACE_TIMEZONE, type ShortFormat } from "@photonsurge/shared/short-format";
 import { countryShot } from "@photonsurge/shared/director-countries";
 import {
@@ -157,6 +157,7 @@ export function resolveVideoText(
   siteUrl: string = watchBaseUrl(),
 ): ResolvedVideoText {
   // "place" = the video's own zone: no per-place zone is stored yet, so London.
+  // A several-places video has no single place and is London either way (§6.8).
   const tz =
     video.timezone && video.timezone !== PLACE_TIMEZONE && isValidTimeZone(video.timezone) ? video.timezone : VIDEO_TEXT_TIMEZONE;
   const vals = { ...values, duration: formatDuration(durationMs) };
@@ -266,20 +267,34 @@ export async function quotaAllowsRender(accountId: string, now = Date.now()): Pr
   return { ok: true };
 }
 
-/** Freshness of a place's round-up against the render's rule; null when fine (or not applicable). */
+/** Freshness of one place's round-up against `maxAgeHours`; null when fine. */
+async function stalePlaceRoundup(db: AppDb, place: ShortPlace, maxAgeHours: number, now: number): Promise<string | null> {
+  const placeId = place.type === "country" ? countryShot(place.id)?.iso2.toLowerCase() : place.id;
+  if (!placeId) return null;
+  const repo = place.type === "country" ? db.countryRoundups : db.regionRoundups;
+  const latest = await repo.latestForPlace(placeId).catch(() => null);
+  const limitMs = maxAgeHours * 3_600_000;
+  if (!latest?.generatedAt) return `no round-up for ${place.id}`;
+  const ageMs = now - new Date(latest.generatedAt).getTime();
+  if (ageMs <= limitMs) return null;
+  return `round-up for ${place.id} is ${Math.round(ageMs / 3_600_000)} h old (limit ${maxAgeHours} h)`;
+}
+
+/**
+ * Freshness of the render's round-ups against its rule; null when fine (or not
+ * applicable). A several-places video applies the rule per place (§8): the
+ * first place that fails it is the reason.
+ */
 async function staleRoundup(db: AppDb, render: ShortRender, now: number): Promise<string | null> {
   if (!render.roundup || render.what.type !== "generate") return null;
   const scope = render.what.scope;
-  if (scope.type !== "country" && scope.type !== "area") return null;
-  const placeId = scope.type === "country" ? countryShot(scope.id)?.iso2.toLowerCase() : scope.id;
-  if (!placeId) return null;
-  const repo = scope.type === "country" ? db.countryRoundups : db.regionRoundups;
-  const latest = await repo.latestForPlace(placeId).catch(() => null);
-  const limitMs = render.roundup.maxAgeHours * 3_600_000;
-  if (!latest?.generatedAt) return `no round-up for ${scope.id}`;
-  const ageMs = now - new Date(latest.generatedAt).getTime();
-  if (ageMs <= limitMs) return null;
-  return `round-up for ${scope.id} is ${Math.round(ageMs / 3_600_000)} h old (limit ${render.roundup.maxAgeHours} h)`;
+  const places: ShortPlace[] =
+    scope.type === "places" ? scope.places : scope.type === "country" || scope.type === "area" ? [scope] : [];
+  for (const place of places) {
+    const stale = await stalePlaceRoundup(db, place, render.roundup.maxAgeHours, now);
+    if (stale) return stale;
+  }
+  return null;
 }
 
 /** The format a render plays in, when it can be known without generating. */

@@ -2,8 +2,10 @@
 
 /**
  * Template card — what Generate starts from in this format (§5.2 `template`):
- * the format's name, the scope (a country, an area, the globe, or none so
- * Generate asks), the event switches, the length budget and, for videos of
+ * the format's name, the scope (a country, an area, the globe, several places
+ * in order — the ordered list editor with its "Main areas" quick-fill — or
+ * none so Generate asks), the event switches (ignored for several places:
+ * that video is round-up only), the length budget and, for videos of
  * several places, whether the world round-up opens it. A Generate request can
  * still override any of it. Stages whole `name` / `template` fields.
  */
@@ -22,6 +24,7 @@ import SettingsCard from "../../scenes/SettingsCard";
 import TuningField from "../../scenes/TuningField";
 import { useSceneDraft } from "../../scenes/SceneDraft";
 import { AREA_OPTIONS, COUNTRY_OPTIONS } from "../../../../lib/shorts";
+import PlacesEditor from "../PlacesEditor";
 
 type ScopeChoice = "none" | ShortScope["type"];
 
@@ -41,6 +44,7 @@ export default function FormatTemplateSettings() {
   const pickType = (type: ScopeChoice) => {
     if (type === "none") setTemplate({ scope: undefined });
     else if (type === "globe") setTemplate({ scope: { type: "globe" } });
+    else if (type === "places") setTemplate({ scope: { type: "places", places: t.scope?.type === "places" ? t.scope.places : [] } });
     else {
       const options = type === "country" ? COUNTRY_OPTIONS : AREA_OPTIONS;
       const keep = t.scope && t.scope.type === type ? t.scope.id : options[0]?.id ?? "";
@@ -48,7 +52,7 @@ export default function FormatTemplateSettings() {
     }
   };
   const placeOptions = choice === "country" ? COUNTRY_OPTIONS : AREA_OPTIONS;
-  const placeId = t.scope && t.scope.type !== "globe" ? t.scope.id : "";
+  const placeId = t.scope && (t.scope.type === "country" || t.scope.type === "area") ? t.scope.id : "";
 
   return (
     <SettingsCard
@@ -81,6 +85,7 @@ export default function FormatTemplateSettings() {
               <ToggleButton value="globe">Globe</ToggleButton>
               <ToggleButton value="area">Area</ToggleButton>
               <ToggleButton value="country">Country</ToggleButton>
+              <ToggleButton value="places">Several places</ToggleButton>
             </ToggleButtonGroup>
             {(choice === "area" || choice === "country") && (
               <TextField
@@ -99,6 +104,14 @@ export default function FormatTemplateSettings() {
               </TextField>
             )}
           </Stack>
+          {t.scope?.type === "places" && (
+            <Stack sx={{ mt: 1.5 }}>
+              <PlacesEditor
+                places={t.scope.places}
+                onChange={(places) => setTemplate({ scope: { type: "places", places } })}
+              />
+            </Stack>
+          )}
         </div>
 
         <div>

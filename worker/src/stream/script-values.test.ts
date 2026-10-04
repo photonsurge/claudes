@@ -77,4 +77,56 @@ describe("scriptValues", () => {
     expect(v).toMatchObject({ place: "World", placeId: "world", kind: "round-up", alerts: "0", quakes: "1", volcanoes: "0", top: "M6" });
     expect(v.headline).toBeUndefined();
   });
+
+  describe("several places", () => {
+    const at = (iso: string, summary: string) => ({ summary, generatedAt: new Date(iso) });
+    const placesDb = {
+      countryRoundups: {
+        latestForPlace: jest.fn(async (id: string) => (id === "us" ? at("2026-10-04T04:00:00Z", "Heat in Texas. More.") : null)),
+      },
+      regionRoundups: {
+        latestForPlace: jest.fn(async (id: string) =>
+          id === "europe" ? at("2026-10-04T05:00:00Z", "Storms in the north.") : id === "asia" ? at("2026-10-03T22:30:00Z", "Typhoon nears.") : null,
+        ),
+      },
+    } as unknown as AppDb;
+    const scope = {
+      type: "places" as const,
+      places: [
+        { type: "area" as const, id: "europe" },
+        { type: "country" as const, id: "usa" },
+        { type: "area" as const, id: "asia" },
+        { type: "area" as const, id: "africa" }, // left out at generate: no opener clip
+      ],
+    };
+    const clips = ["region:europe", "country:usa", "region:asia", "global:spin"].map((target, i) => ({
+      id: `c${i}`,
+      target,
+      durationMs: 1,
+      label: { title: target },
+    }));
+
+    it("joins the aired places' names, counts them, takes the OLDEST round-up's time and no flag", async () => {
+      const v = await scriptValues(placesDb, { scope, include: { ...NONE, alerts: true }, clips }, { formatName: "Main areas", roundupDepth: "summary" });
+      expect(v).toEqual({
+        kind: "round-up", // round-up only, whatever the switches
+        format: "Main areas",
+        place: "Europe, United States, Asia",
+        placeId: "places",
+        places: "3",
+        asOf: "23:30", // Asia's, 22:30 UTC the day before, in London
+        roundup: "Europe — Storms in the north.\n\nUnited States — Heat in Texas. More.\n\nAsia — Typhoon nears.",
+        alerts: "0",
+        quakes: "0",
+        volcanoes: "0",
+      });
+      expect(v.flag).toBeUndefined();
+      expect(v.headline).toBeUndefined();
+    });
+
+    it("a script whose clips name none of its places counts them all", async () => {
+      const v = await scriptValues(placesDb, { scope, include: NONE, clips: [] });
+      expect(v).toMatchObject({ place: "Europe, United States, Asia, Africa", places: "4" });
+    });
+  });
 });

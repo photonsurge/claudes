@@ -39,6 +39,7 @@ import type { ShortFormat } from "@photonsurge/shared/short-format";
 import type { ShortRender, ShortRenderRequest } from "@photonsurge/shared/short-render";
 import {
   scriptDurationMs,
+  shortPlaceName,
   type ShortInclude,
   type ShortScope,
   type ShortScript,
@@ -161,9 +162,17 @@ export default function RenderDialog({
     // A generate request has no values until it generates: show examples, with what is known.
     const ex = exampleVideoValues();
     if (format) ex.format = format.name;
-    if (target?.type === "generate" && target.scope.type !== "globe")
-      ex.place = scopeLabel(target.scope).replace(/^\w+ · /, "");
-    if (target?.type === "generate" && target.scope.type === "globe") ex.place = "World";
+    if (target?.type === "generate") {
+      const sc = target.scope;
+      if (sc.type === "globe") ex.place = "World";
+      else if (sc.type === "places") {
+        // As script-values stamps them for several places (§6.8).
+        ex.place = sc.places.map(shortPlaceName).join(", ");
+        ex.placeId = "places";
+        ex.places = String(sc.places.length);
+        ex.flag = "";
+      } else ex.place = scopeLabel(sc).replace(/^\w+ · /, "");
+    }
     return ex;
   }, [script, format, target, durationMs]);
   const resolvedTitle = format
@@ -213,7 +222,9 @@ export default function RenderDialog({
   const heading = script
     ? `“${script.title}” · ${formatDuration(durationMs)}`
     : target?.type === "generate"
-      ? `A new ${scopeLabel(target.scope).toLowerCase()} round-up, generated when it reaches the front`
+      ? target.scope.type === "places"
+        ? `A new round-up of ${scopeLabel(target.scope)}, generated when it reaches the front`
+        : `A new ${scopeLabel(target.scope).toLowerCase()} round-up, generated when it reaches the front`
       : "";
 
   return (

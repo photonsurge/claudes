@@ -1,3 +1,4 @@
+import { COUNTRY_SHOTS } from "./director-countries";
 import {
   clipAt,
   clipStarts,
@@ -7,6 +8,9 @@ import {
   playFor,
   sanitizeInclude,
   sanitizeScope,
+  shortPlaceName,
+  MAIN_AREAS_PLACES,
+  MAX_SHORT_PLACES,
   sanitizeShortScript,
   sceneIdForScript,
   scriptDurationMs,
@@ -161,6 +165,55 @@ describe("sanitizeScope / sanitizeInclude", () => {
     expect(sanitizeScope({ type: "area", id: " europe " })).toEqual({ type: "area", id: "europe" });
     expect(sanitizeScope({ type: "country" })).toBeNull();
     expect(sanitizeScope("globe")).toBeNull();
+  });
+
+  it("keeps a places list in order: catalog ids only, deduped, at most MAX_SHORT_PLACES", () => {
+    expect(
+      sanitizeScope({
+        type: "places",
+        places: [
+          { type: "area", id: " europe " },
+          { type: "country", id: "usa" },
+          { type: "area", id: "atlantis" }, // not in REGION_SHOTS
+          { type: "country", id: "europe" }, // not in COUNTRY_SHOTS
+          { type: "area", id: "europe" }, // duplicate
+          { type: "country", id: "uk" },
+          { type: "area", id: "uk" }, // same id, other kind: a different place
+          { type: "globe" },
+          "asia",
+        ],
+      }),
+    ).toEqual({
+      type: "places",
+      places: [
+        { type: "area", id: "europe" },
+        { type: "country", id: "usa" },
+        { type: "country", id: "uk" },
+        { type: "area", id: "uk" },
+      ],
+    });
+    const many = COUNTRY_SHOTS.map((c) => ({ type: "country", id: c.id }));
+    const kept = sanitizeScope({ type: "places", places: many });
+    expect(kept?.type === "places" && kept.places).toHaveLength(MAX_SHORT_PLACES);
+    expect(kept?.type === "places" && kept.places[0]).toEqual(many[0]);
+  });
+
+  it("a places list with nothing valid left is no scope", () => {
+    expect(sanitizeScope({ type: "places", places: [] })).toBeNull();
+    expect(sanitizeScope({ type: "places", places: [{ type: "area", id: "nowhere" }] })).toBeNull();
+    expect(sanitizeScope({ type: "places" })).toBeNull();
+  });
+
+  it("the main areas quick-fill is six known places", () => {
+    expect(sanitizeScope({ type: "places", places: MAIN_AREAS_PLACES })).toEqual({ type: "places", places: MAIN_AREAS_PLACES });
+    expect(MAIN_AREAS_PLACES.map(shortPlaceName)).toEqual([
+      "Europe",
+      "United States",
+      "Asia",
+      "Australia",
+      "Africa",
+      "South America",
+    ]);
   });
 
   it("turns a switch on only for a literal true", () => {

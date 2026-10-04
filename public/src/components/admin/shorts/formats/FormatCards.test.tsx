@@ -46,6 +46,20 @@ describe("Template", () => {
     expect(h.lastFormat().template?.scope).toBeUndefined();
   });
 
+  it("several places: an ordered list with the main areas quick-fill, and the world round-up switch", () => {
+    const h = renderCard(<FormatTemplateSettings />);
+    fireEvent.click(screen.getByRole("button", { name: "Several places" }));
+    expect(h.lastFormat().template?.scope).toEqual({ type: "places", places: [] });
+    fireEvent.click(screen.getByRole("button", { name: "Main areas" }));
+    const scope = h.lastFormat().template?.scope;
+    expect(scope?.type === "places" && scope.places.map((p) => p.id)).toEqual(["europe", "usa", "asia", "australia", "africa", "south_america"]);
+    fireEvent.click(screen.getByRole("button", { name: "Move Asia up" }));
+    const moved = h.lastFormat().template?.scope;
+    expect(moved?.type === "places" && moved.places.slice(0, 3).map((p) => p.id)).toEqual(["europe", "asia", "usa"]);
+    fireEvent.click(screen.getByRole("switch", { name: /Open on the world round-up/ }));
+    expect(h.lastFormat().template?.openWithWorld).toBe(true);
+  });
+
   it("keeps the event switches visible and off by default", () => {
     const h = renderCard(<FormatTemplateSettings />);
     const alerts = screen.getByRole("switch", { name: "Alerts" });
@@ -89,22 +103,38 @@ describe("Timing", () => {
 
 describe("Render defaults", () => {
   const load = jest.fn(async () => ({
-    encoders: [{ id: "obs-2", name: "gds1 b", url: "ws://x", enabled: true, hasPassword: false }],
+    encoders: [
+      { id: "obs-2", name: "gds1 b", url: "ws://x", enabled: true, hasPassword: false, use: "videos" as const, occupancy: { state: "free" as const, label: "free", canQueueVideo: true } },
+      { id: "obs-1", name: "gds1 a", url: "ws://y", enabled: true, hasPassword: false, use: "channels" as const, occupancy: { state: "live" as const, label: "live: Main", canQueueVideo: false } },
+    ],
     accounts: [{ channelId: "UC1", channelTitle: "Weather Globe" }],
   }));
 
-  it("offers the encoders and connected channels, and clears a default", async () => {
+  it("picks the encoder with the video encoder picker, and clears the defaults", async () => {
     const f = { ...base(), render: { accountId: "UC1" } };
-    const h = renderCard(<FormatRenderSettings load={load} />, f);
+    const h = renderCard(<FormatRenderSettings load={load as any} />, f);
     await waitFor(() => expect(load).toHaveBeenCalled());
 
-    fireEvent.mouseDown(screen.getByLabelText("Encoder"));
-    fireEvent.click(await screen.findByRole("option", { name: "gds1 b" }));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Encoder" }));
+    const listbox = await screen.findByRole("listbox");
+    // The video picker: what each encoder is doing, a live channel encoder not offered.
+    expect(within(listbox).getByRole("option", { name: /gds1 a/ })).toHaveAttribute("aria-disabled", "true");
+    expect(within(listbox).getByText("Channel encoders")).toBeInTheDocument();
+    fireEvent.click(within(listbox).getByRole("option", { name: /gds1 b\s*free/ }));
     expect(h.lastFormat().render).toEqual({ accountId: "UC1", encoderId: "obs-2" });
+
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Encoder" }));
+    fireEvent.click(within(await screen.findByRole("listbox")).getByRole("option", { name: /Any video encoder/ }));
+    expect(h.lastFormat().render).toEqual({ accountId: "UC1" });
 
     fireEvent.mouseDown(screen.getByLabelText("YouTube channel"));
     fireEvent.click(await screen.findByRole("option", { name: "Default channel" }));
-    expect(h.lastFormat().render).toEqual({ encoderId: "obs-2" });
+    expect(h.lastFormat().render).toEqual({});
+  });
+
+  it("names a saved encoder that no longer exists", async () => {
+    renderCard(<FormatRenderSettings load={load as any} />, { ...base(), render: { encoderId: "obs-gone" } });
+    expect(await screen.findByText(/The saved encoder "obs-gone" no longer exists/)).toBeInTheDocument();
   });
 });
 
