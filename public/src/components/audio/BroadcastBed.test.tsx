@@ -181,4 +181,15 @@ describe("BroadcastBed", () => {
     rerender(<BroadcastBed audio={audio({ enabled: true })} seed={99} />);
     expect(lastBed().reseed).toHaveBeenCalledWith(99);
   });
+
+  it("fires the riser on a new pulseKey, never on the one it joined with or a cleared one", () => {
+    const { rerender } = render(<BroadcastBed audio={audio({ enabled: true })} pulseKey="p41" />);
+    expect(lastBed().triggerEvent).not.toHaveBeenCalled();
+    rerender(<BroadcastBed audio={audio({ enabled: true })} pulseKey={null} />);
+    expect(lastBed().triggerEvent).not.toHaveBeenCalled();
+    rerender(<BroadcastBed audio={audio({ enabled: true })} pulseKey="p42" />);
+    expect(lastBed().triggerEvent).toHaveBeenCalledTimes(1);
+    rerender(<BroadcastBed audio={audio({ enabled: true })} pulseKey="p42" />);
+    expect(lastBed().triggerEvent).toHaveBeenCalledTimes(1);
+  });
 });

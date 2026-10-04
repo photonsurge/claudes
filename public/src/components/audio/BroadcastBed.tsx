@@ -62,9 +62,11 @@ export interface BroadcastBedProps {
   skipEpoch?: number;
   /** A viewer's `:shuffle` — a new value reseeds the arrangement at the next phrase. */
   seed?: number;
+  /** A surface's own one-shot cue (the crossword's finished puzzle): each CHANGE fires the riser. */
+  pulseKey?: string | number | null;
 }
 
-export default function BroadcastBed({ audio, segment, weather, skipEpoch, seed }: BroadcastBedProps) {
+export default function BroadcastBed({ audio, segment, weather, skipEpoch, seed, pulseKey }: BroadcastBedProps) {
   const bedRef = useRef<AuroraBed | null>(null);
   const [blocked, setBlocked] = useState(false);
 
@@ -143,6 +145,17 @@ export default function BroadcastBed({ audio, segment, weather, skipEpoch, seed 
   useEffect(() => {
     if (pulseId) bedRef.current?.triggerEvent();
   }, [pulseId]);
+
+  // A surface's own cue. Like :skip, the value we joined in is not an event;
+  // only a change to a non-empty key fires.
+  const lastPulseKey = useRef<string | number | null | undefined>(undefined);
+  useEffect(() => {
+    if (pulseKey === undefined) return;
+    if (lastPulseKey.current !== undefined && pulseKey !== lastPulseKey.current && pulseKey !== null) {
+      bedRef.current?.triggerEvent();
+    }
+    lastPulseKey.current = pulseKey;
+  }, [pulseKey]);
 
   // While blocked, any gesture on the page unlocks the context.
   useEffect(() => {

@@ -27,6 +27,7 @@ import WatchSurface from "../../../components/WatchSurface";
 import { useViewerState } from "../../../lib/viewer";
 import ViewingOverlay from "../../../components/ViewingOverlay";
 import { UI_SANS } from "../../../lib/fonts";
+import { useSurfaceRedirect } from "../../../lib/crossword";
 
 function SceneWatchPageInner() {
   const params = useParams<{ scene: string }>();
@@ -38,6 +39,7 @@ function SceneWatchPageInner() {
 
   const { socket } = useSocket();
   const { state, tokenError } = useSceneState(sceneId, token);
+  const redirecting = useSurfaceRedirect(sceneId, "globe");
   const [manifest, setManifest] = useState<WeatherManifest | null>(null);
   const [cities, setCities] = useState<City[]>([]);
   const [sceneName, setSceneName] = useState<string | undefined>(undefined);
@@ -135,6 +137,9 @@ function SceneWatchPageInner() {
       socket.off(CITIES_UPDATED, onCities);
     };
   }, [socket]);
+
+  // A crossword channel opened here goes to /watch/crossword/:scene.
+  if (redirecting) return null;
 
   if (tokenError) {
     return (
