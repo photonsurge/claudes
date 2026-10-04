@@ -1,5 +1,5 @@
 /**
- * /watch/crossword/:scene — the gate and the routing: a bad token gets the
+ * /crossword/:channel — the gate and the routing: a bad token gets the
  * same refusal as the weather page, a globe scene is sent to /watch/:scene with
  * its query, and a crossword scene with a good token draws the board.
  */
@@ -8,14 +8,14 @@ import { render, screen, act } from "@testing-library/react";
 const mockReplace = jest.fn();
 let mockSearch = "token=tok";
 jest.mock("next/navigation", () => ({
-  useParams: () => ({ scene: "xw" }),
+  useParams: () => ({ channel: "xw" }),
   useSearchParams: () => new URLSearchParams(mockSearch),
   useRouter: () => ({ replace: mockReplace }),
 }));
-jest.mock("../../../../lib/socket-provider", () => ({ useSocket: () => ({ socket: null, connected: false }) }));
-jest.mock("../../../../components/audio/BroadcastBed", () => () => null);
+jest.mock("../../../lib/socket-provider", () => ({ useSocket: () => ({ socket: null, connected: false }) }));
+jest.mock("../../../components/audio/BroadcastBed", () => () => null);
 
-import CrosswordWatchPage from "./page";
+import CrosswordRoute from "./page";
 
 type Routes = Record<string, { status: number; body?: unknown }>;
 const serve = (routes: Routes) => {
@@ -37,7 +37,7 @@ beforeEach(() => {
   mockSearch = "token=tok";
 });
 
-describe("/watch/crossword/:scene", () => {
+describe("/crossword/:channel", () => {
   it("refuses a bad token", async () => {
     mockSearch = "token=bad";
     serve({
@@ -45,7 +45,7 @@ describe("/watch/crossword/:scene", () => {
       "/api/scenes/xw": { status: 401 },
       "/api/crossword/xw/state": { status: 401 },
     });
-    render(<CrosswordWatchPage />);
+    render(<CrosswordRoute />);
     await flush();
     expect(screen.getByText("Invalid or missing watch token.")).toBeInTheDocument();
     expect(mockReplace).not.toHaveBeenCalled();
@@ -58,7 +58,7 @@ describe("/watch/crossword/:scene", () => {
       "/api/scenes/xw": { status: 200, body: {} },
       "/api/crossword/xw/state": { status: 404 },
     });
-    render(<CrosswordWatchPage />);
+    render(<CrosswordRoute />);
     await flush();
     expect(mockReplace).toHaveBeenCalledWith("/watch/xw?token=tok&obs=1");
   });
@@ -69,10 +69,32 @@ describe("/watch/crossword/:scene", () => {
       "/api/scenes/xw": { status: 200, body: {} },
       "/api/crossword/xw/state": { status: 200, body: idle },
     });
-    render(<CrosswordWatchPage />);
+    render(<CrosswordRoute />);
     await flush();
     expect(mockReplace).not.toHaveBeenCalled();
     expect(screen.getByTestId("cw-holding")).toBeInTheDocument();
     expect(screen.getByTestId("cw-howto").textContent).toContain("DEMO ROUND");
+  });
+
+  it("turns the channel's theme into --cw-* variables on the page root and shows its brand", async () => {
+    const theme = {
+      preset: "prototype",
+      brand: { title: "Grid Night", logoUrl: "/logo.png" },
+      colors: { background: "#112233", panel: "#ffffff", cell: "#f8fafc", cellSolved: "#ffffff", block: "#0f172a", ink: "#0f172a", inkMuted: "#4c6078", accent: "#ff6600" },
+      font: { display: "Inter, sans-serif", text: "Roboto, sans-serif" },
+    };
+    serve({
+      "/api/scenes": { status: 200, body: { scenes: [{ id: "xw", name: "XW", surface: "crossword" }] } },
+      "/api/scenes/xw": { status: 200, body: {} },
+      "/api/crossword/xw/state": { status: 200, body: { ...idle, theme } },
+    });
+    const { container } = render(<CrosswordRoute />);
+    await flush();
+    const root = container.querySelector("main") as HTMLElement;
+    expect(root.style.getPropertyValue("--cw-background")).toBe("#112233");
+    expect(root.style.getPropertyValue("--cw-accent")).toBe("#ff6600");
+    expect(root.style.getPropertyValue("--cw-font-display")).toBe("Inter, sans-serif");
+    expect(screen.getByTestId("cw-holding").textContent).toContain("Grid Night");
+    expect(screen.getByTestId("cw-logo")).toHaveAttribute("src", "/logo.png");
   });
 });

@@ -50,11 +50,13 @@ export function cellSize(width: number, height: number): number {
 export interface CrosswordSurfaceProps {
   state: CrosswordPublicState | null;
   offset: number;
-  /** The channel's brand name (theme). */
+  /** The channel's brand name (theme.brand.title). */
   brand: string;
+  /** The channel's logo (theme.brand.logoUrl); "" or absent for none. */
+  logoUrl?: string;
 }
 
-export default function CrosswordSurface({ state, offset, brand }: CrosswordSurfaceProps) {
+export default function CrosswordSurface({ state, offset, brand, logoUrl }: CrosswordSurfaceProps) {
   const s = state;
   const hasPuzzle = !!s && s.phase !== "idle" && s.width > 0;
   const solvedCount = s ? s.entries.filter((e) => e.solved).length : 0;
@@ -163,8 +165,14 @@ export default function CrosswordSurface({ state, offset, brand }: CrosswordSurf
           gap: 24,
         }}
       >
-        <div style={{ ...EYEBROW, fontSize: 22, color: INK }}>
+        <div style={{ ...EYEBROW, fontSize: 22, color: INK, display: "flex", alignItems: "center", gap: 14 }}>
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img data-testid="cw-logo" src={logoUrl} alt="" style={{ height: 44, width: "auto", objectFit: "contain" }} />
+          ) : null}
+          <span>
           {brand} <span style={{ color: ACCENT }}>· Crossword</span>
+          </span>
         </div>
         <div style={{ color: INK, fontFamily: SANS, fontSize: 28, fontWeight: 500, whiteSpace: "nowrap" }}>
           {hasPuzzle && s ? (

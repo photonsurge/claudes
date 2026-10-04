@@ -95,6 +95,17 @@ describe("fetchCrosswordState", () => {
     expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe("/api/crossword/x%20w/state?token=a%20b");
   });
 
+  it("splits the theme off the projection, defaulting a missing one", async () => {
+    reply(200, { ...pub(), theme: { brand: { title: "Grid Night" } } });
+    const r = await fetchCrosswordState("xw", "t");
+    if (r.kind !== "ok") throw new Error("expected ok");
+    expect(r.theme.brand.title).toBe("Grid Night");
+    expect(r.state).not.toHaveProperty("theme");
+    reply(200, pub());
+    const d = await fetchCrosswordState("xw", "t");
+    expect(d.kind === "ok" && d.theme.preset).toBe("prototype");
+  });
+
   it("maps 401, 404 and a 5xx", async () => {
     reply(401);
     expect((await fetchCrosswordState("xw")).kind).toBe("tokenError");

@@ -1,21 +1,23 @@
 "use client";
 
 /**
- * The crossword channel's whole watch page below the route: the data (the
- * scene's ControlState for theme and audio, the game's public state), the
- * music bed, and the 1920×1080 stage scaled to the window.
+ * The crossword channel's whole page below the route: the data (the game's
+ * public state and the channel's theme, the scene's ControlState for audio),
+ * the music bed, and the 1920×1080 stage scaled to the window.
  *
- * Of the scene's ControlState only `broadcastTheme`, `themeOverrides` and
- * `audio` are read. No director hooks, no globe, no map library: this is the
- * cheapest page an encoder renders. There is no backdrop blur on it either, so
- * the OBS render mode has nothing to switch off.
+ * The look is the crossword's own: config.theme becomes --cw-* CSS variables
+ * once, here, and every component reads those. Of the scene's ControlState only
+ * `audio` is read; the weather broadcast theme is not used. No director hooks,
+ * no globe, no map library: this is the cheapest page an encoder renders. There
+ * is no backdrop blur on it either, so the OBS render mode has nothing to
+ * switch off (any later blur is written var(--panel-blur, …)).
  */
 import { useEffect, useMemo, useState } from "react";
 import { useSceneState } from "../../lib/scenes";
 import { useCrosswordState } from "../../lib/crossword";
 import { UI_SANS } from "../../lib/fonts";
 import BroadcastBed from "../audio/BroadcastBed";
-import { broadcastThemeCssVars, getBroadcastTheme } from "../broadcast/config";
+import { crosswordThemeVars } from "@photonsurge/shared/crossword";
 import CrosswordSurface from "./CrosswordSurface";
 import { FRAME_H, FRAME_W } from "./styles";
 
@@ -52,15 +54,13 @@ function Notice({ text }: { text: string }) {
   );
 }
 
-export default function CrosswordWatch({ sceneId, token }: { sceneId: string; token?: string }) {
+export default function CrosswordPage({ sceneId, token }: { sceneId: string; token?: string }) {
   const { state: control, tokenError: sceneTokenError } = useSceneState(sceneId, token);
   const game = useCrosswordState(sceneId, token);
   const scale = useFrameScale();
 
-  const theme = useMemo(
-    () => getBroadcastTheme(control.broadcastTheme, control.themeOverrides),
-    [control.broadcastTheme, control.themeOverrides],
-  );
+  const theme = game.theme;
+  const vars = useMemo(() => crosswordThemeVars(theme), [theme]);
 
   // The riser fires on the change into the finale. Undefined until the first
   // state lands, so a page that loads mid-finale does not fire it.
@@ -76,9 +76,10 @@ export default function CrosswordWatch({ sceneId, token }: { sceneId: string; to
         position: "fixed",
         inset: 0,
         overflow: "hidden",
-        background: "#05090f",
-        ...broadcastThemeCssVars(theme),
-        ...({ "--cw-live": theme.liveColor } as Record<string, string>),
+        background: "var(--cw-background)",
+        color: "var(--cw-ink)",
+        fontFamily: "var(--cw-font-text)",
+        ...vars,
       }}
     >
       <div
@@ -92,7 +93,7 @@ export default function CrosswordWatch({ sceneId, token }: { sceneId: string; to
           transformOrigin: "center center",
         }}
       >
-        <CrosswordSurface state={pub} offset={game.offset} brand={theme.name} />
+        <CrosswordSurface state={pub} offset={game.offset} brand={theme.brand.title} logoUrl={theme.brand.logoUrl} />
       </div>
       <BroadcastBed audio={control.audio} segment={null} pulseKey={pulseKey} />
     </main>

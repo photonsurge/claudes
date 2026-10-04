@@ -8,7 +8,7 @@
  */
 import { CROSSWORD_HOST_NAME, type CrosswordPublicEntry, type CrosswordScore } from "@photonsurge/shared/crossword";
 import Countdown from "./Countdown";
-import { ACCENT, EYEBROW, GODS_TILE, GODS_TILE_BORDER, INK, INK_DIM, INK_FAINT, MONO, PLATE, SANS } from "./styles";
+import { ACCENT, EYEBROW, CELL, LINE, INK, INK_DIM, INK_FAINT, MONO, PLATE, SANS } from "./styles";
 
 export interface FinaleCardProps {
   puzzleNo: number;
@@ -67,8 +67,8 @@ export default function FinaleCard({ puzzleNo, entries, scores, phaseEndsAt, off
                   width: "100%",
                   height,
                   boxSizing: "border-box",
-                  background: GODS_TILE,
-                  border: `1px solid ${place === 0 ? ACCENT : GODS_TILE_BORDER}`,
+                  background: CELL,
+                  border: `1px solid ${place === 0 ? ACCENT : LINE}`,
                   display: "flex",
                   alignItems: "flex-start",
                   justifyContent: "center",

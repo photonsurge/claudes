@@ -19,9 +19,11 @@ jest.mock("@photonsurge/shared/utill/session", () => ({
 
 const mockGetScene = jest.fn();
 const mockGetPublic = jest.fn();
+const mockGetConfig = jest.fn();
 jest.mock("@photonsurge/shared/db/index", () => ({
   getAppDb: async () => ({
     getScene: (...a: unknown[]) => mockGetScene(...a),
+    getOrInitCrosswordConfig: (...a: unknown[]) => mockGetConfig(...a),
     crosswordGames: { getPublic: (...a: unknown[]) => mockGetPublic(...a) },
   }),
 }));
@@ -36,6 +38,7 @@ beforeEach(() => {
   mockIsAdmin.mockReset().mockReturnValue(false);
   mockGetScene.mockReset().mockResolvedValue(null);
   mockGetPublic.mockReset().mockResolvedValue(null);
+  mockGetConfig.mockReset().mockResolvedValue({});
 });
 
 describe("GET /api/crossword/:scene/state", () => {
@@ -85,5 +88,28 @@ describe("GET /api/crossword/:scene/state", () => {
     mockGetScene.mockResolvedValue({ watchToken: "abc", surface: "crossword" });
     const body = await (await get("xw", "?token=abc")).json();
     expect(body).toMatchObject({ sceneId: "xw", phase: "idle", seq: 0, rows: [], entries: [] });
+  });
+
+  it("serves the theme and only the theme of the config, sanitized", async () => {
+    mockGetScene.mockResolvedValue({ watchToken: "abc", surface: "crossword" });
+    mockGetConfig.mockResolvedValue({
+      blocklist: ["secret"],
+      familyFriendlyOnly: true,
+      theme: { brand: { title: "Grid Night" }, colors: { accent: "red;}" } },
+    });
+    const body = await (await get("xw", "?token=abc")).json();
+    expect(body.theme.brand.title).toBe("Grid Night");
+    expect(body.theme.colors.accent).not.toContain(";");
+    expect(JSON.stringify(body)).not.toContain("secret");
+    expect(body).not.toHaveProperty("blocklist");
+    expect(body).not.toHaveProperty("familyFriendlyOnly");
+  });
+
+  it("falls back to the default theme when the config cannot be read", async () => {
+    mockGetScene.mockResolvedValue({ watchToken: "abc", surface: "crossword" });
+    mockGetConfig.mockRejectedValue(new Error("down"));
+    const res = await get("xw", "?token=abc");
+    expect(res.status).toBe(200);
+    expect((await res.json()).theme.preset).toBe("prototype");
   });
 });

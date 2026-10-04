@@ -7,7 +7,7 @@
  */
 import { entryCells, CROSSWORD_HOST_NAME, type CrosswordPublicEntry, type CrosswordSpotlight } from "@photonsurge/shared/crossword";
 import Countdown from "./Countdown";
-import { ACCENT, EYEBROW, GODS_TILE, GODS_TILE_BORDER, INK, INK_DIM, MONO, PLATE, SANS, TEXT_INK } from "./styles";
+import { ACCENT, EYEBROW, CELL, LINE, INK, INK_DIM, MONO, PLATE, SANS, TEXT_INK } from "./styles";
 
 export interface SpotlightCardProps {
   entry: CrosswordPublicEntry | null;
@@ -71,8 +71,8 @@ export default function SpotlightCard({ entry, spotlight, rows, offset, paused }
                 width: tile,
                 height: tile,
                 boxSizing: "border-box",
-                background: GODS_TILE,
-                border: `1px solid ${ch ? ACCENT : GODS_TILE_BORDER}`,
+                background: CELL,
+                border: `1px solid ${ch ? ACCENT : LINE}`,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

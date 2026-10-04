@@ -11,7 +11,7 @@
  */
 import { memo, useRef } from "react";
 import { cellKey, entryCells, type CrosswordPublicEntry } from "@photonsurge/shared/crossword";
-import { ACCENT, GODS_TILE, GODS_TILE_BORDER, INK, INK_FAINT, MONO, SANS } from "./styles";
+import { ACCENT, BLOCK, CELL, CELL_SOLVED, LINE, INK, INK_FAINT, MONO, SANS } from "./styles";
 
 export interface GridProps {
   rows: string[];
@@ -64,7 +64,7 @@ function Grid({ rows, entries, spotlightId, cell, puzzleKey }: GridProps) {
       {rows.flatMap((line, r) =>
         Array.from(line).map((ch, c) => {
           const k = cellKey(r, c);
-          if (ch === "#") return <div key={k} data-testid={`cw-cell-${r}-${c}`} data-block="" />;
+          if (ch === "#") return <div key={k} data-testid={`cw-cell-${r}-${c}`} data-block="" style={{ background: BLOCK }} />;
           const spot = spotCells.has(k);
           const letter = ch === "." ? null : ch;
           return (
@@ -75,8 +75,8 @@ function Grid({ rows, entries, spotlightId, cell, puzzleKey }: GridProps) {
                 position: "relative",
                 boxSizing: "border-box",
                 margin: -0.5,
-                background: GODS_TILE,
-                border: `${spot ? 3 : 1}px solid ${spot ? ACCENT : GODS_TILE_BORDER}`,
+                background: solvedCells.has(k) ? CELL_SOLVED : CELL,
+                border: `${spot ? 3 : 1}px solid ${spot ? ACCENT : LINE}`,
                 zIndex: spot ? 1 : 0,
                 display: "flex",
                 alignItems: "center",

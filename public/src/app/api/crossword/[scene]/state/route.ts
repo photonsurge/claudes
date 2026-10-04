@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { SESSION_COOKIE, readSession, isAdmin } from "@photonsurge/shared/utill/session";
 import { MAIN_SCENE_ID, sceneSurface } from "@photonsurge/shared/control";
-import { emptyGame } from "@photonsurge/shared/crossword";
+import { DEFAULT_CROSSWORD_THEME, emptyGame, sanitizeCrosswordTheme } from "@photonsurge/shared/crossword";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +16,9 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * projection (the stored `pub`; answers never leave the worker). 404 unless the
  * scene exists and is a crossword channel. Gated like GET /api/scenes/:id: the
  * scene's watch token (OBS can't log in) or an admin session. A scene whose
- * game has not started yet gets the empty idle projection.
+ * game has not started yet gets the empty idle projection. The channel's
+ * theme (config.theme, sanitized, nothing else of the config) rides along under
+ * `theme`: the page styles itself from it.
  *
  * `serverNow` is stamped at serve time, not taken from the stored copy: the
  * page corrects every countdown by it, and the stored one is as old as the
@@ -40,7 +42,11 @@ async function GET__impl(req: Request, { params }: { params: Promise<{ scene: st
 
   const now = Date.now();
   const pub = (await db.crosswordGames.getPublic(scene)) ?? emptyGame(scene, now).pub;
-  return NextResponse.json({ ...pub, serverNow: now }, { status: 200, headers: NO_CACHE });
+  // Only the theme leaves the config: the rest of it holds the blocklist. A read
+  // that fails leaves the page the default look rather than no page.
+  const cfg = await db.getOrInitCrosswordConfig(scene).catch(() => null);
+  const theme = sanitizeCrosswordTheme(cfg?.theme, DEFAULT_CROSSWORD_THEME);
+  return NextResponse.json({ ...pub, serverNow: now, theme }, { status: 200, headers: NO_CACHE });
 }
 
 // --- request logging (lib/api-log) ---

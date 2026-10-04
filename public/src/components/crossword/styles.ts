@@ -1,29 +1,40 @@
 /**
- * Shared furniture for the crossword watch page: the frame size, the flat
- * plate, the ink tokens (the theme's CSS vars, set once on the frame root by
- * CrosswordWatch) and the few keyframes the solve effects use.
+ * Shared furniture for the crossword page: the frame size, the flat
+ * plate, the ink tokens (the theme's --cw-* CSS vars, set once on the page root by
+ * CrosswordPage) and the few keyframes the solve effects use.
  *
  * House rules: plates are flat (no shadow, no blur, no gradient wash under
  * them), every colour is a theme token, and every motion is a CSS animation
  * that runs once. Nothing here needs a frame loop.
  */
 import type { CSSProperties } from "react";
-import { GODS_BORDER, GODS_FILL, GODS_TILE, GODS_TILE_BORDER, INK, TEXT_INK, INK_DIM, INK_FAINT, SANS, MONO } from "../broadcast/GodsPanel";
 
-export { INK, TEXT_INK, INK_DIM, INK_FAINT, GODS_TILE, GODS_TILE_BORDER, SANS, MONO };
+/** The theme's CSS variables (crosswordThemeVars), set once on the page root by CrosswordPage. */
+export const INK = "var(--cw-ink)";
+export const TEXT_INK = INK;
+export const INK_DIM = "var(--cw-ink-muted)";
+export const INK_FAINT = "color-mix(in srgb, var(--cw-ink-muted) 65%, transparent)";
+export const CELL = "var(--cw-cell)";
+export const CELL_SOLVED = "var(--cw-cell-solved)";
+export const BLOCK = "var(--cw-block)";
+/** Hairline between cells and around plates: the ink, faint. */
+export const LINE = "color-mix(in srgb, var(--cw-ink) 22%, transparent)";
+export const SANS = "var(--cw-font-text)";
+export const DISPLAY = "var(--cw-font-display)";
+export const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
 /** The page is laid out on a 1920×1080 stage and scaled to the window. */
 export const FRAME_W = 1920;
 export const FRAME_H = 1080;
 
-/** Accent and live inks: theme tokens, set on the frame root. */
-export const ACCENT = "var(--gods-accent, #4dc8ff)";
-export const LIVE = "var(--cw-live, #ff3b3b)";
+/** Accent ink: a theme token. */
+export const ACCENT = "var(--cw-accent)";
+export const LIVE = ACCENT;
 
 /** The flat plate every card sits on. */
 export const PLATE: CSSProperties = {
-  background: GODS_FILL,
-  border: `1px solid ${GODS_BORDER}`,
+  background: "var(--cw-panel)",
+  border: `1px solid ${LINE}`,
   borderRadius: 6,
   boxSizing: "border-box",
 };

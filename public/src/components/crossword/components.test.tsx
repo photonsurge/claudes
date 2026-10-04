@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import type { CrosswordPublicEntry, CrosswordPublicState } from "@photonsurge/shared/crossword";
 import Grid from "./Grid";
+import { ACCENT, BLOCK, CELL_SOLVED } from "./styles";
 import SpotlightCard, { entryPattern } from "./SpotlightCard";
 import CrosswordSurface, { cellSize } from "./CrosswordSurface";
 import { hostFilled } from "./FinaleCard";
@@ -45,6 +46,14 @@ describe("Grid", () => {
     // Numbers sit on the starting cells.
     expect(screen.getByTestId("cw-cell-0-0").textContent).toBe("1C");
     expect(screen.getByTestId("cw-cell-0-1").textContent).toBe("2A");
+  });
+
+  it("draws from the theme variables, never the weather tokens", () => {
+    const { container } = render(<Grid rows={rows} entries={entries} cell={40} puzzleKey={1} />);
+    expect(container.innerHTML).not.toContain("gods");
+    expect(BLOCK).toBe("var(--cw-block)");
+    expect(CELL_SOLVED).toBe("var(--cw-cell-solved)");
+    expect(ACCENT).toBe("var(--cw-accent)");
   });
 
   it("flashes a word solved while on screen, not one already solved at load", () => {

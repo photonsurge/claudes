@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { formatClock, remainingMs } from "../../lib/crossword";
-import { ACCENT, GODS_TILE, INK, MONO } from "./styles";
+import { ACCENT, CELL, INK, MONO } from "./styles";
 
 export interface CountdownProps {
   endsAt: number;
@@ -48,7 +48,7 @@ export default function Countdown({ endsAt, startedAt, offset, paused = false, b
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
       {bar ? (
-        <div style={{ flex: 1, height: 10, background: GODS_TILE, borderRadius: 5, overflow: "hidden" }}>
+        <div style={{ flex: 1, height: 10, background: CELL, borderRadius: 5, overflow: "hidden" }}>
           <div
             key={endsAt}
             data-cw-anim=""

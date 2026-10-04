@@ -1,5 +1,5 @@
 /**
- * Client side of the crossword channel's watch page (`/watch/crossword/:id`).
+ * Client side of the crossword channel's watch page (`/crossword/:id`).
  *
  * The worker owns the game and emits only its public projection
  * (CrosswordPublicState, no unsolved answers in it). This page cold-starts that
@@ -21,6 +21,9 @@ import {
   CROSSWORD_STATE,
   type CrosswordBeat,
   type CrosswordPublicState,
+  type CrosswordTheme,
+  DEFAULT_CROSSWORD_THEME,
+  sanitizeCrosswordTheme,
 } from "@photonsurge/shared/crossword";
 import { sceneSurface, outputPath, type SceneSurface } from "@photonsurge/shared/control";
 import { useSocket } from "./socket-provider";
@@ -63,7 +66,7 @@ export const beatNeedsResync = (shownSeq: number | null, beat: Pick<CrosswordBea
 // ---------------------------------------------------------------- fetch
 
 export type CrosswordFetch =
-  | { kind: "ok"; state: CrosswordPublicState; receivedAt: number }
+  | { kind: "ok"; state: CrosswordPublicState; theme: CrosswordTheme; receivedAt: number }
   | { kind: "tokenError" }
   | { kind: "notCrossword" }
   | { kind: "failed" };
@@ -76,8 +79,11 @@ export async function fetchCrosswordState(sceneId: string, token?: string): Prom
     if (res.status === 401) return { kind: "tokenError" };
     if (res.status === 404) return { kind: "notCrossword" };
     if (!res.ok) return { kind: "failed" };
-    const state = (await res.json()) as CrosswordPublicState;
-    return state && typeof state.seq === "number" ? { kind: "ok", state, receivedAt: Date.now() } : { kind: "failed" };
+    // The route sends the channel's theme beside the projection; it is not part of the state.
+    const { theme, ...state } = (await res.json()) as CrosswordPublicState & { theme?: unknown };
+    return typeof state.seq === "number"
+      ? { kind: "ok", state, theme: sanitizeCrosswordTheme(theme, DEFAULT_CROSSWORD_THEME), receivedAt: Date.now() }
+      : { kind: "failed" };
   } catch {
     return { kind: "failed" };
   }
@@ -91,6 +97,8 @@ const loadCrosswordState = (sceneId: string, token?: string) =>
 
 export interface CrosswordView {
   state: CrosswordPublicState | null;
+  /** The channel's look (config.theme), from the last read of the state route. */
+  theme: CrosswordTheme;
   /** Server clock minus local clock (see remainingMs). */
   offset: number;
   ready: boolean;
@@ -108,6 +116,7 @@ export function useCrosswordState(sceneId: string, token?: string): CrosswordVie
   const { socket } = useSocket();
   const [view, setView] = useState<CrosswordView>({
     state: null,
+    theme: DEFAULT_CROSSWORD_THEME,
     offset: 0,
     ready: false,
     tokenError: false,
@@ -121,6 +130,7 @@ export function useCrosswordState(sceneId: string, token?: string): CrosswordVie
       seqRef.current = r.state.seq;
       setView({
         state: r.state,
+        theme: r.theme,
         offset: clockOffset(r.state.serverNow, r.receivedAt),
         ready: true,
         tokenError: false,
@@ -134,7 +144,7 @@ export function useCrosswordState(sceneId: string, token?: string): CrosswordVie
 
   useEffect(() => {
     seqRef.current = null;
-    setView({ state: null, offset: 0, ready: false, tokenError: false, notCrossword: false });
+    setView({ state: null, theme: DEFAULT_CROSSWORD_THEME, offset: 0, ready: false, tokenError: false, notCrossword: false });
   }, [sceneId, token]);
 
   useLoadAndResync(socket, () => loadCrosswordState(sceneId, token), apply, [sceneId, token]);
