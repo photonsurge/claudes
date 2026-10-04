@@ -287,6 +287,19 @@ describe("toPublicState", () => {
   });
 });
 
+describe("family-friendly stock", () => {
+  it("a family-friendly channel skips puzzles not flagged family friendly", () => {
+    const clean = makePuzzle({ id: "clean", createdAt: 2, familyFriendly: true });
+    const rough = makePuzzle({ id: "rough", createdAt: 1, familyFriendly: false });
+    expect(chooseNextPuzzle([rough, clean], "xw", 30)!.id).toBe("rough");
+    expect(chooseNextPuzzle([rough, clean], "xw", 30, { familyFriendlyOnly: true })!.id).toBe("clean");
+    expect(chooseNextPuzzle([rough], "xw", 30, { familyFriendlyOnly: true })).toBeNull();
+    expect(unplayedStock([rough, clean], "xw")).toBe(2);
+    expect(unplayedStock([rough, clean], "xw", { familyFriendlyOnly: true })).toBe(1);
+    expect(unplayedStock([rough, clean], "xw", { familyFriendlyOnly: false })).toBe(2);
+  });
+});
+
 describe("chooseNextPuzzle", () => {
   const P = (id: string, createdAt: number, plays: CrosswordPuzzle["plays"] = [], status: CrosswordPuzzle["status"] = "ready") =>
     makePuzzle({ id, createdAt, plays, status });

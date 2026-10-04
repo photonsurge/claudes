@@ -203,7 +203,8 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
      * clue, 3–12 letters, at or above `minZipf`, not excluded; on a
      * family-friendly channel the word and the clue both tagged true
      * (untagged counts as not). With `allowUnapproved` (dev only): pending
-     * pipeline-accepted words with their stored clues, cleaned.
+     * pipeline-accepted words with their stored clues. Every clue comes back
+     * through `cleanClue`, as the queue showed it.
      */
     async playable(q: BankPlayableQuery): Promise<BankPlayable[]> {
       const docs = await words()
@@ -221,7 +222,8 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
           .toArray();
         for (const c of clueDocs) {
           const raw = String(getPath(c, C.text) ?? "");
-          const text = q.allowUnapproved ? cleanClue(raw) : raw.trim();
+          // Cleaned on every path: the queue showed the operator the cleaned text.
+          const text = cleanClue(raw);
           if (!text) continue;
           const k = String(getPath(c, C.answerId));
           const list = byWord.get(k) ?? [];
@@ -394,15 +396,28 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
       return res.matchedCount > 0;
     },
 
-    /** Approve, reject or return a clue to pending; records who and when. */
+    /**
+     * Approve, reject or return a clue to pending; records who and when. An
+     * approval stores the text the queue showed (after `cleanClue`) when it
+     * differs from the stored text, keeping the first `original`, so what was
+     * approved is what airs.
+     */
     async setClueApproval(clueId: string, status: BankApprovalStatus, by: string): Promise<boolean> {
       const oid = toOid(clueId);
       if (!oid || !isStatus(status)) return false;
       const at = now();
-      const res = await clues().updateOne(
-        { _id: oid },
-        { $set: { [C.approval]: { status, by: who(by), at }, [C.updatedAt]: new Date(at) } },
-      );
+      const set: Record<string, unknown> = { [C.approval]: { status, by: who(by), at }, [C.updatedAt]: new Date(at) };
+      if (status === "approved") {
+        const doc = await clues().findOne({ _id: oid });
+        if (!doc) return false;
+        const raw = getPath(doc, C.text);
+        const cleaned = cleanClue(String(raw ?? ""));
+        if (cleaned && cleaned !== raw) {
+          set[C.text] = cleaned;
+          if (getPath(doc, C.original) === undefined) set[C.original] = raw;
+        }
+      }
+      const res = await clues().updateOne({ _id: oid }, { $set: set });
       return res.matchedCount > 0;
     },
 
@@ -428,7 +443,9 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
     /**
      * Edit a clue's text, keeping the first original and recording who and
      * when. An approved clue goes back to `pending` (§7.4); a pending or
-     * rejected one keeps its status. Empty text is refused.
+     * rejected one keeps its status. The family-friendly tag is cleared to
+     * untagged (who and when recorded): the edited text is new and is tagged
+     * again when approved. Empty text is refused.
      */
     async editClue(clueId: string, text: string, by: string): Promise<boolean> {
       const oid = toOid(clueId);
@@ -441,6 +458,9 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
         [C.text]: t,
         [C.editedBy]: who(by),
         [C.editedAt]: at,
+        [C.familyFriendly]: null,
+        [C.familyFriendlyBy]: who(by),
+        [C.familyFriendlyAt]: at,
         [C.updatedAt]: new Date(at),
       };
       if (getPath(doc, C.original) === undefined) set[C.original] = getPath(doc, C.text);

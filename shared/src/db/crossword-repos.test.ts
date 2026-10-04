@@ -164,6 +164,44 @@ describe("bank repo writes and pick (fake collections)", () => {
     expect(await f.repo.editClue(String(oid(3)), "   ", "rich")).toBe(false);
   });
 
+  it("an approval stores the cleaned text the queue showed, keeping the original", async () => {
+    const f = fake();
+    f.setClueOne({ _id: oid(4), clue: "Path round a star (5)" });
+    expect(await f.repo.setClueApproval(String(oid(4)), "approved", "rich")).toBe(true);
+    expect(f.updates[0].update.$set).toMatchObject({
+      clue: "Path round a star",
+      original: "Path round a star (5)",
+      approval: { status: "approved", by: "rich", at: 1000 },
+    });
+    // Already clean: the text is left alone; a rejection never rewrites it.
+    f.setClueOne({ _id: oid(4), clue: "Path round a star" });
+    await f.repo.setClueApproval(String(oid(4)), "approved", "rich");
+    expect(f.updates[1].update.$set.clue).toBeUndefined();
+    expect(f.updates[1].update.$set.original).toBeUndefined();
+    f.setClueOne({ _id: oid(4), clue: "Messy (5)" });
+    await f.repo.setClueApproval(String(oid(4)), "rejected", "rich");
+    expect(f.updates[2].update.$set.clue).toBeUndefined();
+    // A first original is kept.
+    f.setClueOne({ _id: oid(4), clue: "Path round a star (5)", original: "First" });
+    await f.repo.setClueApproval(String(oid(4)), "approved", "rich");
+    expect(f.updates[3].update.$set.original).toBeUndefined();
+  });
+
+  it("an edit clears the clue's family-friendly tag, with who and when", async () => {
+    const f = fake();
+    f.setClueOne({ _id: oid(5), clue: "Old", familyFriendly: true, approval: { status: "pending" } });
+    await f.repo.editClue(String(oid(5)), "New clue text", "rich");
+    expect(f.updates[0].update.$set).toMatchObject({ familyFriendly: null, familyFriendlyBy: "rich", familyFriendlyAt: 1000 });
+  });
+
+  it("the pick cleans approved clues too", async () => {
+    const f = fake();
+    f.setWords([{ _id: oid(1), norm: "ORBIT", length: 5, approval: { status: "approved" } }]);
+    f.setClues([{ _id: oid(9), answerId: oid(1), clue: "  Path round a star (5) " }]);
+    const [w] = await f.repo.playable({ minZipf: 0 });
+    expect(w.clues[0].text).toBe("Path round a star");
+  });
+
   it("the playable pick returns each word with its clues and drops a word with none", async () => {
     const f = fake();
     f.setWords([

@@ -923,6 +923,17 @@ const lastPlayOn = (p: CrosswordPuzzle, sceneId: string) =>
   Math.max(-Infinity, ...p.plays.filter((x) => x.sceneId === sceneId).map((x) => x.startedAt));
 
 /**
+ * Which stock a channel may play. Stock is shared across channels, so a
+ * family-friendly channel (its config's `familyFriendlyOnly`) skips puzzles
+ * not flagged family friendly.
+ */
+export interface CrosswordStockOptions {
+  familyFriendlyOnly?: boolean;
+}
+
+const fitsChannel = (p: CrosswordPuzzle, opts: CrosswordStockOptions) => !opts.familyFriendlyOnly || p.familyFriendly === true;
+
+/**
  * The next puzzle for a scene, from `ready` stock: the oldest one this scene
  * has not played; failing that, the one played longest ago, as long as it is
  * not one of the scene's last `noRepeat` plays. Null → `idle`.
@@ -931,8 +942,9 @@ export function chooseNextPuzzle(
   puzzles: CrosswordPuzzle[],
   sceneId: string,
   noRepeat: number,
+  opts: CrosswordStockOptions = {},
 ): CrosswordPuzzle | null {
-  const ready = puzzles.filter((p) => p.status === "ready" && p.entries.length);
+  const ready = puzzles.filter((p) => p.status === "ready" && p.entries.length && fitsChannel(p, opts));
   const fresh = ready
     .filter((p) => !p.plays.some((x) => x.sceneId === sceneId))
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
@@ -946,9 +958,9 @@ export function chooseNextPuzzle(
   return played.find((x) => !recent.has(x.p.id))?.p ?? null;
 }
 
-/** Unplayed ready stock for a scene (the top-up job's measure). */
-export const unplayedStock = (puzzles: CrosswordPuzzle[], sceneId: string) =>
-  puzzles.filter((p) => p.status === "ready" && !p.plays.some((x) => x.sceneId === sceneId)).length;
+/** Unplayed ready stock for a scene (the top-up job's measure), with the same channel filter. */
+export const unplayedStock = (puzzles: CrosswordPuzzle[], sceneId: string, opts: CrosswordStockOptions = {}) =>
+  puzzles.filter((p) => p.status === "ready" && fitsChannel(p, opts) && !p.plays.some((x) => x.sceneId === sceneId)).length;
 
 // ---------------------------------------------------------------------------
 // Names, clues and the blocklist
