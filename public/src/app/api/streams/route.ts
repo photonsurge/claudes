@@ -5,6 +5,7 @@ import { sendToFore } from "@photonsurge/shared/bull/bull-queue";
 import { MAIN_SCENE_ID } from "@photonsurge/shared/control";
 import {
   ENV_ENCODER_ID,
+  encoderUse,
   sanitizeChatPollMs,
   toEncoderInfo,
   toRunState,
@@ -123,6 +124,18 @@ async function POST__impl(req: Request) {
     }
     if (!enc.enabled) {
       return NextResponse.json({ error: `encoder "${encoderId}" is disabled` }, { status: 400, headers: NO_CACHE });
+    }
+    // An encoder assigned to videos belongs to the render queue (short-video
+    // plan §6.6): a channel can't go live on it, whatever the picker showed.
+    if (encoderUse(enc) === "videos") {
+      return NextResponse.json(
+        {
+          error:
+            `encoder "${enc.name || encoderId}" is assigned to videos — a channel can't go live on it. ` +
+            `Pick a channel encoder, or switch this one back to channels on /admin/streams.`,
+        },
+        { status: 400, headers: NO_CACHE },
+      );
     }
   } else if (!encoderId) {
     encoderId = (await db.encoderForScene(sceneId))?.id;

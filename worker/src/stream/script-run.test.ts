@@ -478,3 +478,79 @@ describe("finalize", () => {
     expect(queueChapters).not.toHaveBeenCalled();
   });
 });
+
+describe("the offline rehearsal (§7, WP8)", () => {
+  /** Every function of the YouTube client mock that was called: none may be, offline. */
+  const youtubeCalls = () =>
+    Object.entries(yt)
+      .filter(([, fn]) => jest.isMockFunction(fn) && (fn as jest.Mock).mock.calls.length > 0)
+      .map(([name]) => name);
+
+  it("holds the encoder, plays on the format's /watch page, finishes and restores the encoder — never contacting YouTube", async () => {
+    renderRun("t1", { platforms: {}, script: { ...SCRIPT, offline: true } });
+    await goLive("t1");
+
+    // Live straight away, on the script's scene, with nothing streamed.
+    let run = runs.get("t1");
+    expect(run.status).toBe("live");
+    expect(run.platforms.youtube).toBeUndefined();
+    expect(run.script.offline).toBe(true);
+    expect(provisionEncoderScene).toHaveBeenCalledWith("obs-v1", { sceneId: "shorts" });
+    expect(obs.setStreamKey).not.toHaveBeenCalled();
+    expect(obs.startStream).not.toHaveBeenCalled();
+    // The busy guard counts it: a second render on the same encoder is refused.
+    expect(await db.activeRunForEncoder("obs-v1", "other")).toMatchObject({ id: "t1" });
+    renderRun("t2", { platforms: {}, script: { ...SCRIPT, offline: true } });
+    await goLive("t2");
+    expect(runs.get("t2").status).toBe("failed");
+    expect(runs.get("t2").error.message).toMatch(/already streaming run t1/);
+    expect(restoreEncoderScene).not.toHaveBeenCalled(); // the refused one leaves t1's encoder alone
+
+    // The lead-in job starts the play; the runner reports it finished.
+    expect(jobsOf("scriptStart").map((j) => j.data.runId)).toEqual(["t1"]);
+    const { playNonce } = await startScriptPlay("t1");
+    expect(configs.get("shorts")).toMatchObject({ mode: "script", script: { scriptId: "s1", record: true } });
+    await onScriptPlayEnded("shorts", {
+      sceneId: "shorts",
+      playNonce: playNonce!,
+      startedAt: 1,
+      endedAt: 2,
+      clips: [{ id: "c", startMs: 0, durationMs: 1 }],
+      skipped: [],
+    });
+    expect(jobsOf("end").pop()).toMatchObject({ data: { runId: "t1" }, opts: expect.objectContaining({ delay: 5000 }) });
+    await finishRun("t1", "auto");
+
+    run = runs.get("t1");
+    expect(run.status).toBe("ended");
+    expect(run.script.playEnded).toBe("finished");
+    expect(restoreEncoderScene).toHaveBeenCalledWith("obs-v1"); // video encoder → idle blank page
+    expect(obs.stopStream).not.toHaveBeenCalled(); // it never started an output
+    expect(jobsOf("finalize")).toEqual([]);
+    expect(renderRunSettled).toHaveBeenCalledWith(expect.objectContaining({ id: "t1", status: "ended" }));
+    expect(youtubeCalls()).toEqual([]);
+  });
+
+  it("an OBS that can't be provisioned fails the test (nobody is watching it), still without YouTube", async () => {
+    (provisionEncoderScene as jest.Mock).mockRejectedValueOnce(new obs.ObsUnavailableError("cannot reach OBS at ws://obs-v1"));
+    renderRun("t3", { platforms: {}, script: { ...SCRIPT, offline: true } });
+    await goLive("t3");
+    const run = runs.get("t3");
+    expect(run.status).toBe("failed");
+    expect(run.error).toMatchObject({ step: "goLive", message: expect.stringMatching(/cannot reach OBS/) });
+    expect(jobsOf("scriptStart")).toEqual([]);
+    expect(renderRunSettled).toHaveBeenCalledWith(expect.objectContaining({ id: "t3", status: "failed" }));
+    expect(youtubeCalls()).toEqual([]);
+  });
+
+  it("an operator Stop of an offline test ends it as stopped, without touching an OBS output or YouTube", async () => {
+    renderRun("t4", { status: "live", startAt: Date.now(), platforms: {}, script: { ...SCRIPT, offline: true, playNonce: 12 } });
+    configs.set("shorts", { mode: "script", script: { scriptId: "s1", playNonce: 12 } });
+    await finishRun("t4", "manual");
+    expect(runs.get("t4").status).toBe("stopped");
+    expect(configs.get("shorts").mode).toBe("off");
+    expect(obs.stopStream).not.toHaveBeenCalled();
+    expect(restoreEncoderScene).toHaveBeenCalledWith("obs-v1");
+    expect(youtubeCalls()).toEqual([]);
+  });
+});

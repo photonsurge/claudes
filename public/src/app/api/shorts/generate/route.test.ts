@@ -88,3 +88,24 @@ it("reports a wait timeout as 504 with what happens next", async () => {
   expect(res.status).toBe(504);
   expect((await res.json()).error).toMatch(/No answer from the worker after 90s/);
 });
+
+it("passes a several-places scope (sanitised) and openWithWorld through, and returns the places left out", async () => {
+  const result = { id: "s2", title: "Europe and United States round-up", clips: 3, durationMs: 90_000, skipped: [{ place: "area:asia", name: "Asia", reason: "no usable round-up" }] };
+  (sendToQueueAndWait as jest.Mock).mockResolvedValue(result);
+  const res = await post({
+    scope: { type: "places", places: [{ type: "area", id: "europe" }, { type: "area", id: "atlantis" }, { type: "country", id: "usa" }, { type: "area", id: "europe" }] },
+    openWithWorld: true,
+  });
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual(result);
+  expect((sendToQueueAndWait as jest.Mock).mock.calls[0][3]).toEqual({
+    scope: { type: "places", places: [{ type: "area", id: "europe" }, { type: "country", id: "usa" }] },
+    openWithWorld: true,
+  });
+});
+
+it("400s a places scope with no known place", async () => {
+  const res = await post({ scope: { type: "places", places: [{ type: "area", id: "atlantis" }] } });
+  expect(res.status).toBe(400);
+  expect((await res.json()).error).toMatch(/places/);
+});

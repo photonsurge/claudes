@@ -20,7 +20,7 @@ import { UnrecoverableError, type Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { scriptDurationMs } from "@photonsurge/shared/short-script";
 import { log } from "@photonsurge/shared/utill/logger";
-import { generateShortScript, type GenerateRequest } from "../director/script-generate";
+import { generateShort, type GenerateRequest } from "../director/script-generate";
 import { seedShortFormat } from "../director/short-format-seed";
 import { runBatchNow, tickSchedules } from "../stream/short-schedules";
 import { sanitizePublishAs } from "@photonsurge/shared/short-schedule";
@@ -34,9 +34,11 @@ export async function generate(job: Job) {
   const req = (job.data?.data ?? {}) as GenerateRequest;
   try {
     const db = await getAppDb();
-    const script = await generateShortScript(db, req);
+    const { script, skipped } = await generateShort(db, req);
     const durationMs = scriptDurationMs(script.clips);
-    const result = { id: script.id, title: script.title, clips: script.clips.length, durationMs };
+    // A several-places video names the places it left out (no round-up), so the
+    // operator sees them on the Generate form.
+    const result = { id: script.id, title: script.title, clips: script.clips.length, durationMs, ...(skipped.length ? { skipped } : {}) };
     log(TAG, "generate done", result);
     blogInfo(TAG, `short script generated: ${script.title} (${script.clips.length} clips)`, result, "short-video", script.id);
     return result;

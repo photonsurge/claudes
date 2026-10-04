@@ -20,13 +20,14 @@ const GENERATE_TIMEOUT_MS = 90_000;
 const isWaitTimeout = (msg: string) => /timed out before finishing/i.test(msg);
 
 /**
- * POST /api/shorts/generate { formatId?, scope?, include?, budgetMs?, title? }
+ * POST /api/shorts/generate { formatId?, scope?, include?, budgetMs?, title?, openWithWorld? }
  * — write a draft script from the lineup template in a format (default the
  * default format). Scope, switches and budget left out come from the format's
  * template. The worker does the work (`short-video.generate`); this enqueues
  * it and waits for the result.
  *
- *  • 200 `{ id, title, clips, durationMs }` — the saved draft.
+ *  • 200 `{ id, title, clips, durationMs, skipped? }` — the saved draft; a
+ *    several-places video names the places it left out (no round-up).
  *  • 422 `{ error }` — the job failed; `error` is the worker's message verbatim
  *    ("No usable round-up for Japan …"), since it says what to fix.
  *  • 504 `{ error }` — no answer in time. The job may still finish and save.
@@ -46,7 +47,11 @@ async function POST__impl(req: Request) {
   const scope = body.scope == null ? undefined : sanitizeScope(body.scope);
   if (scope === null) {
     return NextResponse.json(
-      { error: 'scope must be { type: "country" | "area", id } or { type: "globe" }' },
+      {
+        error:
+          'scope must be { type: "country" | "area", id }, { type: "globe" } or ' +
+          '{ type: "places", places: [{ type: "country" | "area", id }, ...] } with at least one known place',
+      },
       { status: 400, headers: NO_CACHE },
     );
   }
@@ -58,6 +63,7 @@ async function POST__impl(req: Request) {
   if (typeof body.budgetMs === "number" && Number.isFinite(body.budgetMs) && body.budgetMs > 0) data.budgetMs = body.budgetMs;
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (title) data.title = title;
+  if (typeof body.openWithWorld === "boolean") data.openWithWorld = body.openWithWorld;
 
   try {
     const result = await sendToQueueAndWait<GenerateShortResult>("shorts", "short-video", "generate", data, GENERATE_TIMEOUT_MS);

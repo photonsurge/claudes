@@ -89,7 +89,13 @@ export async function publishChapters(runId: string, opts: { force?: boolean } =
 
     let count = 0;
     const res = await setVideoDescription(ctx, yt.broadcastId, (existing) => {
-      const chapters = buildChapters(timeline.items, { maxChars: chapterBudget(existing), openingLabel });
+      // A video render's chapters are its places, so they carry the place name
+      // alone, not the shot's caption (short-video plan §4, several places).
+      const chapters = buildChapters(timeline.items, {
+        maxChars: chapterBudget(existing),
+        openingLabel,
+        subtitles: !run!.script,
+      });
       count = chapters.length;
       return composeDescription(existing, chapters);
     });

@@ -107,6 +107,8 @@ const RunSchema = new mongoose.Schema<iRunModel>(
     // always writes it whole, and it grows with the render (WP8 adds offline
     // evidence) — a strict sub-schema would silently drop a field it forgot.
     script: { type: mongoose.Schema.Types.Mixed, required: false, default: undefined },
+    // OBS screenshots of a video render (RunShot[], §7 offline test evidence).
+    shots: { type: mongoose.Schema.Types.Mixed, required: false, default: undefined },
     error: {
       step: { type: String, required: false },
       message: { type: String, required: false },

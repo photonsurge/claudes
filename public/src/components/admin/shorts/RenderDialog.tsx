@@ -18,6 +18,10 @@
  *  - Mode: Offline test (no YouTube, §7) or Live.
  *  - When: Now, or At a date and time (`notBefore`; it is skipped as too late
  *    an hour after that, like a scheduled video's start-by window).
+ *  - Preflight: the offline test's report (§7.1) for what the form would
+ *    queue — clips resolved and skipped, length, encoder, YouTube account —
+ *    with nothing queued. A test that also exercises YouTube is Live with
+ *    Publish as Private.
  *
  * No chat toggle: a render never polls chat (§6.3).
  */
@@ -39,11 +43,14 @@ import type { ShortFormat } from "@photonsurge/shared/short-format";
 import type { ShortRender, ShortRenderRequest } from "@photonsurge/shared/short-render";
 import {
   scriptDurationMs,
+  shortPlaceName,
   type ShortInclude,
   type ShortScope,
   type ShortScript,
 } from "@photonsurge/shared/short-script";
+import type { ShortRenderPreflight } from "@photonsurge/shared/short-render";
 import EncoderSelect from "../streams/EncoderSelect";
+import PreflightReport from "./PreflightReport";
 import {
   exampleVideoValues,
   fetchRenderOptions,
@@ -51,7 +58,12 @@ import {
   previewVideoTitle,
   textLength,
 } from "../../../lib/short-formats";
-import { defaultRenderEncoder, queueRender, type EncoderWithOccupancy } from "../../../lib/renders";
+import {
+  defaultRenderEncoder,
+  preflightRender,
+  queueRender,
+  type EncoderWithOccupancy,
+} from "../../../lib/renders";
 import { formatDuration, getShort, scopeLabel } from "../../../lib/shorts";
 import type { StreamAccount } from "../../../lib/stream";
 
@@ -74,6 +86,7 @@ interface Props {
   loadFormat?: typeof getShortFormat;
   loadScript?: typeof getShort;
   queue?: typeof queueRender;
+  preflight?: typeof preflightRender;
   now?: () => number;
 }
 
@@ -93,6 +106,7 @@ export default function RenderDialog({
   loadFormat = getShortFormat,
   loadScript = getShort,
   queue = queueRender,
+  preflight = preflightRender,
   now = Date.now,
 }: Props) {
   const [encoders, setEncoders] = useState<EncoderWithOccupancy[]>([]);
@@ -111,6 +125,8 @@ export default function RenderDialog({
   const [at, setAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [report, setReport] = useState<ShortRenderPreflight | null>(null);
+  const [checking, setChecking] = useState(false);
 
   // Load everything the form starts from each time it opens.
   const targetKey = JSON.stringify(target);
@@ -122,6 +138,7 @@ export default function RenderDialog({
     setError(null);
     setScript(null);
     setFormat(null);
+    setReport(null);
     (async () => {
       let s: ShortScript | null = null;
       if (target.type === "script") {
@@ -161,9 +178,17 @@ export default function RenderDialog({
     // A generate request has no values until it generates: show examples, with what is known.
     const ex = exampleVideoValues();
     if (format) ex.format = format.name;
-    if (target?.type === "generate" && target.scope.type !== "globe")
-      ex.place = scopeLabel(target.scope).replace(/^\w+ · /, "");
-    if (target?.type === "generate" && target.scope.type === "globe") ex.place = "World";
+    if (target?.type === "generate") {
+      const sc = target.scope;
+      if (sc.type === "globe") ex.place = "World";
+      else if (sc.type === "places") {
+        // As script-values stamps them for several places (§6.8).
+        ex.place = sc.places.map(shortPlaceName).join(", ");
+        ex.placeId = sc.places.map((p) => p.id).join("-");
+        ex.places = String(sc.places.length);
+        ex.flag = "";
+      } else ex.place = scopeLabel(sc).replace(/^\w+ · /, "");
+    }
     return ex;
   }, [script, format, target, durationMs]);
   const resolvedTitle = format
@@ -176,10 +201,11 @@ export default function RenderDialog({
   const noAccount = !offline && accounts.length === 0;
   const empty = !!script && !script.clips.length;
 
-  const submit = async () => {
-    if (!target || !format) return;
-    setBusy(true);
-    setError(null);
+  // A report describes the request it was made for: drop it when that changes.
+  useEffect(() => setReport(null), [encoderId, accountId, mode, publishAs]);
+
+  const buildRequest = (): ShortRenderRequest | null => {
+    if (!target || !format) return null;
     const req: ShortRenderRequest = {
       encoderId,
       what:
@@ -200,6 +226,28 @@ export default function RenderDialog({
       req.notBefore = atMs;
       req.startBy = atMs + AT_START_BY_MS;
     }
+    return req;
+  };
+
+  const runPreflight = async () => {
+    const req = buildRequest();
+    if (!req) return;
+    setChecking(true);
+    setError(null);
+    const res = await preflight(req);
+    setChecking(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setReport(res.data.report);
+  };
+
+  const submit = async () => {
+    const req = buildRequest();
+    if (!req) return;
+    setBusy(true);
+    setError(null);
     const res = await queue(req);
     setBusy(false);
     if (!res.ok) {
@@ -213,7 +261,9 @@ export default function RenderDialog({
   const heading = script
     ? `“${script.title}” · ${formatDuration(durationMs)}`
     : target?.type === "generate"
-      ? `A new ${scopeLabel(target.scope).toLowerCase()} round-up, generated when it reaches the front`
+      ? target.scope.type === "places"
+        ? `A new round-up of ${scopeLabel(target.scope)}, generated when it reaches the front`
+        : `A new ${scopeLabel(target.scope).toLowerCase()} round-up, generated when it reaches the front`
       : "";
 
   return (
@@ -344,6 +394,14 @@ export default function RenderDialog({
               Either way the video joins the encoder&apos;s queue — it doesn&apos;t need the encoder to be free.
             </Typography>
 
+            {!offline && publishAs === "private" && (
+              <Typography variant="caption" color="text.secondary">
+                Live and private: a test that also exercises YouTube. Nobody but the channel sees it.
+              </Typography>
+            )}
+
+            {report && <PreflightReport report={report} />}
+
             {empty && <Alert severity="error">This script has no clips — generate it again.</Alert>}
             {error && <Alert severity="error">{error}</Alert>}
           </Stack>
@@ -352,6 +410,9 @@ export default function RenderDialog({
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>
           Cancel
+        </Button>
+        <Button onClick={runPreflight} disabled={busy || checking || !format || loading}>
+          {checking ? "Checking…" : "Preflight"}
         </Button>
         <Button
           variant="contained"

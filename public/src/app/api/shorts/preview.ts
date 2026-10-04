@@ -48,7 +48,15 @@ export async function formatRows(db: AppDb): Promise<ShortFormatRow[]> {
     ? formats
     : [{ id: DEFAULT_SHORT_FORMAT_ID, name: DEFAULT_SHORT_FORMAT_NAME }, ...formats];
   const ordered = [...named].sort((a, b) => (a.id === DEFAULT_SHORT_FORMAT_ID ? -1 : b.id === DEFAULT_SHORT_FORMAT_ID ? 1 : 0));
-  return Promise.all(ordered.map(async (f) => ({ id: f.id, name: f.name, preview: await previewInfo(db, f.id) })));
+  return Promise.all(
+    ordered.map(async (f) => ({
+      id: f.id,
+      name: f.name,
+      // What the Generate form's "world round-up first" starts from (several places).
+      openWithWorld: "template" in f ? f.template.openWithWorld : false,
+      preview: await previewInfo(db, f.id),
+    })),
+  );
 }
 
 /**

@@ -226,6 +226,9 @@ function FormatCard() {
       <button onClick={() => stageFormat({ name: "Europe", template: { ...format.template, budgetMs: 90_000 } })}>
         set template
       </button>
+      <button onClick={() => stageFormat({ template: { ...format.template, scope: { type: "places", places: [] } } })}>
+        empty places
+      </button>
       <button onClick={save}>Save</button>
     </div>
   );
@@ -286,6 +289,18 @@ describe("SceneDraftProvider with a short format (the third document)", () => {
     await waitFor(() => expect(saveFormat).toHaveBeenCalledTimes(1));
     expect(patchSceneMock).not.toHaveBeenCalled();
     expect(patchDirector).not.toHaveBeenCalled();
+  });
+
+  it("blocks the whole Save while Several places has no place, writing nothing", async () => {
+    renderFormat();
+    await screen.findByTestId("name");
+    fireEvent.click(screen.getByRole("button", { name: "set pace" }));
+    fireEvent.click(screen.getByRole("button", { name: "empty places" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByTestId("error")).toHaveTextContent("add at least one place");
+    expect(patchSceneMock).not.toHaveBeenCalled();
+    expect(saveFormat).not.toHaveBeenCalled();
+    expect(screen.getByTestId("dirty")).toHaveTextContent("true");
   });
 
   it("keeps the draft when the short settings fail to save", async () => {

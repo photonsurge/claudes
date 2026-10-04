@@ -141,6 +141,11 @@ export async function resolveAutoScope(
 
 /** Is anything of the included kinds active in the scope? (`skipIfQuiet`.) */
 export async function scopeHasActivity(db: AppDb, cfg: DirectorConfig, scope: ShortScope, include: ShortInclude, now: number): Promise<boolean> {
+  // Several places: active if any of them is.
+  if (scope.type === "places") {
+    for (const place of scope.places) if (await scopeHasActivity(db, cfg, place, include, now)) return true;
+    return false;
+  }
   const rs = await resolveScope(db, scope);
   return (await scopeEvents(db, cfg, rs, include, now)).length > 0;
 }

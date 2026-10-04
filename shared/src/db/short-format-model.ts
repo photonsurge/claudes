@@ -20,9 +20,16 @@ export interface iShortFormatModel extends iShortFormat {
 
 const sub = (def: mongoose.SchemaDefinition) => new mongoose.Schema(def, { _id: false });
 
+const PlaceSchema = sub({
+  type: { type: String, required: true, enum: ["country", "area"] },
+  id: { type: String, required: true },
+});
+
+// `places` (several places in one video) carries the ordered list instead of an id.
 const ScopeSchema = sub({
-  type: { type: String, required: true, enum: ["country", "area", "globe"] },
+  type: { type: String, required: true, enum: ["country", "area", "globe", "places"] },
   id: { type: String },
+  places: { type: [PlaceSchema], default: undefined },
 });
 
 const IncludeSchema = sub({

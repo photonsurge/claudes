@@ -16,6 +16,7 @@ import { obsNamesFor } from "../obs/names";
 import {
   ObsUnavailableError,
   envEndpoint,
+  getSourceScreenshot,
   provisionBrowserScene,
   refreshBrowserSource,
   type ObsEndpoint,
@@ -162,4 +163,20 @@ export async function refreshEncoderScene(encoderId?: string): Promise<{ sceneId
   const { ep, sceneId, sceneName, inputName } = await resolveEncoderScene(encoderId);
   const refreshed = await refreshBrowserSource(ep, inputName, sceneName);
   return { sceneId, inputName: refreshed };
+}
+
+/**
+ * A screenshot of what a run's encoder is drawing for its scene: the OBS scene
+ * provisioned for `run.sceneId` (the render's browser source, full canvas).
+ * The scene is named rather than the input because a fallback rebuild can
+ * leave the input as `<name> #n`; the scene name never moves. Throws
+ * ObsUnavailableError when OBS can't be reached or the scene isn't there.
+ */
+export async function screenshotRunScene(
+  run: Pick<Run, "encoderId" | "sceneId">,
+  opts: { imageFormat?: "jpg" | "png"; imageWidth?: number } = {},
+): Promise<{ mimeType: string; data: Buffer }> {
+  const ep = await endpointForRun(run);
+  const { sceneName } = obsNamesFor(run.sceneId);
+  return getSourceScreenshot(ep, { sourceName: sceneName, imageFormat: opts.imageFormat ?? "jpg", imageWidth: opts.imageWidth });
 }

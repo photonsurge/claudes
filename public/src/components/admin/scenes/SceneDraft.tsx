@@ -210,6 +210,12 @@ export default function SceneDraftProvider({
 
   const save = useCallback(() => {
     if (!dirty || saving) return;
+    // Checked before anything is written, so the one Save stays all or nothing.
+    const staged = (pendingFormat as { template?: { scope?: { type?: string; places?: unknown[] } } }).template?.scope;
+    if (staged?.type === "places" && !staged.places?.length) {
+      setSaveError("Several places: add at least one place before saving.");
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     const out = { ...pending };

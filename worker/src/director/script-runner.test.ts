@@ -2,7 +2,14 @@ jest.mock("../socket", () => ({ emitWorkerEvent: jest.fn() }));
 jest.mock("@photonsurge/shared/utill/logger", () => ({ log: jest.fn() }));
 
 import { emitWorkerEvent } from "../socket";
-import { step, newScriptRunnerState, setScriptPlayEndedHook, SCRIPT_HEARTBEAT_MS, type ScriptRunnerDeps } from "./script-runner";
+import {
+  step,
+  newScriptRunnerState,
+  setScriptPlayEndedHook,
+  setScriptPlayStartedHook,
+  SCRIPT_HEARTBEAT_MS,
+  type ScriptRunnerDeps,
+} from "./script-runner";
 import {
   DEFAULT_DIRECTOR_CONFIG,
   mergeDirectorConfig,
@@ -478,5 +485,44 @@ describe("script runner — the play-ended hook (video renders, short-video plan
     await at(T0 + 23_000);
     await flush();
     expect(fake.configs.get(SCENE)!.mode).toBe("off");
+  });
+});
+
+describe("script runner — the play-started hook (offline-test screenshots, short-video plan §7)", () => {
+  const hook = jest.fn();
+  const flush = () => new Promise((r) => setImmediate(r));
+  beforeEach(() => {
+    hook.mockReset();
+    setScriptPlayStartedHook(hook);
+  });
+  afterAll(() => setScriptPlayStartedHook(null));
+
+  it("is told once the schedule is fixed: skipped clips dropped, starts on the absolute grid", async () => {
+    const fake = fakeDb({
+      scripts: [script([clip("a1", 10_000), clip("dead1", 4_000), clip("a3", 8_000)])],
+      configs: { [SCENE]: play("s1", 7) },
+    });
+    const { at } = harness(fake);
+    await at(T0);
+    await flush();
+    expect(hook).toHaveBeenCalledTimes(1);
+    const [sceneId, rec] = hook.mock.calls[0];
+    expect(sceneId).toBe(SCENE);
+    expect(rec).toMatchObject({ playNonce: 7, startedAt: T0 });
+    expect(rec.clips).toEqual([
+      { id: "a1", startMs: 0, durationMs: 10_000 },
+      { id: "a3", startMs: 10_000, durationMs: 8_000 },
+    ]);
+    await at(T0 + 5_000);
+    await flush();
+    expect(hook).toHaveBeenCalledTimes(1); // not again mid-play
+  });
+
+  it("is not told when there is nothing to play", async () => {
+    const fake = fakeDb({ scripts: [script([clip("dead1", 4_000)])], configs: { [SCENE]: play("s1", 8) } });
+    const { at } = harness(fake);
+    await at(T0);
+    await flush();
+    expect(hook).not.toHaveBeenCalled();
   });
 });

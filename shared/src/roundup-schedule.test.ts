@@ -1,9 +1,11 @@
 import {
   SLOT_CATCHUP_HOURS,
+  bboxCenterLng,
   currentSlotStart,
   isRoundupDue,
   maxSlotGapHours,
   nextSlotStart,
+  placeOffsetHours,
   roundupStaleAfterMs,
 } from "./roundup-schedule";
 import { DEFAULT_ROUNDUP_SETTINGS } from "./roundup-settings";
@@ -132,5 +134,27 @@ describe("roundupStaleAfterMs", () => {
   it("uses the fallback when disabled or slot-less", () => {
     expect(roundupStaleAfterMs({ enabled: false, hours: [0, 12] }, FALLBACK)).toBe(FALLBACK);
     expect(roundupStaleAfterMs({ enabled: true, hours: [] }, FALLBACK)).toBe(FALLBACK);
+  });
+});
+
+describe("placeOffsetHours", () => {
+  it("maps the box's centre longitude to a whole-hour offset", () => {
+    expect(placeOffsetHours([-8, 49, 2, 61])).toBe(0); // UK
+    expect(placeOffsetHours([129, 31, 146, 46])).toBe(9); // Japan
+    expect(placeOffsetHours([-124, 32, -114, 42])).toBe(-8); // California
+    expect(Object.is(placeOffsetHours([-1, 0, 0.5, 1]), 0)).toBe(true); // never -0
+  });
+
+  it("clamps to the real offset range and handles boxes across ±180", () => {
+    expect(placeOffsetHours([179, 0, 179.5, 1])).toBeLessThanOrEqual(14);
+    expect(placeOffsetHours([-179.5, 0, -179, 1])).toBeGreaterThanOrEqual(-12);
+    expect(bboxCenterLng([170, -50, -170, -30])).toBe(180); // wraps: centre on the antimeridian
+    expect(bboxCenterLng([160, -50, -160, -30])).toBe(180);
+  });
+
+  it("phases a place's slots: Europe's 06:00 local is 05:00 UTC", () => {
+    expect(nextSlotStart(at("2026-10-04T02:00:00Z"), [6, 18], placeOffsetHours([-10, 35, 30, 70]))?.toISOString()).toBe(
+      "2026-10-04T05:00:00.000Z",
+    );
   });
 });

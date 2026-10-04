@@ -20,7 +20,7 @@ import { DEFAULT_DIRECTOR_CONFIG, mergeDirectorConfig, type DirectorConfig } fro
 import { clampReadCps } from "@photonsurge/shared/reading-pace";
 import { sanitizeInclude, sanitizeScope, type ShortScript } from "@photonsurge/shared/short-script";
 import { DEFAULT_SHORT_FORMAT_ID, defaultShortFormat, type ShortFormat } from "@photonsurge/shared/short-format";
-import { buildLineup } from "./script-template";
+import { buildLineup, type SkippedPlace } from "./script-template";
 
 export interface GenerateRequest {
   /** The format to make the video in; default the default format. */
@@ -34,6 +34,9 @@ export interface GenerateRequest {
   budgetMs?: number;
   /** Overrides the template's title. */
   title?: string;
+  /** Several places: open on the world round-up first. Absent = the format
+   *  template's `openWithWorld`. Ignored for other scopes. */
+  openWithWorld?: boolean;
 }
 
 /**
@@ -72,29 +75,33 @@ export async function sceneReadCps(db: AppDb, sceneId: string): Promise<number> 
 
 /**
  * Build a draft script for the request and (unless `dryRun`) save it. Returns
- * the script either way. Throws on a malformed scope, an unknown country/area,
- * and a round-up-only video whose scope has no usable round-up.
+ * the script and, for a several-places video, the places it left out (no
+ * usable round-up) and why. Throws on a malformed scope, an unknown
+ * country/area, a round-up-only video whose scope has no usable round-up, and
+ * a several-places video with no place left.
  */
-export async function generateShortScript(
+export async function generateShort(
   db: AppDb,
   req: GenerateRequest,
   opts: { dryRun?: boolean; now?: number } = {},
-): Promise<ShortScript> {
+): Promise<{ script: ShortScript; skipped: SkippedPlace[] }> {
   const format = await generateFormat(db, req.formatId);
   const scope = req.scope != null ? sanitizeScope(req.scope) : format.template.scope ?? null;
   if (!scope) {
     throw new Error(
-      `short-video: scope must be { type: "country" | "area", id } or { type: "globe" }` +
+      `short-video: scope must be { type: "country" | "area", id }, { type: "globe" } or { type: "places", places: [...] } ` +
+        `with at least one known place` +
         (req.scope == null ? ` — the format "${format.name}" names none, so the request must` : ""),
     );
   }
   const include = req.include != null ? sanitizeInclude(req.include) : { ...format.template.include };
   const budgetMs =
     typeof req.budgetMs === "number" && Number.isFinite(req.budgetMs) && req.budgetMs > 0 ? req.budgetMs : format.template.budgetMs;
+  const openWithWorld = typeof req.openWithWorld === "boolean" ? req.openWithWorld : format.template.openWithWorld;
   // The format's scene: its id is the format's.
   const sceneId = format.id;
   const [cfg, readCps] = await Promise.all([sceneDirectorConfig(db, sceneId, opts.dryRun), sceneReadCps(db, sceneId)]);
-  const lineup = await buildLineup(db, cfg, { scope, include, budgetMs, readCps, shape: format, now: opts.now });
+  const lineup = await buildLineup(db, cfg, { scope, include, budgetMs, readCps, shape: format, openWithWorld, now: opts.now });
   const script: ShortScript = {
     id: randomUUID(),
     formatId: format.id,
@@ -105,5 +112,15 @@ export async function generateShortScript(
     clips: lineup.clips,
     status: "draft",
   };
-  return opts.dryRun ? script : db.shortScripts.upsert(script);
+  const saved = opts.dryRun ? script : await db.shortScripts.upsert(script);
+  return { script: saved, skipped: lineup.skipped ?? [] };
+}
+
+/** `generateShort`, the script alone. */
+export async function generateShortScript(
+  db: AppDb,
+  req: GenerateRequest,
+  opts: { dryRun?: boolean; now?: number } = {},
+): Promise<ShortScript> {
+  return (await generateShort(db, req, opts)).script;
 }

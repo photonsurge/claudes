@@ -249,11 +249,24 @@ describe("resolveVideoText", () => {
     expect(out.thumbnailUrl).toBe("/thumbs/europe.png");
   });
 
-  it("cuts a long title at a word with an ellipsis; a frame thumbnail resolves to none (until WP8)", () => {
+  it("a several-places video with the place's own zone dates in London", () => {
+    const out = resolveVideoText(
+      { ...video, title: "%{place} (%{places}) %H:%M, as of %{asOf}", timezone: "place" },
+      { place: "Europe, United States", placeId: "europe-usa", places: "2", asOf: "05:10" },
+      60_000,
+      new Date(NOW),
+      "",
+    );
+    expect(out.title).toBe("Europe, United States (2) 07:00, as of 05:10");
+    expect(out.thumbnailUrl).toBe("/thumbs/europe-usa.png");
+  });
+
+  it("cuts a long title at a word with an ellipsis; a frame thumbnail resolves to its offset, no image", () => {
     const out = resolveVideoText({ ...video, title: "word ".repeat(40), description: "", thumbnail: { source: "frame", atMs: 1000 } }, {}, 1000, new Date(NOW), "");
     expect(Array.from(out.title).length).toBeLessThanOrEqual(100);
     expect(out.title.endsWith("…")).toBe(true);
     expect(out.thumbnailUrl).toBeUndefined();
+    expect(out.thumbnailFrameAtMs).toBe(1000);
     expect(out.description).toBe("");
   });
 
@@ -534,6 +547,41 @@ describe("scheduling at the front (§8, WP9a)", () => {
     expect(made.map((r) => statusOf(r.id))).toEqual(["preparing", "queued", "queued"]);
     await endRun(goLiveRunIds()[0], "finished");
     expect(made.map((r) => statusOf(r.id))).toEqual(["done", "preparing", "queued"]);
+  });
+
+  it("a several-places video under skip leaves a stale place out, names it, and makes the rest", async () => {
+    videoEncoder("obs-v1");
+    const fresh = { generatedAt: new Date(NOW - 2 * 3_600_000) };
+    db.regionRoundups.latestForPlace.mockResolvedValue(fresh);
+    (db.countryRoundups.latestForPlace as jest.Mock).mockImplementation(async (id: string) =>
+      id === "au" ? { generatedAt: new Date(NOW - 16 * 3_600_000) } : fresh,
+    );
+    (generateShortScript as jest.Mock).mockImplementation(async () => script("gen"));
+    const scope = { type: "places", places: [{ type: "area", id: "europe" }, { type: "country", id: "usa" }, { type: "country", id: "australia" }] };
+    const what = { type: "generate", formatId: "shorts", scope };
+    const r = await queueRender({ ...req("x"), what, roundup: { maxAgeHours: 14, ifStale: "skip" } } as any, NOW);
+    expect(db.countryRoundups.latestForPlace).toHaveBeenCalledWith("us");
+    expect(generateShortScript).toHaveBeenCalledWith(db, {
+      formatId: "shorts",
+      scope: { type: "places", places: [{ type: "area", id: "europe" }, { type: "country", id: "usa" }] },
+    });
+    expect(renders.get(r.id)).toMatchObject({ status: "preparing", note: "left out: round-up for australia is 16 h old (limit 14 h)" });
+    (generateShortScript as jest.Mock).mockReset();
+    db.regionRoundups.latestForPlace.mockResolvedValue(null);
+    (db.countryRoundups.latestForPlace as jest.Mock).mockReset().mockResolvedValue(null);
+  });
+
+  it("a several-places video under skip is skipped only when every place is stale", async () => {
+    videoEncoder("obs-v1");
+    const old = { generatedAt: new Date(NOW - 20 * 3_600_000) };
+    db.regionRoundups.latestForPlace.mockResolvedValue(old);
+    (db.countryRoundups.latestForPlace as jest.Mock).mockResolvedValue(old);
+    const scope = { type: "places", places: [{ type: "area", id: "europe" }, { type: "country", id: "usa" }] };
+    const r = await queueRender({ ...req("x"), what: { type: "generate", formatId: "shorts", scope }, roundup: { maxAgeHours: 14, ifStale: "skip" } } as any, NOW);
+    expect(renders.get(r.id)).toMatchObject({ status: "skipped", note: expect.stringMatching(/^every place is stale: round-up for europe .*; round-up for usa /) });
+    expect(generateShortScript).not.toHaveBeenCalled();
+    db.regionRoundups.latestForPlace.mockResolvedValue(null);
+    (db.countryRoundups.latestForPlace as jest.Mock).mockReset().mockResolvedValue(null);
   });
 });
 

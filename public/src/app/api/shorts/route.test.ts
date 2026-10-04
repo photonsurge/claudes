@@ -72,6 +72,7 @@ it("returns light rows and the format scenes' state", async () => {
     {
       id: "shorts",
       name: "Round-up",
+      openWithWorld: false, // not seeded: the default
       preview: { sceneId: "shorts", exists: true, watchToken: "tok", mode: "script", scriptId: "s1", playNonce: 7 },
     },
   ]);

@@ -99,11 +99,15 @@ export type ResolvedScope =
       bboxScoped: boolean;
     };
 
+/** A scope of one place or the globe — what `resolveScope` loads. A `places`
+ *  scope is resolved place by place (script-template.ts `buildPlacesLineup`). */
+export type SingleScope = Exclude<ShortScope, { type: "places" }>;
+
 /**
  * Load what a scope's filters need. Throws a readable error for a country or
  * area id that isn't in the curated catalog.
  */
-export async function resolveScope(db: AppDb, scope: ShortScope): Promise<ResolvedScope> {
+export async function resolveScope(db: AppDb, scope: SingleScope): Promise<ResolvedScope> {
   if (scope.type === "globe") return { type: "globe" };
 
   if (scope.type === "country") {

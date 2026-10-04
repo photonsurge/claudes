@@ -620,6 +620,37 @@ export async function refreshBrowserSource(ep: ObsEndpoint, inputName: string, s
   });
 }
 
+/** A `data:image/…;base64,…` URL (what GetSourceScreenshot returns) → its bytes. */
+export function decodeImageDataUrl(dataUrl: string): { mimeType: string; data: Buffer } {
+  const m = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl ?? "");
+  if (!m || !m[2]) throw new Error("OBS screenshot is not a base64 data URL");
+  const data = Buffer.from(m[3], "base64");
+  if (!data.length) throw new Error("OBS screenshot is empty");
+  return { mimeType: m[1] || "application/octet-stream", data };
+}
+
+/**
+ * One frame of a source as OBS renders it (obs-websocket v5
+ * `GetSourceScreenshot`): a scene or an input, scaled to `imageWidth` (aspect
+ * kept when only the width is given). The offline test's evidence (short-video
+ * plan §7) and a video's frame thumbnail (§6.8) — what OBS really drew, with
+ * its fonts and its GPU, which a browser preview can't prove.
+ */
+export async function getSourceScreenshot(
+  ep: ObsEndpoint,
+  opts: { sourceName: string; imageFormat?: "jpg" | "png"; imageWidth?: number; imageCompressionQuality?: number },
+): Promise<{ mimeType: string; data: Buffer }> {
+  const res = await withObs(ep, (obs) =>
+    obs.call("GetSourceScreenshot", {
+      sourceName: opts.sourceName,
+      imageFormat: opts.imageFormat ?? "jpg",
+      ...(opts.imageWidth ? { imageWidth: Math.round(opts.imageWidth) } : {}),
+      ...(opts.imageCompressionQuality != null ? { imageCompressionQuality: opts.imageCompressionQuality } : {}),
+    }),
+  );
+  return decodeImageDataUrl(String((res as { imageData?: string }).imageData ?? ""));
+}
+
 /** Tear down every cached connection (worker shutdown). */
 export function closeObs(): void {
   for (const url of [...conns.keys()]) reset(url);

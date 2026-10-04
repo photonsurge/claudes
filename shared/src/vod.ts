@@ -194,11 +194,13 @@ export interface Chapter {
  */
 export const BREAKING_MARK = "🚨";
 
-/** One short, on-air-safe label per cut. */
-export function chapterLabel(e: ChapterEntryLike): string {
+/** One short, on-air-safe label per cut. `subtitles: false` leaves the
+ *  subtitle off — a scripted video's chapters are its places ("🇺🇸 United
+ *  States"), not the shot's caption ("Country tour · National weather"). */
+export function chapterLabel(e: ChapterEntryLike, opts: { subtitles?: boolean } = {}): string {
   const parts = [e.breaking ? BREAKING_MARK : "", e.icon ?? "", e.title.trim()].filter(Boolean);
   let label = parts.join(" ");
-  if (e.subtitle?.trim()) label += ` · ${e.subtitle.trim()}`;
+  if (opts.subtitles !== false && e.subtitle?.trim()) label += ` · ${e.subtitle.trim()}`;
   label = label.replace(/\s+/g, " ");
   return label.length > CHAPTER_LABEL_MAX ? `${label.slice(0, CHAPTER_LABEL_MAX - 1).trimEnd()}…` : label;
 }
@@ -214,8 +216,9 @@ export function chapterLabel(e: ChapterEntryLike): string {
  */
 export function buildChapters<E extends ChapterEntryLike>(
   items: AsRunItem<E>[],
-  opts: { maxChars: number; openingLabel: string },
+  opts: { maxChars: number; openingLabel: string; subtitles?: boolean },
 ): Chapter[] {
+  const labelOf = (e: E) => chapterLabel(e, { subtitles: opts.subtitles });
   type Cand = { offsetMs: number; endMs: number; entry: E; rank: number };
   const merged: Cand[] = [];
   for (const it of items) {
@@ -243,7 +246,7 @@ export function buildChapters<E extends ChapterEntryLike>(
 
   const kept: Cand[] = [];
   for (const c of [...long].sort((a, b) => b.rank - a.rank || a.offsetMs - b.offsetMs)) {
-    const line = toLine(c.offsetMs, chapterLabel(c.entry));
+    const line = toLine(c.offsetMs, labelOf(c.entry));
     if (used + line.length + 1 > opts.maxChars) continue;
     used += line.length + 1;
     kept.push(c);
@@ -253,7 +256,7 @@ export function buildChapters<E extends ChapterEntryLike>(
   const out: Chapter[] = [];
   if (opener) out.push({ offsetMs: 0, label: opts.openingLabel, line: opener });
   for (const c of kept) {
-    const label = chapterLabel(c.entry);
+    const label = labelOf(c.entry);
     out.push({ offsetMs: c.offsetMs, label, line: toLine(c.offsetMs, label) });
   }
   return out;

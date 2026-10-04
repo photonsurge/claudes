@@ -59,9 +59,16 @@ const ClipSchema = sub({
   },
 });
 
+const PlaceSchema = sub({
+  type: { type: String, required: true, enum: ["country", "area"] },
+  id: { type: String, required: true },
+});
+
+// `places` (several places in one video) carries the ordered list instead of an id.
 const ScopeSchema = sub({
-  type: { type: String, required: true, enum: ["country", "area", "globe"] },
+  type: { type: String, required: true, enum: ["country", "area", "globe", "places"] },
   id: { type: String },
+  places: { type: [PlaceSchema], default: undefined },
 });
 
 // Off by default, as the sanitizer: event clips are opt-in.

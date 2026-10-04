@@ -89,3 +89,28 @@ export function roundupStaleAfterMs(setting: RoundupSetting, fallbackMs: number)
   if (!setting.enabled || normalizeHours(setting.hours).length === 0) return fallbackMs;
   return 3 * maxSlotGapHours(setting.hours) * HOUR_MS;
 }
+
+/** A place's [west, south, east, north] box. A box whose west edge is east of its east edge wraps ±180. */
+export type PlaceBbox = [number, number, number, number];
+
+/**
+ * The longitude of a box's centre, wrapping boxes included (their centre sits
+ * on the far side of ±180).
+ */
+export function bboxCenterLng(bbox: PlaceBbox): number {
+  const [w, , e] = bbox;
+  const width = w <= e ? e - w : 360 - w + e;
+  let lng = w <= e ? (w + e) / 2 : w + width / 2;
+  if (lng > 180) lng -= 360;
+  return lng;
+}
+
+/**
+ * A place's representative whole-hour UTC offset, from its box's centre
+ * longitude (round(lng / 15), clamped to -12..+14). No DST and no tz database:
+ * it is what the worker phases a place's round-up slots with, so the admin
+ * pages show the same slot instants the worker takes.
+ */
+export function placeOffsetHours(bbox: PlaceBbox): number {
+  return Math.max(-12, Math.min(14, Math.round(bboxCenterLng(bbox) / 15))) || 0; // `|| 0` normalises -0 → 0
+}

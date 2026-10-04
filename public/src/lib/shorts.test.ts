@@ -2,6 +2,7 @@
  * lib/shorts — the pure helpers behind /admin/shorts: durations, scope labels,
  * picker options and the preview play state.
  */
+import { MAIN_AREAS_PLACES } from "@photonsurge/shared/short-script";
 import {
   AREA_OPTIONS,
   COUNTRY_OPTIONS,
@@ -50,6 +51,11 @@ describe("scopeLabel", () => {
     expect(scopeLabel({ type: "country", id: "japan" })).toMatch(/^Country · .+ Japan$/);
     expect(scopeLabel({ type: "area", id: AREA_OPTIONS[0].id })).toBe(`Area · ${AREA_OPTIONS[0].label}`);
     expect(scopeLabel({ type: "country", id: "atlantis" })).toBe("Country · atlantis");
+  });
+
+  it("counts several places and names the first three", () => {
+    expect(scopeLabel({ type: "places", places: [...MAIN_AREAS_PLACES] })).toBe("6 places · Europe, United States, Asia, …");
+    expect(scopeLabel({ type: "places", places: [{ type: "country", id: "uk" }] })).toBe("1 place · United Kingdom");
   });
 });
 

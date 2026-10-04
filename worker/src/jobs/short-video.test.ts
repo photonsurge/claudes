@@ -79,6 +79,25 @@ describe("short-video.generate", () => {
     expect(saved.clips).toHaveLength(1);
   });
 
+  it("a several-places video names the places it left out; the format's openWithWorld applies", async () => {
+    const main = sanitizeShortFormat({
+      id: "short-main",
+      name: "Main areas",
+      template: { scope: { type: "places", places: [{ type: "area", id: "europe" }, { type: "country", id: "japan" }] }, openWithWorld: true },
+    })!;
+    const f = fakeDb([main]);
+    (f.db as any).eventSummaries = { latest: async () => null }; // no fresh world round-up
+    (getAppDb as jest.Mock).mockResolvedValue(f.db);
+    const result = await generate(job({ formatId: "short-main" }));
+    const saved = f.upsert.mock.calls[0][0];
+    expect(saved.scope).toEqual(main.template.scope);
+    expect(saved.clips.map((c: any) => c.target)).toEqual(["country:japan", "global:spin"]);
+    expect(result.skipped).toEqual([
+      { place: "area:europe", name: "Europe", reason: "no usable round-up" },
+      { place: "world", name: "World", reason: "no fresh world round-up" },
+    ]);
+  });
+
   it("refuses an unknown format", async () => {
     const f = fakeDb();
     (getAppDb as jest.Mock).mockResolvedValue(f.db);

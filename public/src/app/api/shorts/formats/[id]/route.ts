@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { deleteFormat, saveFormat } from "@photonsurge/shared/db/short-format-copy";
 import { sanitizeShortFormat } from "@photonsurge/shared/short-format";
+import { sanitizeScope } from "@photonsurge/shared/short-script";
 import { requireAdmin } from "../../../../../lib/require-admin";
 import { NO_CACHE } from "../../preview";
 import { DELETE_STATUS } from "../status";
@@ -41,6 +42,12 @@ async function PUT__impl(req: Request, { params }: Ctx) {
     body = ((await req.json()) ?? {}) as Record<string, unknown>;
   } catch {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400, headers: NO_CACHE });
+  }
+  // A several-places scope with no valid place would sanitise to "keep the
+  // stored scope" — refuse it instead of saving something other than was asked.
+  const scope = (body.template as { scope?: { type?: unknown } } | undefined)?.scope;
+  if (scope?.type === "places" && !sanitizeScope(scope)) {
+    return NextResponse.json({ error: "Several places: add at least one place" }, { status: 400, headers: NO_CACHE });
   }
   const db = await getAppDb();
   const existing = await db.shortFormats.get(id);
