@@ -4,8 +4,9 @@
  * /admin/crosswords/desk/:scene — live operation of one crossword channel, the
  * counterpart of /control (docs/crossword-mode-plan.md §8.3): the board in
  * small, the clue in the spotlight with its countdown, this puzzle's scores and
- * the solve feed; the game controls; and the simulator. Go live links to the
- * Streams page until the Go live dialog lands (WP12).
+ * the solve feed; the game controls; and the simulator. When the approved pool
+ * is too small the channel idles or replays, and a line says so (§7.5). Go
+ * live links to the Streams page until the Go live dialog lands (WP12).
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -21,6 +22,7 @@ import type { CrosswordPublicState } from "@photonsurge/shared/crossword";
 import AdminPageShell from "../../AdminPageShell";
 import MiniGrid from "../puzzles/MiniGrid";
 import { listScenes } from "../../../../lib/scenes";
+import { listPuzzles } from "../puzzles/api";
 import { font } from "../../../../theme/tokens";
 import DeskControls from "./DeskControls";
 import SimForm from "./SimForm";
@@ -32,6 +34,18 @@ const PHASE_LABEL: Record<CrosswordPublicState["phase"], string> = {
   playing: "Playing",
   finale: "Finale",
 };
+
+/**
+ * Why the channel is idle or replaying, or null when it is playing fresh
+ * stock. The worker stores no reason on the state, so this is derived: idle
+ * means nothing playable; a running game with every ready puzzle already
+ * played here means the next one is a replay. `unplayed` is null while unknown.
+ */
+export function stockReason(phase: CrosswordPublicState["phase"], unplayed: number | null): string | null {
+  if (phase === "idle") return "Idle. No puzzle to play: approve more words so one can be built.";
+  if (unplayed === 0) return "Replaying. Every ready puzzle has aired on this channel, and the approved pool is too small to build a new one: approve more words.";
+  return null;
+}
 
 const secondsLeft = (endsAt: number, skew: number) => Math.max(0, Math.round((endsAt - (Date.now() + skew)) / 1000));
 
@@ -48,6 +62,20 @@ export default function DeskPage({ sceneId }: { sceneId: string }) {
       live = false;
     };
   }, [sceneId]);
+
+  const [unplayed, setUnplayed] = useState<number | null>(null);
+  const phase = state?.phase;
+  useEffect(() => {
+    if (!phase) return;
+    let live = true;
+    listPuzzles({ status: "ready" }).then((res) => {
+      if (live) setUnplayed(res.ok ? res.data.puzzles.filter((p) => !p.scenes.includes(sceneId)).length : null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [sceneId, phase, state?.puzzleNo]);
+  const reason = state ? stockReason(state.phase, unplayed) : null;
 
   const name = scene?.name ?? sceneId;
   const notCrossword = scene && sceneSurface(scene) !== "crossword";
@@ -66,10 +94,10 @@ export default function DeskPage({ sceneId }: { sceneId: string }) {
         <Stack direction="row" spacing={1}>
           {watchHref && (
             <Button variant="outlined" href={watchHref} target="_blank" rel="noopener">
-              Watch
+              Output
             </Button>
           )}
-          <Button variant="outlined" component={Link} href={`/admin/scenes/${encodeURIComponent(sceneId)}`}>
+          <Button variant="outlined" component={Link} href={`/admin/crosswords/channels/${encodeURIComponent(sceneId)}`}>
             Settings
           </Button>
           <Button variant="contained" color="error" component={Link} href="/admin/streams">
@@ -80,6 +108,7 @@ export default function DeskPage({ sceneId }: { sceneId: string }) {
     >
       <Stack spacing={1.75}>
         {notCrossword && <Alert severity="warning">This channel is a weather channel; its controls are on /control.</Alert>}
+        {reason && <Alert severity="info">{reason}</Alert>}
         {error && <Alert severity="error">Couldn&apos;t load the game: {error}</Alert>}
 
         <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap", rowGap: 1 }}>

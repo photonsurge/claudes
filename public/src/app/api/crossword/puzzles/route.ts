@@ -24,9 +24,8 @@ function toRow(p: CrosswordPuzzle): PuzzleRow {
   const row: PuzzleRow = {
     id: p.id,
     title: p.title,
-    // WP6 rework: puzzles have no theme or model now; the row keeps the field until the page drops it.
-    theme: "",
     status: p.status,
+    familyFriendly: p.familyFriendly,
     source: p.source,
     createdAt: p.createdAt,
     width: p.width,
@@ -40,10 +39,9 @@ function toRow(p: CrosswordPuzzle): PuzzleRow {
 }
 
 /**
- * GET /api/crossword/puzzles[?status=&source=&theme=] — the stock for
+ * GET /api/crossword/puzzles[?status=&source=&q=] — the stock for
  * /admin/crosswords/puzzles, newest first (the latest 500). Status filters in
- * Mongo; source and theme (a case-insensitive substring of theme or title)
- * filter here.
+ * Mongo; source and q (a case-insensitive substring of the title) filter here.
  */
 async function GET__impl(req: Request) {
   if (!(await requireAdmin())) {
@@ -52,13 +50,13 @@ async function GET__impl(req: Request) {
   const sp = new URL(req.url).searchParams;
   const status = oneOf(sp.get("status"), STATUSES);
   const source = oneOf(sp.get("source"), SOURCES);
-  const theme = (sp.get("theme") ?? "").trim().toLowerCase().slice(0, 60);
+  const q = (sp.get("q") ?? "").trim().toLowerCase().slice(0, 60);
 
   const db = await getAppDb();
   const puzzles = await db.crosswordPuzzles.list({ ...(status ? { status } : {}), limit: LIST_LIMIT });
   const rows = puzzles
     .filter((p) => !source || p.source === source)
-    .filter((p) => !theme || p.title.toLowerCase().includes(theme))
+    .filter((p) => !q || p.title.toLowerCase().includes(q))
     .map(toRow);
   const body: PuzzleListResponse = { puzzles: rows };
   return NextResponse.json(body, { status: 200, headers: NO_CACHE });

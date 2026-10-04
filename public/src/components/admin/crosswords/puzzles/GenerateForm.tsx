@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Generate now: pick a crossword channel (the build honours its difficulty and
- * no-repeat window) and optionally a theme, then queue `crossword.generate`.
+ * Generate now: pick a crossword channel (the build honours its difficulty,
+ * no-repeat window and family-friendly setting) and queue `crossword.generate`.
  * The job runs in the background, so success only says it was queued; the
  * puzzle shows in the list when it lands.
  */
@@ -29,7 +29,6 @@ interface Props {
 export default function GenerateForm({ onQueued, loadScenes = listScenes, generate = generatePuzzle }: Props) {
   const [scenes, setScenes] = useState<SceneMeta[] | null>(null);
   const [sceneId, setSceneId] = useState("");
-  const [theme, setTheme] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -51,13 +50,13 @@ export default function GenerateForm({ onQueued, loadScenes = listScenes, genera
     setBusy(true);
     setError(null);
     setDone(null);
-    const res = await generate(sceneId, theme);
+    const res = await generate(sceneId);
     setBusy(false);
     if (!res.ok) {
       setError(res.error);
       return;
     }
-    setDone(`Build queued${theme.trim() ? ` (theme: ${theme.trim()})` : ""}. It appears below when it lands.`);
+    setDone("Build queued from the approved pool. It appears below when it lands.");
     onQueued?.();
   };
 
@@ -87,15 +86,6 @@ export default function GenerateForm({ onQueued, loadScenes = listScenes, genera
               </MenuItem>
             ))}
           </TextField>
-          <TextField
-            size="small"
-            label="Theme (optional)"
-            placeholder="Volcanoes"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value)}
-            slotProps={{ htmlInput: { maxLength: 60 } }}
-            sx={{ minWidth: 220 }}
-          />
           <Button variant="contained" onClick={submit} disabled={busy || !sceneId}>
             Generate
           </Button>

@@ -1,7 +1,8 @@
 /**
  * DeskPage — over a faked API: draws the board and spotlight from the state
  * route, polls it every 2 s, sends commands and simulator messages, and links
- * Watch (tokened crossword URL) and Go live.
+ * Output (tokened crossword URL), Settings and Go live, and says why the
+ * channel idles or replays when the pool is too small.
  */
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { CrosswordPublicState } from "@photonsurge/shared/crossword";
@@ -19,11 +20,13 @@ jest.mock("next/link", () => ({
 
 const NOW = 1_000_000;
 let state: CrosswordPublicState;
+let puzzles: { id: string; scenes: string[] }[] = [];
 const calls: string[] = [];
 const bodies: Record<string, unknown[]> = {};
 
 beforeEach(() => {
   calls.length = 0;
+  puzzles = [{ id: "p1", scenes: [] }];
   for (const k of Object.keys(bodies)) delete bodies[k];
   state = {
     sceneId: "xw",
@@ -52,6 +55,7 @@ beforeEach(() => {
     if (u === "/api/scenes") return json({ scenes: [{ id: "xw", name: "Crossword One", surface: "crossword", watchToken: "tok" }] });
     if (u === "/api/crossword/xw/state") return json(state);
     if (u === "/api/crossword/xw/command" || u === "/api/crossword/xw/sim") return json({ queued: true }, 202);
+    if (u.startsWith("/api/crossword/puzzles")) return json({ puzzles: puzzles });
     return json({ error: "nope" }, 404);
   }) as typeof fetch;
 });
@@ -71,9 +75,10 @@ it("draws the board, the spotlight and the boards", async () => {
   jest.restoreAllMocks();
 });
 
-it("links Watch to the tokened crossword page and Go live to Streams", async () => {
+it("links Output to the tokened crossword page, Settings and Go live", async () => {
   render(<DeskPage sceneId="xw" />);
-  await waitFor(() => expect(screen.getByRole("link", { name: "Watch" })).toHaveAttribute("href", "/crossword/xw?token=tok"));
+  await waitFor(() => expect(screen.getByRole("link", { name: "Output" })).toHaveAttribute("href", "/crossword/xw?token=tok"));
+  expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/crosswords/channels/xw");
   expect(screen.getByRole("link", { name: "Go live" })).toHaveAttribute("href", "/admin/streams");
 });
 
@@ -124,4 +129,22 @@ it("disables Skip and Reveal with no clue in the spotlight", async () => {
   await screen.findByText(/Intro card/, { selector: "p" });
   expect(screen.getByRole("button", { name: "Skip clue" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Reveal word" })).toBeDisabled();
+});
+
+it("says why it is idle", async () => {
+  state = { ...state, phase: "idle", spotlight: null, entries: [], rows: [], width: 0, height: 0 };
+  render(<DeskPage sceneId="xw" />);
+  expect(await screen.findByText(/No puzzle to play: approve more words/)).toBeInTheDocument();
+});
+
+it("says it is replaying when every ready puzzle has aired here", async () => {
+  puzzles = [{ id: "p1", scenes: ["xw"] }];
+  render(<DeskPage sceneId="xw" />);
+  expect(await screen.findByText(/Replaying\. Every ready puzzle has aired/)).toBeInTheDocument();
+});
+
+it("shows no reason while there is unplayed stock", async () => {
+  render(<DeskPage sceneId="xw" />);
+  await screen.findByText("Feline pet");
+  expect(screen.queryByText(/approve more words/)).toBeNull();
 });

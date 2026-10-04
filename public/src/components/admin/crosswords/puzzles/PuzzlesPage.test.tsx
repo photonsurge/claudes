@@ -18,8 +18,8 @@ jest.mock("next/link", () => ({
 const row: PuzzleRow = {
   id: "p1",
   title: "Volcanoes",
-  theme: "Volcanoes",
-  status: "rejected",
+  status: "ready",
+  familyFriendly: true,
   source: "themed",
   createdAt: 1_700_000_000_000,
   width: 11,
@@ -58,8 +58,22 @@ it("lists puzzles with a link to each", async () => {
   const link = await screen.findByRole("link", { name: "Volcanoes" });
   expect(link).toHaveAttribute("href", "/admin/crosswords/puzzles/p1");
   const tr = link.closest("tr")!;
-  expect(within(tr).getByText("rejected")).toBeInTheDocument();
+  expect(within(tr).getByText("ready")).toBeInTheDocument();
   expect(within(tr).getByText("14")).toBeInTheDocument();
+});
+
+it("shows the family-friendly chip", async () => {
+  render(<PuzzlesPage />);
+  const tr = (await screen.findByRole("link", { name: "Volcanoes" })).closest("tr")!;
+  expect(within(tr).getByText("Family friendly")).toBeInTheDocument();
+});
+
+it("has no Draft status", async () => {
+  render(<PuzzlesPage />);
+  await screen.findByRole("link", { name: "Volcanoes" });
+  fireEvent.mouseDown(screen.getByLabelText("Status"));
+  const options = await screen.findAllByRole("option");
+  expect(options.map((o) => o.textContent)).toEqual(["All", "Ready", "Rejected"]);
 });
 
 it("refetches with the status filter", async () => {
@@ -71,17 +85,16 @@ it("refetches with the status filter", async () => {
   expect(calls).toContain("GET /api/crossword/puzzles?status=ready");
 });
 
-it("generates for a crossword channel with a theme", async () => {
+it("generates for a crossword channel with just the scene", async () => {
   render(<PuzzlesPage />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Generate" })).toBeEnabled());
   fireEvent.mouseDown(screen.getByLabelText("Channel"));
   const options = await screen.findAllByRole("option");
   expect(options.map((o) => o.textContent)).toEqual(["Crossword One"]);
   fireEvent.click(options[0]);
-  fireEvent.change(screen.getByLabelText("Theme (optional)"), { target: { value: "Moons" } });
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
   });
-  expect(await screen.findByText(/Build queued \(theme: Moons\)/)).toBeInTheDocument();
-  expect(bodies).toContainEqual({ sceneId: "xw", theme: "Moons" });
+  expect(await screen.findByText(/Build queued/)).toBeInTheDocument();
+  expect(bodies).toContainEqual({ sceneId: "xw" });
 });

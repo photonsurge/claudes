@@ -2,9 +2,8 @@
 
 /**
  * /admin/crosswords/puzzles/:id — review one puzzle: the grid with every
- * answer, the clues to edit or drop, and Approve / Reject. Every action goes
- * through PATCH /api/crossword/puzzles/:id; a refusal (a clue that leaks its
- * answer, a drop that would split the grid) shows the route's own message.
+ * answer, the clues with a link to each word's Words page, and Reject (or
+ * Restore, for a puzzle rejected by mistake). Clues are edited in Words.
  */
 import { useCallback, useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
@@ -18,7 +17,7 @@ import type { CrosswordPuzzle } from "@photonsurge/shared/crossword";
 import AdminPageShell from "../../AdminPageShell";
 import ClueTable from "./ClueTable";
 import MiniGrid, { answerRows } from "./MiniGrid";
-import { STATUS_COLOR } from "./PuzzlesTable";
+import { FamilyFriendlyChip, STATUS_COLOR } from "./PuzzlesTable";
 import { fmtTime, getPuzzle, patchPuzzle, type PuzzlePatch } from "./api";
 
 export default function PuzzleDetailPage({ id }: { id: string }) {
@@ -41,17 +40,16 @@ export default function PuzzleDetailPage({ id }: { id: string }) {
   }, [id]);
 
   const act = useCallback(
-    async (patch: PuzzlePatch): Promise<boolean> => {
+    async (patch: PuzzlePatch) => {
       setBusy(true);
       setActionError(null);
       const res = await patchPuzzle(id, patch);
       setBusy(false);
       if (!res.ok) {
         setActionError(res.error);
-        return false;
+        return;
       }
       setPuzzle(res.data);
-      return true;
     },
     [id],
   );
@@ -59,8 +57,6 @@ export default function PuzzleDetailPage({ id }: { id: string }) {
   const title = puzzle ? puzzle.title || puzzle.id : "Puzzle";
   const across = puzzle?.entries.filter((e) => e.dir === "across") ?? [];
   const down = puzzle?.entries.filter((e) => e.dir === "down") ?? [];
-  // Remount the clue rows (dropping their drafts) only when the words change, not a clue.
-  const wordsKey = puzzle?.entries.map((e) => `${e.id}:${e.answer}`).join(",") ?? "";
 
   return (
     <AdminPageShell
@@ -70,12 +66,15 @@ export default function PuzzleDetailPage({ id }: { id: string }) {
       actions={
         puzzle && (
           <Stack direction="row" spacing={1}>
-            <Button variant="contained" color="success" disabled={busy || puzzle.status === "ready"} onClick={() => act({ action: "approve" })}>
-              Approve
-            </Button>
-            <Button variant="outlined" color="error" disabled={busy || puzzle.status === "rejected"} onClick={() => act({ action: "reject" })}>
-              Reject
-            </Button>
+            {puzzle.status === "rejected" ? (
+              <Button variant="outlined" disabled={busy} onClick={() => act({ action: "unreject" })}>
+                Restore
+              </Button>
+            ) : (
+              <Button variant="outlined" color="error" disabled={busy} onClick={() => act({ action: "reject" })}>
+                Reject
+              </Button>
+            )}
           </Stack>
         )
       }
@@ -86,6 +85,7 @@ export default function PuzzleDetailPage({ id }: { id: string }) {
         <Stack spacing={1.75}>
           <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
             <Chip size="small" variant="outlined" label={puzzle.status} color={STATUS_COLOR[puzzle.status]} />
+            <FamilyFriendlyChip on={puzzle.familyFriendly} />
             <Typography variant="body2" color="text.secondary">
               {puzzle.source} · {puzzle.entries.length} words · {puzzle.width}×{puzzle.height} · built{" "}
               {fmtTime(puzzle.createdAt)} · played {puzzle.plays.length} time{puzzle.plays.length === 1 ? "" : "s"}
@@ -109,14 +109,7 @@ export default function PuzzleDetailPage({ id }: { id: string }) {
                 cell={30}
               />
             </Paper>
-            <ClueTable
-              key={wordsKey}
-              entries={[...across, ...down]}
-              busy={busy}
-              onFocus={setFocus}
-              onSaveClue={(entryId, clue) => act({ action: "clue", entryId, clue })}
-              onDrop={(entryId) => act({ action: "drop", entryId })}
-            />
+            <ClueTable entries={[...across, ...down]} onFocus={setFocus} />
           </Box>
         </Stack>
       )}

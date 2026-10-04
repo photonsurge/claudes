@@ -25,14 +25,13 @@ it("is admin only", async () => {
   expect(sendToBack).not.toHaveBeenCalled();
 });
 
-it("needs a crossword sceneId and a short theme", async () => {
+it("needs a crossword sceneId", async () => {
   expect((await post({})).status).toBe(400);
-  expect((await post({ sceneId: "xw", theme: "t".repeat(61) })).status).toBe(400);
   expect((await post({ sceneId: "wind" })).status).toBe(404);
   expect(sendToBack).not.toHaveBeenCalled();
 });
 
-it("queues a build (a theme in the body is ignored: puzzles have none)", async () => {
+it("queues a build (only the scene goes in the job; a theme is ignored)", async () => {
   expect((await post({ sceneId: "xw" })).status).toBe(202);
   expect(sendToBack).toHaveBeenLastCalledWith("crossword", "crossword", "generate", { sceneId: "xw" });
   await post({ sceneId: "xw", theme: "  Volcanoes   of  Iceland " });

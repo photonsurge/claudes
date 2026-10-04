@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * The puzzle stock, newest first: title and theme, status, source, size and
+ * The puzzle stock, newest first: title, status, family-friendly chip, source, size and
  * word count, plays and when last played, when built. A title opens the
- * puzzle's detail page (grid, clues, review actions).
+ * puzzle's detail page (grid, answers, Reject).
  */
 import Link from "next/link";
 import Chip from "@mui/material/Chip";
@@ -18,6 +18,11 @@ import Typography from "@mui/material/Typography";
 import type { CrosswordPuzzleStatus } from "@photonsurge/shared/crossword";
 import { font } from "../../../../theme/tokens";
 import { fmtTime, type PuzzleRow } from "./api";
+
+/** The puzzle's family-friendly tag: every word and clue in it is tagged. */
+export function FamilyFriendlyChip({ on }: { on: boolean }) {
+  return on ? <Chip size="small" color="success" label="Family friendly" /> : <Chip size="small" variant="outlined" label="Not tagged" />;
+}
 
 export const STATUS_COLOR: Record<CrosswordPuzzleStatus, "default" | "success" | "error"> = {
   ready: "success",
@@ -34,8 +39,8 @@ export default function PuzzlesTable({ puzzles }: { puzzles: PuzzleRow[] }) {
         <TableHead>
           <TableRow>
             <TableCell>Title</TableCell>
-            <TableCell>Theme</TableCell>
             <TableCell>Status</TableCell>
+            <TableCell>Family friendly</TableCell>
             <TableCell>Source</TableCell>
             <TableCell sx={numHead}>Words</TableCell>
             <TableCell sx={numHead}>Size</TableCell>
@@ -52,18 +57,13 @@ export default function PuzzlesTable({ puzzles }: { puzzles: PuzzleRow[] }) {
                   {p.title || p.id}
                 </MuiLink>
               </TableCell>
-              <TableCell>{p.theme || "—"}</TableCell>
               <TableCell>
                 <Chip size="small" variant="outlined" label={p.status} color={STATUS_COLOR[p.status]} />
               </TableCell>
               <TableCell>
-                {p.source}
-                {p.model && (
-                  <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.75 }}>
-                    {p.model}
-                  </Typography>
-                )}
+                <FamilyFriendlyChip on={p.familyFriendly} />
               </TableCell>
+              <TableCell>{p.source}</TableCell>
               <TableCell sx={numCell}>{p.words}</TableCell>
               <TableCell sx={numCell}>
                 {p.width}×{p.height}

@@ -35,10 +35,10 @@ const json = (method: string, body: unknown): RequestInit => ({
 export interface PuzzleRow {
   id: string;
   title: string;
-  theme: string;
   status: CrosswordPuzzleStatus;
+  /** Every word and clue in it carries the family-friendly tag. */
+  familyFriendly: boolean;
   source: CrosswordPuzzleSource;
-  model?: string;
   createdAt: number;
   width: number;
   height: number;
@@ -54,23 +54,20 @@ export interface PuzzleListResponse {
 }
 
 /** What PATCH /api/crossword/puzzles/:id accepts. */
-export type PuzzlePatch =
-  | { action: "approve" }
-  | { action: "reject" }
-  | { action: "clue"; entryId: string; clue: string }
-  | { action: "drop"; entryId: string };
+export type PuzzlePatch = { action: "reject" } | { action: "unreject" };
 
 export interface PuzzleFilters {
   status?: CrosswordPuzzleStatus | "";
   source?: CrosswordPuzzleSource | "";
-  theme?: string;
+  /** A substring of the title. */
+  q?: string;
 }
 
 export function puzzlesUrl(f: PuzzleFilters = {}): string {
   const sp = new URLSearchParams();
   if (f.status) sp.set("status", f.status);
   if (f.source) sp.set("source", f.source);
-  if (f.theme?.trim()) sp.set("theme", f.theme.trim());
+  if (f.q?.trim()) sp.set("q", f.q.trim());
   const qs = sp.toString();
   return `/api/crossword/puzzles${qs ? `?${qs}` : ""}`;
 }
@@ -79,11 +76,14 @@ export const listPuzzles = (f: PuzzleFilters = {}) => call<PuzzleListResponse>(p
 export const getPuzzle = (id: string) => call<CrosswordPuzzle>(`/api/crossword/puzzles/${encodeURIComponent(id)}`);
 export const patchPuzzle = (id: string, patch: PuzzlePatch) =>
   call<CrosswordPuzzle>(`/api/crossword/puzzles/${encodeURIComponent(id)}`, json("PATCH", patch));
-export const generatePuzzle = (sceneId: string, theme?: string) =>
-  call<{ queued: true }>("/api/crossword/generate", json("POST", theme?.trim() ? { sceneId, theme: theme.trim() } : { sceneId }));
+export const generatePuzzle = (sceneId: string) => call<{ queued: true }>("/api/crossword/generate", json("POST", { sceneId }));
 
-/** The Words admin, searched for this answer (the bank id isn't on the puzzle). */
+/** The Words admin, searched for this answer (seed entries have no bank id). */
 export const wordSearchHref = (answer: string) => `/admin/crosswords/words?q=${encodeURIComponent(answer)}`;
+
+/** An entry's page in Words: its bank word, or a search for the answer when it came from the seed set. */
+export const wordHref = (e: { wordId: string; answer: string }) =>
+  e.wordId && !e.wordId.startsWith("seed:") ? `/admin/crosswords/words/${encodeURIComponent(e.wordId)}` : wordSearchHref(e.answer);
 
 // ---------------------------------------------------------------------------
 // Players

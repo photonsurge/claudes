@@ -2,8 +2,8 @@
 
 /**
  * /admin/crosswords/puzzles — the puzzle stock (docs/crossword-mode-plan.md
- * §8.3): filter by status, source and theme, open one to review it, and
- * Generate now for a channel. Builds run in the background, so the list is
+ * §8.3): filter by status, source and title, open one to see its grid,
+ * and Generate now (from the approved pool) for a channel. Builds run in the background, so the list is
  * refreshed by hand (or after a queued build, once).
  */
 import { useCallback, useEffect, useState } from "react";
@@ -19,7 +19,7 @@ import PuzzlesTable from "./PuzzlesTable";
 import { listPuzzles, type PuzzleFilters, type PuzzleRow } from "./api";
 
 export default function PuzzlesPage() {
-  const [filters, setFilters] = useState<PuzzleFilters>({ status: "", source: "", theme: "" });
+  const [filters, setFilters] = useState<PuzzleFilters>({ status: "", source: "", q: "" });
   const [rows, setRows] = useState<PuzzleRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +42,7 @@ export default function PuzzlesPage() {
   return (
     <AdminPageShell
       title="Puzzles"
-      description="Crossword puzzles built for the channels. A draft airs only once approved (or under a channel's auto-approve)."
+      description="Crossword puzzles built for the channels. Built from approved words and clues, so each is ready to air until rejected."
       maxWidth={1400}
       crumbs={[{ href: "/admin/crosswords", label: "Crosswords" }, { label: "Puzzles" }]}
       actions={
@@ -57,7 +57,6 @@ export default function PuzzlesPage() {
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
           <TextField select size="small" label="Status" value={filters.status} onChange={(e) => set({ status: e.target.value as PuzzleFilters["status"] })} sx={{ minWidth: 160 }}>
             <MenuItem value="">All</MenuItem>
-            <MenuItem value="draft">Draft</MenuItem>
             <MenuItem value="ready">Ready</MenuItem>
             <MenuItem value="rejected">Rejected</MenuItem>
           </TextField>
@@ -69,9 +68,9 @@ export default function PuzzlesPage() {
           </TextField>
           <TextField
             size="small"
-            label="Theme or title"
-            value={filters.theme}
-            onChange={(e) => set({ theme: e.target.value })}
+            label="Title"
+            value={filters.q}
+            onChange={(e) => set({ q: e.target.value })}
             sx={{ minWidth: 220 }}
           />
         </Stack>
