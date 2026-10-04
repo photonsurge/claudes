@@ -4,7 +4,7 @@
  * the public YouTube links, and never an operator control (Control / Watch /
  * Settings links, the Next button) or a link for a channel that isn't publishing.
  */
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import PublicChannels from "./PublicChannels";
 
 jest.mock("../lib/scenes", () => ({ listScenes: jest.fn() }));
@@ -135,5 +135,36 @@ describe("PublicChannels", () => {
     expect(await screen.findByText("No channels yet.")).toBeInTheDocument();
     // …without pointing a viewer at the admin.
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  describe("a crossword channel", () => {
+    const realFetch = global.fetch;
+    afterEach(() => {
+      global.fetch = realFetch;
+    });
+
+    it("shows its puzzle line in place of now/next, and no operator links", async () => {
+      global.fetch = jest.fn(async () => ({
+        ok: true,
+        json: async () => ({ puzzleNo: 7, entries: [{ solved: { name: "A", points: 1 } }, {}] }),
+      })) as unknown as typeof fetch;
+      mockList.mockResolvedValue([{ id: "word-up", name: "Word Up", surface: "crossword" }] as Scenes);
+
+      render(<PublicChannels />);
+      const card = await screen.findByRole("article", { name: "Word Up" });
+      expect(await within(card).findByText(/Puzzle 7 · 1 of 2 solved/)).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Desk" })).not.toBeInTheDocument();
+    });
+
+    it("fails soft for an anonymous visitor the state route turns away", async () => {
+      global.fetch = jest.fn(async () => ({ ok: false, status: 401, json: async () => ({}) })) as unknown as typeof fetch;
+      mockList.mockResolvedValue([{ id: "word-up", name: "Word Up", surface: "crossword" }] as Scenes);
+
+      render(<PublicChannels />);
+      const card = await screen.findByRole("article", { name: "Word Up" });
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      expect(within(card).getByText("OFF AIR")).toBeInTheDocument();
+      expect(within(card).queryByText(/Puzzle/)).not.toBeInTheDocument();
+    });
   });
 });

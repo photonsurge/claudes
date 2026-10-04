@@ -16,6 +16,7 @@ jest.mock("../../../../lib/scenes", () => ({
   listScenes: jest.fn(async () => [
     { id: "default", name: "Main" },
     { id: "wind", name: "Atlantic Wind" },
+    { id: "word-up", name: "Word Up", surface: "crossword" },
   ]),
   // The draft provider reads the channel's state and patches it on Save. The
   // real reader always merges against the defaults, so the mock returns a whole
@@ -28,6 +29,18 @@ jest.mock("../../../../lib/director", () => ({
   fetchDirectorConfig: jest.fn(async () => DEFAULT_DIRECTOR_CONFIG),
   patchDirectorConfig: jest.fn(async () => ({})),
   mergeConfig: (prev: object, patch: object) => ({ ...prev, ...patch }),
+}));
+
+jest.mock("../../../../components/admin/scenes/crossword-config", () => ({
+  fetchCrosswordConfig: jest.fn(async () => jest.requireActual("@photonsurge/shared/crossword").DEFAULT_CROSSWORD_CONFIG),
+  patchCrosswordConfig: jest.fn(async () => ({})),
+}));
+jest.mock("../../../../components/admin/scenes/CrosswordGameSettings", () => ({
+  CrosswordOnSettings: () => <div data-testid="crossword-on">on</div>,
+  CrosswordPacingSettings: () => <div data-testid="crossword-pacing">pacing</div>,
+  CrosswordDifficultySettings: () => <div data-testid="crossword-difficulty">difficulty</div>,
+  CrosswordPuzzleSettings: () => <div data-testid="crossword-puzzles">puzzles</div>,
+  CrosswordChatSettings: () => <div data-testid="crossword-chat">chat</div>,
 }));
 
 /* Each card is stubbed by its anchor id, so a test can see which group rendered.
@@ -152,5 +165,60 @@ describe("ChannelSettingsPage", () => {
 
     expect(await screen.findByRole("link", { name: "Control" })).toHaveAttribute("href", "/control");
     expect(screen.getByRole("link", { name: "Watch ↗" })).toHaveAttribute("href", "/watch/default");
+  });
+
+  it("does not offer a weather channel the Game group", async () => {
+    render(<ChannelSettingsPage />);
+    await screen.findByTestId("widgets");
+    const rail = screen.getByRole("navigation", { name: "Settings groups" });
+    expect(within(rail).queryByText("Game")).not.toBeInTheDocument();
+  });
+
+  describe("a crossword channel", () => {
+    beforeEach(() => {
+      mockParams = { id: "word-up" };
+      url("/admin/scenes/word-up");
+    });
+
+    it("opens on Game and offers only the groups a crossword has", async () => {
+      render(<ChannelSettingsPage />);
+
+      expect(await screen.findByTestId("crossword-pacing")).toBeInTheDocument();
+      expect(screen.getByTestId("crossword-on")).toBeInTheDocument();
+      expect(screen.getByTestId("crossword-chat")).toBeInTheDocument();
+      const rail = screen.getByRole("navigation", { name: "Settings groups" });
+      expect(within(rail).getAllByRole("button").map((b) => b.textContent)).toEqual([
+        "Game",
+        "Presentation",
+        "Viewers",
+        "Identity",
+      ]);
+    });
+
+    it("shows the shared cards but not the globe's in Presentation", async () => {
+      url("/admin/scenes/word-up?s=presentation");
+      render(<ChannelSettingsPage />);
+
+      expect(await screen.findByTestId("theme")).toBeInTheDocument();
+      expect(screen.getByTestId("audio")).toBeInTheDocument();
+      expect(screen.queryByTestId("camera")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("pace")).not.toBeInTheDocument();
+    });
+
+    it("ignores a globe-only group or card in the URL", async () => {
+      url("/admin/scenes/word-up?s=programme");
+      render(<ChannelSettingsPage />);
+      expect(await screen.findByTestId("crossword-pacing")).toBeInTheDocument();
+      expect(screen.queryByTestId("director")).not.toBeInTheDocument();
+    });
+
+    it("links the Desk and the crossword watch page", async () => {
+      render(<ChannelSettingsPage />);
+      expect(await screen.findByRole("link", { name: "Desk" })).toHaveAttribute(
+        "href",
+        "/admin/crosswords/desk/word-up",
+      );
+      expect(screen.getByRole("link", { name: "Watch ↗" })).toHaveAttribute("href", "/watch/crossword/word-up");
+    });
   });
 });

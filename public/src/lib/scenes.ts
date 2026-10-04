@@ -18,6 +18,7 @@ import {
   type ControlState,
   type SceneMeta,
   type SceneStatePayload,
+  type SceneSurface,
 } from "@photonsurge/shared/control";
 import { useSocket } from "./socket-provider";
 import { useLoadAndResync } from "./use-resync";
@@ -71,16 +72,18 @@ export async function rotateSceneToken(id: string): Promise<{ token?: string; er
   }
 }
 
-/** Create a scene by name (id is slugged server-side). Returns the new id, or an error. */
+/** Create a scene by name (id is slugged server-side). Returns the new id, or an error.
+ * `surface` picks the kind of channel (weather globe by default). */
 export async function createScene(
   name: string,
   copyFrom?: string,
+  surface?: SceneSurface,
 ): Promise<{ id?: string; error?: string }> {
   try {
     const res = await fetch("/api/scenes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, copyFrom }),
+      body: JSON.stringify({ name, copyFrom, ...(surface ? { surface } : {}) }),
     });
     const json = await res.json().catch(() => ({}));
     return res.ok ? { id: json.id } : { error: json.error || `HTTP ${res.status}` };

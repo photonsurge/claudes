@@ -6,6 +6,7 @@
  */
 import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
 import { DEFAULT_DIRECTOR_CONFIG } from "@photonsurge/shared/director";
+import { DEFAULT_CROSSWORD_CONFIG } from "@photonsurge/shared/crossword";
 import {
   LIVE_ONLY_DIRECTOR_KEYS,
   SETTINGS_CARDS,
@@ -14,6 +15,7 @@ import {
   cardsInGroup,
   getCard,
   groupOfCard,
+  groupsForSurface,
 } from "./catalog";
 
 describe("settings catalog", () => {
@@ -46,7 +48,11 @@ describe("settings catalog", () => {
   it("only claims fields that exist on the documents they belong to", () => {
     for (const card of SETTINGS_CARDS) {
       const doc: object =
-        card.bucket === "director" ? DEFAULT_DIRECTOR_CONFIG : DEFAULT_CONTROL_STATE;
+        card.bucket === "director"
+          ? DEFAULT_DIRECTOR_CONFIG
+          : card.bucket === "crossword"
+            ? DEFAULT_CROSSWORD_CONFIG
+            : DEFAULT_CONTROL_STATE;
       for (const field of card.fields) {
         expect(Object.prototype.hasOwnProperty.call(doc, field)).toBe(true);
       }
@@ -64,6 +70,11 @@ describe("settings catalog", () => {
     for (const k of LIVE_ONLY_DIRECTOR_KEYS) expect(owned.has(k)).toBe(false);
   });
 
+  it("gives every CrosswordConfig key an owning Game card", () => {
+    const owned = new Set(SETTINGS_CARDS.filter((c) => c.bucket === "crossword").flatMap((c) => c.fields));
+    expect(Object.keys(DEFAULT_CROSSWORD_CONFIG).filter((k) => !owned.has(k))).toEqual([]);
+  });
+
   it("names the cards a set of staged keys belongs to, in page order", () => {
     const hit = cardsForStagedKeys(["audio", "widgetsOff"], []);
     expect(hit.map((c) => c.id)).toEqual(["widgets", "audio"]);
@@ -75,6 +86,15 @@ describe("settings catalog", () => {
     expect(cardsForStagedKeys([], ["kinds"]).map((c) => c.id)).toEqual(["director"]);
   });
 
+  it("keeps the crossword bucket apart from the other two", () => {
+    // A Game key staged in another bucket names nothing.
+    expect(cardsForStagedKeys([], [], ["clueS", "blocklist"]).map((c) => c.id)).toEqual([
+      "crossword-pacing",
+      "crossword-chat",
+    ]);
+    expect(cardsForStagedKeys(["clueS"], ["clueS"])).toEqual([]);
+  });
+
   it("resolves a deep-link anchor to its group", () => {
     expect(groupOfCard("youtube")).toBe("identity");
     expect(groupOfCard("director")).toBe("programme");
@@ -84,5 +104,42 @@ describe("settings catalog", () => {
   it("looks a card up by id", () => {
     expect(getCard("theme")?.title).toBe("Brand & theme");
     expect(getCard("nope")).toBeUndefined();
+  });
+
+  describe("cards by type", () => {
+    const ids = (surface: "globe" | "crossword") =>
+      SETTINGS_GROUPS.flatMap((g) => cardsInGroup(g.id, surface)).map((c) => c.id);
+
+    it("gives every card at least one kind of channel", () => {
+      for (const card of SETTINGS_CARDS) expect(card.surfaces.length).toBeGreaterThan(0);
+    });
+
+    it("shows a weather channel no Game card", () => {
+      const weather = ids("globe");
+      expect(weather).toEqual(expect.arrayContaining(["widgets", "report", "deck", "crawl", "camera", "pace", "director"]));
+      expect(weather.some((id) => id.startsWith("crossword-"))).toBe(false);
+      expect(groupsForSurface("globe").map((g) => g.id)).toEqual(["layout", "presentation", "programme", "viewers", "identity"]);
+    });
+
+    it("shows a crossword channel the Game cards and the shared ones, nothing of the globe", () => {
+      const xw = ids("crossword");
+      expect(xw).toEqual([
+        "crossword-on",
+        "crossword-pacing",
+        "crossword-difficulty",
+        "crossword-puzzles",
+        "crossword-chat",
+        "theme",
+        "audio",
+        "chat",
+        "about",
+        "youtube",
+      ]);
+      expect(groupsForSurface("crossword").map((g) => g.id)).toEqual(["game", "presentation", "viewers", "identity"]);
+    });
+
+    it("lists every card of a group when no type is given", () => {
+      expect(cardsInGroup("presentation").map((c) => c.id)).toEqual(["theme", "camera", "audio", "pace"]);
+    });
   });
 });

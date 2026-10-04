@@ -2,10 +2,12 @@
  * ChannelLauncher — one card per channel with correctly-scoped Control, Watch
  * and Settings links, the per-channel ON AIR badge (live run OR director
  * heartbeat) with YouTube watch/chat links, the director NOW/NEXT strip, and
- * the empty-state prompt.
+ * the empty-state prompt. A crossword card shows its puzzle progress instead of
+ * now/next and links its Desk; Watch links come from `watchPath`.
  */
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import ChannelLauncher from "./ChannelLauncher";
+import { puzzleProgress } from "./ChannelPuzzleLine";
 
 jest.mock("../lib/scenes", () => ({ listScenes: jest.fn() }));
 jest.mock("../lib/director", () => ({ useDirector: jest.fn(), skipToNextShot: jest.fn() }));
@@ -148,5 +150,80 @@ describe("ChannelLauncher", () => {
     mockList.mockResolvedValue([] as Awaited<ReturnType<typeof listScenes>>);
     render(<ChannelLauncher />);
     expect(await screen.findByText(/No channels yet/)).toBeInTheDocument();
+  });
+
+  describe("a crossword channel", () => {
+    const realFetch = global.fetch;
+    afterEach(() => {
+      global.fetch = realFetch;
+    });
+
+    const xwState = {
+      puzzleNo: 42,
+      entries: [
+        { id: "1A", solved: { name: "Ann", points: 3 } },
+        { id: "2D", solved: { name: "Host", points: 0 } },
+        { id: "3A" },
+      ],
+    };
+
+    it("shows the puzzle line and links Desk / Watch / Settings", async () => {
+      global.fetch = jest.fn(async () => ({ ok: true, json: async () => xwState })) as unknown as typeof fetch;
+      mockList.mockResolvedValue([
+        { id: "default", name: "Main" },
+        { id: "word-up", name: "Word Up", surface: "crossword" },
+      ] as Awaited<ReturnType<typeof listScenes>>);
+
+      render(<ChannelLauncher />);
+
+      expect(await screen.findByText(/Puzzle 42 · 2 of 3 solved/)).toBeInTheDocument();
+      expect(global.fetch).toHaveBeenCalledWith("/api/crossword/word-up/state", { cache: "no-store" });
+      // Only the crossword card reads game state.
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("link", { name: "Desk" })).toHaveAttribute("href", "/admin/crosswords/desk/word-up");
+      const watches = screen.getAllByRole("link", { name: "Watch ↗" });
+      expect(watches[1]).toHaveAttribute("href", "/watch/crossword/word-up");
+      expect(screen.getAllByRole("link", { name: "Settings" })[1]).toHaveAttribute("href", "/admin/scenes/word-up");
+      expect(screen.getAllByRole("link", { name: "Control" })).toHaveLength(1);
+    });
+
+    it("fails soft when the state can't be read", async () => {
+      global.fetch = jest.fn(async () => ({ ok: false, status: 401, json: async () => ({}) })) as unknown as typeof fetch;
+      mockList.mockResolvedValue([{ id: "word-up", name: "Word Up", surface: "crossword" }] as Awaited<
+        ReturnType<typeof listScenes>
+      >);
+
+      render(<ChannelLauncher />);
+
+      expect(await screen.findByRole("link", { name: "Desk" })).toBeInTheDocument();
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      expect(screen.queryByText(/Puzzle/)).not.toBeInTheDocument();
+    });
+
+    it("reads ON AIR from a live run, not a director heartbeat", async () => {
+      global.fetch = jest.fn(async () => {
+        throw new Error("offline");
+      }) as unknown as typeof fetch;
+      mockList.mockResolvedValue([{ id: "word-up", name: "Word Up", surface: "crossword" }] as Awaited<
+        ReturnType<typeof listScenes>
+      >);
+      mockDirector.mockReturnValue({ active: true });
+
+      render(<ChannelLauncher />);
+      await screen.findByRole("link", { name: "Desk" });
+      expect(screen.queryByText("ON AIR")).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe("puzzleProgress", () => {
+  it("counts solved entries, and is null before a puzzle is laid out", () => {
+    expect(puzzleProgress({ puzzleNo: 3, entries: [{ solved: {} }, {}] as never })).toEqual({
+      puzzleNo: 3,
+      solved: 1,
+      total: 2,
+    });
+    expect(puzzleProgress({ puzzleNo: 0, entries: [] })).toBeNull();
+    expect(puzzleProgress(null)).toBeNull();
   });
 });

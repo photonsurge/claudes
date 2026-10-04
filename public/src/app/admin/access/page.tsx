@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * /admin/access — tokened OBS/YouTube URLs, one per broadcast scene.
- * `/watch/:id` can't do interactive login (it's loaded by OBS/YouTube), so
+ * /admin/access — tokened OBS/YouTube URLs, one per broadcast scene, built with
+ * `watchPath` so a crossword channel shows `/watch/crossword/:id?token=…`.
+ * A watch page can't do interactive login (it's loaded by OBS/YouTube), so
  * each scene carries a secret `watchToken`; the URL here is the only place
  * that secret is exposed. Kept separate from /admin/scenes (which manages
  * scene *content*, not access) so rotating a token is a deliberate, isolated
@@ -18,7 +19,8 @@ import MuiLink from "@mui/material/Link";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
+import { MAIN_SCENE_ID, sceneSurface, watchPath, type SceneMeta } from "@photonsurge/shared/control";
+import { surfaceLabel } from "../../../lib/channel-links";
 import { listScenes, rotateSceneToken } from "../../../lib/scenes";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import { font } from "../../../theme/tokens";
@@ -75,7 +77,7 @@ export default function AccessPage() {
 
       <Box sx={{ display: "grid", gap: 1.25, mt: 2.25 }}>
         {scenes.map((s) => {
-          const watch = `/watch/${s.id}`;
+          const watch = watchPath(s);
           const tokenedUrl = s.watchToken ? `${origin}${watch}?token=${s.watchToken}` : null;
           return (
             <Paper key={s.id} sx={{ p: 1.75 }}>
@@ -85,6 +87,7 @@ export default function AccessPage() {
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
                       {s.name}
                     </Typography>
+                    <Chip label={surfaceLabel(sceneSurface(s))} variant="outlined" />
                     {s.id === MAIN_SCENE_ID && <Chip label="main" />}
                   </Stack>
                   {/* The tokened URL is what gets pasted into OBS — mono, so a

@@ -14,12 +14,18 @@
  * `fields` must list every top-level key its card stages. The parity test in
  * catalog.test.ts pins that each key has exactly one owner, so the Save bar can
  * always name what changed.
+ *
+ * `surfaces` says which kind of channel a card applies to (plan §8.2): a weather
+ * channel never shows the Game group, a crossword one never shows the globe's
+ * layout, camera or director. A group with no card for a surface drops off its
+ * rail.
  */
+import type { SceneSurface } from "@photonsurge/shared/control";
 
-export type SettingsGroupId = "layout" | "presentation" | "programme" | "viewers" | "identity";
+export type SettingsGroupId = "game" | "layout" | "presentation" | "programme" | "viewers" | "identity";
 
-/** Which document a card's fields live in — the two Save buckets. */
-export type SettingsBucket = "control" | "director";
+/** Which document a card's fields live in — the three Save buckets. */
+export type SettingsBucket = "control" | "director" | "crossword";
 
 export type SettingsGroupDef = {
   id: SettingsGroupId;
@@ -35,9 +41,20 @@ export type SettingsCardDef = {
   group: SettingsGroupId;
   bucket: SettingsBucket;
   fields: readonly string[];
+  /** The kinds of channel this card applies to. */
+  surfaces: readonly SceneSurface[];
 };
 
+const BOTH: readonly SceneSurface[] = ["globe", "crossword"];
+const GLOBE: readonly SceneSurface[] = ["globe"];
+const CROSSWORD: readonly SceneSurface[] = ["crossword"];
+
 export const SETTINGS_GROUPS: readonly SettingsGroupDef[] = [
+  {
+    id: "game",
+    label: "Game",
+    blurb: "How the crossword plays — its pace, how hard it is, where its puzzles come from and how chat answers count.",
+  },
   {
     id: "layout",
     label: "Layout",
@@ -72,8 +89,50 @@ export const SETTINGS_GROUPS: readonly SettingsGroupDef[] = [
 export const LIVE_ONLY_DIRECTOR_KEYS: readonly string[] = ["mode", "skipNonce"];
 
 export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
+  // Game — a crossword channel's CrosswordConfig, saved by its own route.
+  {
+    id: "crossword-on",
+    title: "On air",
+    group: "game",
+    bucket: "crossword",
+    fields: ["enabled", "playOffAir"],
+    surfaces: CROSSWORD,
+  },
+  {
+    id: "crossword-pacing",
+    title: "Pacing",
+    group: "game",
+    bucket: "crossword",
+    fields: ["clueS", "hintStartFrac", "hintMaxFrac", "introS", "finaleS", "revealHoldS", "solveBeatS", "ceilingMin"],
+    surfaces: CROSSWORD,
+  },
+  {
+    id: "crossword-difficulty",
+    title: "Difficulty & themes",
+    group: "game",
+    bucket: "crossword",
+    fields: ["minZipf", "themes", "themeEvery"],
+    surfaces: CROSSWORD,
+  },
+  {
+    id: "crossword-puzzles",
+    title: "Puzzles",
+    group: "game",
+    bucket: "crossword",
+    fields: ["stockTarget", "autoApprove", "noRepeatPuzzles", "noRepeatWordsPuzzles", "minWords", "maxWords", "maxSize"],
+    surfaces: CROSSWORD,
+  },
+  {
+    id: "crossword-chat",
+    title: "Chat & scoring",
+    group: "game",
+    bucket: "crossword",
+    fields: ["streamDelayS", "rateMax", "rateWindowS", "blocklist"],
+    surfaces: CROSSWORD,
+  },
+
   // Layout
-  { id: "widgets", title: "On-air widgets", group: "layout", bucket: "control", fields: ["widgetsOff"] },
+  { id: "widgets", title: "On-air widgets", group: "layout", bucket: "control", fields: ["widgetsOff"], surfaces: GLOBE },
   {
     id: "report",
     title: "Top-right report",
@@ -88,6 +147,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
       "reportHazardsOff",
       "weatherLocations",
     ],
+    surfaces: GLOBE,
   },
   {
     id: "deck",
@@ -95,6 +155,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
     group: "layout",
     bucket: "control",
     fields: ["slidesOff", "slideOrder", "slideHoldMs", "slideRuns", "pointVarsOff"],
+    surfaces: GLOBE,
   },
   {
     id: "crawl",
@@ -102,6 +163,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
     group: "layout",
     bucket: "control",
     fields: ["tickerKindsOff", "tickerHazardsOff"],
+    surfaces: GLOBE,
   },
 
   // Presentation
@@ -111,6 +173,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
     group: "presentation",
     bucket: "control",
     fields: ["broadcastTheme", "themeOverrides", "basemapColors"],
+    surfaces: BOTH,
   },
   {
     id: "camera",
@@ -119,9 +182,10 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
     bucket: "control",
     // spinEpoch is stamped alongside the drift settings to restart the motion.
     fields: ["idleMotion", "idleOrbit", "idleBreathe", "idlePeriodS", "spinEpoch"],
+    surfaces: GLOBE,
   },
-  { id: "audio", title: "Music bed", group: "presentation", bucket: "control", fields: ["audio"] },
-  { id: "pace", title: "Reading pace", group: "presentation", bucket: "control", fields: ["readPaceCps"] },
+  { id: "audio", title: "Music bed", group: "presentation", bucket: "control", fields: ["audio"], surfaces: BOTH },
+  { id: "pace", title: "Reading pace", group: "presentation", bucket: "control", fields: ["readPaceCps"], surfaces: GLOBE },
 
   // Programme — the director. Titles carry no "Director:" prefix: the group
   // heading already says what they are (docs/done/director-programme-plan.md §7.1).
@@ -131,6 +195,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
     group: "programme",
     bucket: "director",
     fields: ["kinds", "kindWeights", "countries", "regions"],
+    surfaces: GLOBE,
   },
   {
     id: "director-pacing",
@@ -147,6 +212,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
       "adEveryNShots",
       "tempo",
     ],
+    surfaces: GLOBE,
   },
   {
     id: "director-pools",
@@ -154,31 +220,37 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
     group: "programme",
     bucket: "director",
     fields: ["minQuakeMag", "minAlertSeverity", "pools", "rotation"],
+    surfaces: GLOBE,
   },
-  { id: "director-tours", title: "Tours & round-ups", group: "programme", bucket: "director", fields: ["tours"] },
+  { id: "director-tours", title: "Tours & round-ups", group: "programme", bucket: "director", fields: ["tours"], surfaces: GLOBE },
   {
     id: "director-looks",
     title: "Looks",
     group: "programme",
     bucket: "director",
     fields: ["mapTypes", "overlayOverrides", "kindLooks", "kindSlides", "activeSlideId"],
+    surfaces: GLOBE,
   },
-  { id: "director-break-ins", title: "Break-ins", group: "programme", bucket: "director", fields: ["breakIn"] },
+  { id: "director-break-ins", title: "Break-ins", group: "programme", bucket: "director", fields: ["breakIn"], surfaces: GLOBE },
 
   // Viewers
-  { id: "chat", title: "Chat commands", group: "viewers", bucket: "control", fields: ["chat"] },
+  { id: "chat", title: "Chat commands", group: "viewers", bucket: "control", fields: ["chat"], surfaces: BOTH },
 
   // Identity
-  { id: "about", title: "About card", group: "identity", bucket: "control", fields: ["about"] },
-  { id: "youtube", title: "YouTube broadcasts", group: "identity", bucket: "control", fields: ["youtube"] },
+  { id: "about", title: "About card", group: "identity", bucket: "control", fields: ["about"], surfaces: BOTH },
+  { id: "youtube", title: "YouTube broadcasts", group: "identity", bucket: "control", fields: ["youtube"], surfaces: BOTH },
 ];
 
 const CARD_BY_ID = new Map(SETTINGS_CARDS.map((c) => [c.id, c]));
 
 export const getCard = (id: string): SettingsCardDef | undefined => CARD_BY_ID.get(id);
 
-export const cardsInGroup = (group: SettingsGroupId): SettingsCardDef[] =>
-  SETTINGS_CARDS.filter((c) => c.group === group);
+export const cardsInGroup = (group: SettingsGroupId, surface?: SceneSurface): SettingsCardDef[] =>
+  SETTINGS_CARDS.filter((c) => c.group === group && (!surface || c.surfaces.includes(surface)));
+
+/** The groups that have at least one card for this kind of channel, in rail order. */
+export const groupsForSurface = (surface: SceneSurface): SettingsGroupDef[] =>
+  SETTINGS_GROUPS.filter((g) => cardsInGroup(g.id, surface).length > 0);
 
 /** The group a deep-link anchor belongs to, so `#youtube` can open Identity. */
 export const groupOfCard = (id: string): SettingsGroupId | undefined => CARD_BY_ID.get(id)?.group;
@@ -192,9 +264,11 @@ export const groupOfCard = (id: string): SettingsGroupId | undefined => CARD_BY_
 export function cardsForStagedKeys(
   controlKeys: readonly string[],
   directorKeys: readonly string[],
+  crosswordKeys: readonly string[] = [],
 ): SettingsCardDef[] {
   return SETTINGS_CARDS.filter((card) => {
-    const keys = card.bucket === "director" ? directorKeys : controlKeys;
+    const keys =
+      card.bucket === "director" ? directorKeys : card.bucket === "crossword" ? crosswordKeys : controlKeys;
     return card.fields.some((f) => keys.includes(f));
   });
 }

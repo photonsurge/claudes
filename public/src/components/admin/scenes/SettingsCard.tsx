@@ -36,9 +36,10 @@ export default function SettingsCard({
   note?: ReactNode;
   children: ReactNode;
 }) {
-  const { pending, pendingDirector } = useSceneDraft();
+  const { pending, pendingDirector, pendingCrossword } = useSceneDraft();
   const def = getCard(id);
-  const staged = def?.bucket === "director" ? pendingDirector : pending;
+  const staged: object =
+    def?.bucket === "director" ? pendingDirector : def?.bucket === "crossword" ? pendingCrossword : pending;
   const dirty = !!def && def.fields.some((f) => f in staged);
 
   return (

@@ -11,17 +11,22 @@
  * no Control / Watch / Settings links and no Next button. Those live in
  * ChannelLauncher, which the same URL shows a signed-in operator instead.
  *
+ * A crossword channel has no director: its card shows the puzzle and its
+ * progress (ChannelPuzzleLine) where a weather card shows now/next. That line
+ * fails soft — it renders nothing when the state can't be read.
+ *
  * Live channels sort first. A channel with neither a platform run nor a
  * director heartbeat reads "Off air" with no links; one the director is driving
  * but nothing is publishing still reads ON AIR (same fallback as the operator
  * launcher) but has nothing to link to.
  */
 import { useEffect, useState } from "react";
-import type { SceneMeta } from "@photonsurge/shared/control";
+import { sceneSurface, type SceneMeta } from "@photonsurge/shared/control";
 import { listScenes } from "../lib/scenes";
 import { useDirector } from "../lib/director";
 import { usePublicLiveRuns, type PublicRunLite } from "../lib/stream";
 import ChannelNowNext from "./ChannelNowNext";
+import ChannelPuzzleLine from "./ChannelPuzzleLine";
 
 const MUTED: React.CSSProperties = { color: "#8b95a7", fontSize: 14, margin: 0 };
 
@@ -62,7 +67,8 @@ export default function PublicChannels() {
 
 function PublicCard({ scene, run }: { scene: SceneMeta; run: PublicRunLite | null }) {
   const director = useDirector(scene.id);
-  const live = !!run || !!director?.active;
+  const crossword = sceneSurface(scene) === "crossword";
+  const live = !!run || (!crossword && !!director?.active);
 
   return (
     <article
@@ -93,7 +99,11 @@ function PublicCard({ scene, run }: { scene: SceneMeta; run: PublicRunLite | nul
         </span>
       </div>
       {run?.title ? <div style={{ ...MUTED, fontSize: 13, marginBottom: 10 }}>{run.title}</div> : null}
-      <ChannelNowNext sceneId={scene.id} director={director} readOnly />
+      {crossword ? (
+        <ChannelPuzzleLine sceneId={scene.id} />
+      ) : (
+        <ChannelNowNext sceneId={scene.id} director={director} readOnly />
+      )}
       {run?.watchUrl || run?.chatUrl ? (
         <div style={{ display: "flex", gap: 16, fontSize: 14, flexWrap: "wrap" }}>
           {run.watchUrl && (

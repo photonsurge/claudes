@@ -6,7 +6,7 @@
  * you can stage an edit, scroll away and forget it, and "Unsaved changes" alone
  * is not enough to save confidently.
  *
- * Save awaits both writes and reports a failure instead of swallowing it; the
+ * Save awaits every write and reports a failure instead of swallowing it; the
  * draft survives a failed save, because at that point it is the only copy of
  * the operator's work.
  */
@@ -23,13 +23,17 @@ import { useSceneDraft } from "./SceneDraft";
 const CONFIRM_DISCARD_OVER = 2;
 
 export default function SceneSaveBar() {
-  const { pending, pendingDirector, dirty, conflictKeys, saving, saveError, save, discard } =
+  const { pending, pendingDirector, pendingCrossword, dirty, conflictKeys, saving, saveError, save, discard } =
     useSceneDraft();
   const [confirming, setConfirming] = useState(false);
 
   if (!dirty) return null;
 
-  const changed = cardsForStagedKeys(Object.keys(pending), Object.keys(pendingDirector));
+  const changed = cardsForStagedKeys(
+    Object.keys(pending),
+    Object.keys(pendingDirector),
+    Object.keys(pendingCrossword),
+  );
   const names = changed.map((c) => c.title).join(", ");
   const count = changed.length;
 

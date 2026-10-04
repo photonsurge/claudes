@@ -1,11 +1,13 @@
 "use client";
 
 /**
- * /admin/scenes — CRUD for broadcast channels. Each channel is a named ControlState
- * (a "scene" in the data model) rendered full-bleed at `/watch/:id` (an OBS browser
- * source / overlay window) with its own operator console at `/control?scene=:id`.
- * Create seeds from the main channel (or a chosen one). The main channel is
- * protected (no delete).
+ * /admin/scenes — CRUD for broadcast channels, both kinds in one list (plan
+ * §8.1). Each channel is a named ControlState (a "scene" in the data model)
+ * rendered full-bleed at its watch page (an OBS browser source / overlay
+ * window): `/watch/:id` for weather, `/watch/crossword/:id` for a crossword
+ * (`watchPath` decides). Its console is `/control?scene=:id` for weather and
+ * the crossword Desk for a crossword. Create seeds from the main channel (or a
+ * chosen one) and picks the kind. The main channel is protected (no delete).
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -19,8 +21,18 @@ import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import {
+  MAIN_SCENE_ID,
+  SCENE_SURFACES,
+  sceneSurface,
+  watchPath,
+  type SceneMeta,
+  type SceneSurface,
+} from "@photonsurge/shared/control";
 import { listScenes, createScene, deleteScene } from "../../../lib/scenes";
+import { consoleHref, settingsHref, surfaceLabel } from "../../../lib/channel-links";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import { font } from "../../../theme/tokens";
 
@@ -28,6 +40,8 @@ export default function ScenesPage() {
   const [scenes, setScenes] = useState<SceneMeta[]>([]);
   const [name, setName] = useState("");
   const [copyFrom, setCopyFrom] = useState<string>(MAIN_SCENE_ID);
+  const [surface, setSurface] = useState<SceneSurface>("globe");
+  const [filter, setFilter] = useState<SceneSurface | "all">("all");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +56,7 @@ export default function ScenesPage() {
   const add = async () => {
     setBusy(true);
     setError(null);
-    const { error: err } = await createScene(name.trim(), copyFrom);
+    const { error: err } = await createScene(name.trim(), copyFrom, surface);
     setBusy(false);
     if (err) {
       setError(err);
@@ -60,15 +74,17 @@ export default function ScenesPage() {
   };
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const shown = scenes.filter((s) => filter === "all" || sceneSurface(s) === filter);
 
   return (
     <AdminPageShell
       title="Channels"
       description={
         <>
-          Each channel renders at <code>/watch/&lt;id&gt;</code> (use that URL as an OBS browser
-          source) and has its own operator console at <code>/control?scene=&lt;id&gt;</code>.
-          Tokened OBS URLs live in <MuiLink component={Link} href="/admin/access">Access</MuiLink>.
+          A weather channel renders at <code>/watch/&lt;id&gt;</code> and a crossword at{" "}
+          <code>/watch/crossword/&lt;id&gt;</code> (use that URL as an OBS browser source). Control
+          opens a weather channel&apos;s console, Desk a crossword&apos;s live game. Tokened OBS URLs
+          live in <MuiLink component={Link} href="/admin/access">Access</MuiLink>.
         </>
       }
       maxWidth={760}
@@ -84,6 +100,19 @@ export default function ScenesPage() {
             slotProps={{ htmlInput: { "aria-label": "New channel name" } }}
             sx={{ flex: 1, minWidth: 200 }}
           />
+          <TextField
+            select
+            label="type"
+            value={surface}
+            onChange={(e) => setSurface(e.target.value as SceneSurface)}
+            sx={{ minWidth: 130 }}
+          >
+            {SCENE_SURFACES.map((k) => (
+              <MenuItem key={k} value={k}>
+                {surfaceLabel(k)}
+              </MenuItem>
+            ))}
+          </TextField>
           <TextField
             select
             label="copy from"
@@ -112,11 +141,29 @@ export default function ScenesPage() {
         </Alert>
       )}
 
+      {/* Filter by kind */}
+      <ToggleButtonGroup
+        exclusive
+        size="small"
+        value={filter}
+        onChange={(_, v) => v && setFilter(v)}
+        aria-label="Channel type"
+        sx={{ mt: 2.25 }}
+      >
+        <ToggleButton value="all">All</ToggleButton>
+        {SCENE_SURFACES.map((k) => (
+          <ToggleButton key={k} value={k}>
+            {surfaceLabel(k)}
+          </ToggleButton>
+        ))}
+      </ToggleButtonGroup>
+
       {/* List */}
-      <Box sx={{ display: "grid", gap: 1.25, mt: 2.25 }}>
-        {scenes.map((s) => {
-          const watch = `/watch/${s.id}`;
-          const control = s.id === MAIN_SCENE_ID ? "/control" : `/control?scene=${s.id}`;
+      <Box sx={{ display: "grid", gap: 1.25, mt: 1.5 }}>
+        {shown.map((s) => {
+          const kind = sceneSurface(s);
+          const watch = watchPath(s);
+          const control = consoleHref(s);
           return (
             <Paper key={s.id} sx={{ p: 1.75 }}>
               <Stack direction="row" spacing={1.75} sx={{ alignItems: "center" }}>
@@ -125,6 +172,11 @@ export default function ScenesPage() {
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
                       {s.name}
                     </Typography>
+                    <Chip
+                      label={surfaceLabel(kind)}
+                      variant="outlined"
+                      color={kind === "crossword" ? "secondary" : "default"}
+                    />
                     {s.id === MAIN_SCENE_ID && <Chip label="main" />}
                   </Stack>
                   {/* The URL is what gets pasted into OBS — a reading, in mono. */}
@@ -138,11 +190,11 @@ export default function ScenesPage() {
                     {watch}
                   </Typography>
                 </Box>
-                <MuiLink component={Link} href={`/admin/scenes/${s.id}`} variant="body2" sx={{ whiteSpace: "nowrap" }}>
+                <MuiLink component={Link} href={settingsHref(s.id)} variant="body2" sx={{ whiteSpace: "nowrap" }}>
                   Settings
                 </MuiLink>
                 <MuiLink component={Link} href={control} variant="body2" sx={{ whiteSpace: "nowrap" }}>
-                  Control
+                  {kind === "crossword" ? "Desk" : "Control"}
                 </MuiLink>
                 <MuiLink component={Link} href={watch} target="_blank" variant="body2" sx={{ whiteSpace: "nowrap" }}>
                   Watch ↗

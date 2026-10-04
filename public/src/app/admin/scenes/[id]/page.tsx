@@ -11,8 +11,10 @@
  * Nothing reaches the channel until the Save bar applies the accumulated delta,
  * which still can't clobber whatever the operator is driving live.
  *
- * Which cards exist, and which group each belongs to, is `scenes/catalog.ts` —
- * this file only maps a card id to its component. `?s=<group>` selects a group
+ * Which cards exist, which group each belongs to and which kind of channel
+ * (weather or crossword) each applies to is `scenes/catalog.ts` — this file
+ * only maps a card id to its component. The provider mounts once the channel's
+ * kind is known, since that decides which documents it reads. `?s=<group>` selects a group
  * and `#<card>` deep-links to one (the links from /control's director holds,
  * the stream panel and the streams slot card land that way).
  */
@@ -25,18 +27,26 @@ import MuiLink from "@mui/material/Link";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
+import { MAIN_SCENE_ID, sceneSurface, watchPath, type SceneMeta } from "@photonsurge/shared/control";
+import { consoleHref } from "../../../../lib/channel-links";
 import { listScenes } from "../../../../lib/scenes";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 import SceneDraftProvider, { useSceneDraft } from "../../../../components/admin/scenes/SceneDraft";
 import SceneSaveBar from "../../../../components/admin/scenes/SceneSaveBar";
 import SettingsGroupRail from "../../../../components/admin/scenes/SettingsGroupRail";
 import {
-  SETTINGS_GROUPS,
   cardsInGroup,
-  groupOfCard,
+  getCard,
+  groupsForSurface,
   type SettingsGroupId,
 } from "../../../../components/admin/scenes/catalog";
+import {
+  CrosswordChatSettings,
+  CrosswordDifficultySettings,
+  CrosswordOnSettings,
+  CrosswordPacingSettings,
+  CrosswordPuzzleSettings,
+} from "../../../../components/admin/scenes/CrosswordGameSettings";
 import AboutCardSettings from "../../../../components/admin/scenes/AboutCardSettings";
 import AudioSettings from "../../../../components/admin/scenes/AudioSettings";
 import CameraSettings from "../../../../components/admin/scenes/CameraSettings";
@@ -74,24 +84,32 @@ const CARD_COMPONENTS: Record<string, ComponentType> = {
   chat: ChatCommandsSettings,
   about: AboutCardSettings,
   youtube: YoutubeSettings,
+  "crossword-on": CrosswordOnSettings,
+  "crossword-pacing": CrosswordPacingSettings,
+  "crossword-difficulty": CrosswordDifficultySettings,
+  "crossword-puzzles": CrosswordPuzzleSettings,
+  "crossword-chat": CrosswordChatSettings,
 };
-
-const DEFAULT_GROUP: SettingsGroupId = "layout";
-const isGroup = (v: string | null): v is SettingsGroupId =>
-  !!v && SETTINGS_GROUPS.some((g) => g.id === v);
 
 export default function ChannelSettingsPage() {
   const params = useParams<{ id: string }>();
   const sceneId = params?.id ?? MAIN_SCENE_ID;
   const [scene, setScene] = useState<SceneMeta | null>(null);
+  // The list has answered (the scene may still be unknown): the kind is settled.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    listScenes().then((list) => setScene(list.find((s) => s.id === sceneId) ?? null));
+    setLoaded(false);
+    listScenes().then((list) => {
+      setScene(list.find((s) => s.id === sceneId) ?? null);
+      setLoaded(true);
+    });
   }, [sceneId]);
 
   const name = scene?.name ?? sceneId;
-  const control = sceneId === MAIN_SCENE_ID ? "/control" : `/control?scene=${sceneId}`;
-  const watch = `/watch/${sceneId}`;
+  const surface = sceneSurface(scene);
+  const control = consoleHref({ id: sceneId, surface });
+  const watch = watchPath({ id: sceneId, surface });
 
   return (
     <AdminPageShell
@@ -102,7 +120,7 @@ export default function ChannelSettingsPage() {
       actions={
         <>
           <Button component={Link} href={control} variant="outlined" size="small">
-            Control
+            {surface === "crossword" ? "Desk" : "Control"}
           </Button>
           <MuiLink component={Link} href={watch} target="_blank" variant="body2" sx={{ whiteSpace: "nowrap" }}>
             Watch ↗
@@ -110,30 +128,38 @@ export default function ChannelSettingsPage() {
         </>
       }
     >
-      <SceneDraftProvider sceneId={sceneId}>
-        <SettingsBody />
-      </SceneDraftProvider>
+      {loaded ? (
+        <SceneDraftProvider sceneId={sceneId} surface={surface}>
+          <SettingsBody />
+        </SceneDraftProvider>
+      ) : (
+        <Skeleton variant="rounded" height={180} aria-label="Loading channel" />
+      )}
     </AdminPageShell>
   );
 }
 
 /** Inside the provider, so the rail can count what is staged in each group. */
 function SettingsBody() {
-  const { ready } = useSceneDraft();
-  const [group, setGroup] = useState<SettingsGroupId>(DEFAULT_GROUP);
+  const { ready, surface } = useSceneDraft();
+  const groups = groupsForSurface(surface);
+  // Weather opens on Layout, a crossword on Game: the first group it has.
+  const [group, setGroup] = useState<SettingsGroupId>(groups[0].id);
   const [anchor, setAnchor] = useState<string | null>(null);
 
   // Adopt the URL once: `#card` wins over `?s=group`, since a deep link names a
   // card and the group it lives in is implied.
   useEffect(() => {
+    // Only a card or group this kind of channel has counts.
     const hash = window.location.hash.replace(/^#/, "");
-    const fromHash = hash ? groupOfCard(hash) : undefined;
+    const card = hash ? getCard(hash) : undefined;
+    const fromHash = card && card.surfaces.includes(surface) ? card.group : undefined;
     const fromQuery = new URLSearchParams(window.location.search).get("s");
     if (fromHash) {
       setGroup(fromHash);
       setAnchor(hash);
-    } else if (isGroup(fromQuery)) {
-      setGroup(fromQuery);
+    } else if (groups.some((g) => g.id === fromQuery)) {
+      setGroup(fromQuery as SettingsGroupId);
     }
   }, []);
 
@@ -154,7 +180,7 @@ function SettingsBody() {
     window.history.replaceState(null, "", url);
   }, []);
 
-  const def = SETTINGS_GROUPS.find((g) => g.id === group) ?? SETTINGS_GROUPS[0];
+  const def = groups.find((g) => g.id === group) ?? groups[0];
 
   return (
     <Stack direction={{ xs: "column", md: "row" }} spacing={2.5} sx={{ alignItems: "flex-start" }}>
@@ -172,7 +198,7 @@ function SettingsBody() {
           </Stack>
         ) : (
           <Stack spacing={2}>
-            {cardsInGroup(group).map((card) => {
+            {cardsInGroup(def.id, surface).map((card) => {
               const Card = CARD_COMPONENTS[card.id];
               return Card ? <Card key={card.id} /> : null;
             })}

@@ -26,12 +26,14 @@ const mockGetScene = jest.fn();
 const mockDeleteScene = jest.fn();
 const mockDeleteDirectorConfig = jest.fn();
 const mockUpsertByID = jest.fn();
+const mockDeleteCrossword = jest.fn();
 jest.mock("@photonsurge/shared/db/index", () => ({
   getAppDb: async () => ({
     getOrInitBroadcastState: (...a: unknown[]) => mockGetOrInit(...a),
     getScene: (...a: unknown[]) => mockGetScene(...a),
     deleteScene: (...a: unknown[]) => mockDeleteScene(...a),
     deleteDirectorConfig: (...a: unknown[]) => mockDeleteDirectorConfig(...a),
+    deleteCrosswordScene: (...a: unknown[]) => mockDeleteCrossword(...a),
     broadcastState: { upsertByID: (...a: unknown[]) => mockUpsertByID(...a) },
   }),
 }));
@@ -53,6 +55,7 @@ beforeEach(() => {
   mockDeleteScene.mockReset();
   mockDeleteDirectorConfig.mockReset();
   mockUpsertByID.mockReset();
+  mockDeleteCrossword.mockReset();
 });
 
 describe("GET /api/scenes/:id", () => {
@@ -148,5 +151,19 @@ describe("DELETE /api/scenes/:id", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, id: "atlantic-wind" });
     expect(mockDeleteDirectorConfig).toHaveBeenCalledWith("atlantic-wind");
+  });
+
+  it("drops a crossword channel's config and game with it", async () => {
+    mockGetScene.mockResolvedValue({ id: "xw", surface: "crossword" });
+    mockDeleteScene.mockResolvedValue(true);
+    expect((await deleteReq("xw")).status).toBe(200);
+    expect(mockDeleteCrossword).toHaveBeenCalledWith("xw");
+  });
+
+  it("leaves crossword data alone for a weather channel", async () => {
+    mockGetScene.mockResolvedValue({ id: "atlantic-wind" });
+    mockDeleteScene.mockResolvedValue(true);
+    await deleteReq("atlantic-wind");
+    expect(mockDeleteCrossword).not.toHaveBeenCalled();
   });
 });

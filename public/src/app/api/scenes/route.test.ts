@@ -96,7 +96,9 @@ describe("POST /api/scenes", () => {
     const res = await post({ name: "Atlantic Wind" });
     expect(res.status).toBe(201);
     expect(mockGetOrInit).toHaveBeenCalled();
-    expect(mockCreateScene).toHaveBeenCalledWith("atlantic-wind", "Atlantic Wind", expect.any(Object));
+    expect(mockCreateScene).toHaveBeenCalledWith("atlantic-wind", "Atlantic Wind", expect.any(Object), {
+      surface: "globe",
+    });
     expect((await res.json()).id).toBe("atlantic-wind");
   });
 
@@ -151,5 +153,20 @@ describe("POST /api/scenes", () => {
       "atlantic-wind",
       expect.objectContaining({ mode: "off", skipNonce: 0 }),
     );
+  });
+
+  it("creates a crossword channel with no director config", async () => {
+    mockCreateScene.mockResolvedValue({ id: "word-up", name: "Word Up" });
+    const res = await post({ name: "Word Up", surface: "crossword" });
+    expect(res.status).toBe(201);
+    expect(mockCreateScene).toHaveBeenCalledWith("word-up", "Word Up", expect.any(Object), { surface: "crossword" });
+    expect((await res.json()).surface).toBe("crossword");
+    expect(mockSaveDirectorConfig).not.toHaveBeenCalled();
+  });
+
+  it("400s an unknown channel type", async () => {
+    const res = await post({ name: "Word Up", surface: "radio" });
+    expect(res.status).toBe(400);
+    expect(mockCreateScene).not.toHaveBeenCalled();
   });
 });

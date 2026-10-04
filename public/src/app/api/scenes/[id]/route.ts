@@ -8,6 +8,7 @@ import {
   DEFAULT_CONTROL_STATE,
   mergeControlState,
   MAIN_SCENE_ID,
+  sceneSurface,
   type ControlState,
 } from "@photonsurge/shared/control";
 
@@ -79,6 +80,8 @@ async function DELETE__impl(_req: Request, { params }: { params: Promise<{ id: s
     return NextResponse.json({ error: "the main scene cannot be deleted" }, { status: 400, headers: NO_CACHE });
   }
   const db = await getAppDb();
+  // Read the kind before the doc goes, so a crossword channel's game can follow it.
+  const surface = sceneSurface(await db.getScene(id));
   const ok = await db.deleteScene(id);
   if (!ok) {
     return NextResponse.json({ error: "no such scene" }, { status: 404, headers: NO_CACHE });
@@ -87,6 +90,8 @@ async function DELETE__impl(_req: Request, { params }: { params: Promise<{ id: s
   // autoDirectorScenes(), so a deleted-while-auto scene's worker runner stands
   // down on the next tick.
   await db.deleteDirectorConfig(id);
+  // A crossword channel's config and game go too, so the worker stops hosting it.
+  if (surface === "crossword") await db.deleteCrosswordScene(id);
   return NextResponse.json({ ok: true, id }, { status: 200, headers: NO_CACHE });
 }
 

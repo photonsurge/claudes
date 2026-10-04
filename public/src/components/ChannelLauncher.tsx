@@ -8,7 +8,9 @@
  *
  * Each card also carries the director's NOW/NEXT shots and a Next button that
  * cuts the channel to the queued shot (ChannelNowNext), so the launcher can drive
- * a running channel without opening its console.
+ * a running channel without opening its console. A crossword channel has no
+ * director: its card shows the puzzle and its progress (ChannelPuzzleLine) and
+ * links its Desk instead of /control. Watch links come from `watchPath`.
  *
  * Each card carries its own ON AIR state: a live streaming run on the channel
  * (usePublicLiveRuns) is the real signal — and when that run publishes to
@@ -18,15 +20,13 @@
  */
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
+import { MAIN_SCENE_ID, sceneSurface, watchPath, type SceneMeta } from "@photonsurge/shared/control";
 import { listScenes } from "../lib/scenes";
 import { useDirector } from "../lib/director";
 import { usePublicLiveRuns, type PublicRunLite } from "../lib/stream";
+import { consoleHref, settingsHref } from "../lib/channel-links";
 import ChannelNowNext from "./ChannelNowNext";
-
-const controlHref = (id: string) => (id === MAIN_SCENE_ID ? "/control" : `/control?scene=${id}`);
-const watchHref = (id: string) => `/watch/${id}`;
-const settingsHref = (id: string) => `/admin/scenes/${id}`;
+import ChannelPuzzleLine from "./ChannelPuzzleLine";
 
 export default function ChannelLauncher() {
   const [scenes, setScenes] = useState<SceneMeta[] | null>(null);
@@ -74,7 +74,9 @@ export default function ChannelLauncher() {
 
 function ChannelCard({ scene, run }: { scene: SceneMeta; run: PublicRunLite | null }) {
   const director = useDirector(scene.id);
-  const live = !!run || !!director?.active;
+  const crossword = sceneSurface(scene) === "crossword";
+  // A crossword has no director heartbeat to fall back on; only a run is live.
+  const live = !!run || (!crossword && !!director?.active);
 
   return (
     <div
@@ -108,12 +110,16 @@ function ChannelCard({ scene, run }: { scene: SceneMeta; run: PublicRunLite | nu
           </span>
         )}
       </div>
-      <ChannelNowNext sceneId={scene.id} director={director} />
+      {crossword ? (
+        <ChannelPuzzleLine sceneId={scene.id} />
+      ) : (
+        <ChannelNowNext sceneId={scene.id} director={director} />
+      )}
       <div style={{ display: "flex", gap: 16, fontSize: 14, flexWrap: "wrap" }}>
-        <Link href={controlHref(scene.id)} style={{ color: "#6b93e0", textDecoration: "none" }}>
-          Control
+        <Link href={consoleHref(scene)} style={{ color: "#6b93e0", textDecoration: "none" }}>
+          {crossword ? "Desk" : "Control"}
         </Link>
-        <Link href={watchHref(scene.id)} target="_blank" rel="noreferrer" style={{ color: "#6b93e0", textDecoration: "none" }}>
+        <Link href={watchPath(scene)} target="_blank" rel="noreferrer" style={{ color: "#6b93e0", textDecoration: "none" }}>
           Watch ↗
         </Link>
         <Link href={settingsHref(scene.id)} style={{ color: "#6b93e0", textDecoration: "none" }}>

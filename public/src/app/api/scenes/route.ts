@@ -8,7 +8,9 @@ import {
   mergeControlState,
   slugifySceneId,
   MAIN_SCENE_ID,
+  isSceneSurface,
   type ControlState,
+  type SceneSurface,
 } from "@photonsurge/shared/control";
 
 export const runtime = "nodejs";
@@ -35,12 +37,13 @@ async function GET__impl() {
 }
 
 /**
- * POST /api/scenes { name, copyFrom? } — create a named scene. The id is slugged
- * from the name; new scenes seed from `copyFrom` (another scene's state) or the
- * current main scene. 409 if the slug already exists, 400 on bad/empty name.
+ * POST /api/scenes { name, copyFrom?, surface? } — create a named scene. The id is
+ * slugged from the name; new scenes seed from `copyFrom` (another scene's state)
+ * or the current main scene. `surface` picks the kind of channel ("globe" when
+ * left out). 409 if the slug already exists, 400 on bad/empty name or surface.
  */
 async function POST__impl(req: Request) {
-  let body: { name?: string; copyFrom?: string } = {};
+  let body: { name?: string; copyFrom?: string; surface?: unknown } = {};
   try {
     body = (await req.json()) ?? {};
   } catch {
@@ -55,6 +58,11 @@ async function POST__impl(req: Request) {
   if (id === MAIN_SCENE_ID) {
     return NextResponse.json({ error: "that name is reserved" }, { status: 400, headers: NO_CACHE });
   }
+
+  if (body.surface !== undefined && !isSceneSurface(body.surface)) {
+    return NextResponse.json({ error: "unknown channel type" }, { status: 400, headers: NO_CACHE });
+  }
+  const surface: SceneSurface = isSceneSurface(body.surface) ? body.surface : "globe";
 
   const db = await getAppDb();
   if (await db.getScene(id)) {
@@ -72,7 +80,16 @@ async function POST__impl(req: Request) {
     (source ?? {}) as Partial<ControlState>,
   );
 
-  const created = await db.createScene(id, name, seed);
+  const created = await db.createScene(id, name, seed, { surface });
+
+  // A crossword channel has no director (plan §3): its config stays absent, so
+  // it reads as the default (off).
+  if (surface === "crossword") {
+    return NextResponse.json(
+      { id, name, surface, scene: mergeControlState(DEFAULT_CONTROL_STATE, (created ?? {}) as Partial<ControlState>) },
+      { status: 201, headers: NO_CACHE },
+    );
+  }
 
   // Clone the source's director setup too (kinds, countries, areas, holds,
   // looks) — runtime fields stripped: skipNonce reset and mode forced off so a
@@ -82,7 +99,7 @@ async function POST__impl(req: Request) {
   await db.saveDirectorConfig(id, { ...srcDirector, mode: "off", skipNonce: 0 });
 
   return NextResponse.json(
-    { id, name, scene: mergeControlState(DEFAULT_CONTROL_STATE, (created ?? {}) as Partial<ControlState>) },
+    { id, name, surface, scene: mergeControlState(DEFAULT_CONTROL_STATE, (created ?? {}) as Partial<ControlState>) },
     { status: 201, headers: NO_CACHE },
   );
 }
