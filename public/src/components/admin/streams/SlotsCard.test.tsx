@@ -91,7 +91,7 @@ describe("SlotsCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add stream" }));
     return screen.getByRole("dialog");
   };
-  const pick = (dialog: HTMLElement, label: string, option: string) => {
+  const pick = (dialog: HTMLElement, label: string, option: string | RegExp) => {
     fireEvent.mouseDown(within(dialog).getByLabelText(label));
     fireEvent.click(screen.getByRole("option", { name: option }));
   };
@@ -180,7 +180,7 @@ describe("SlotsCard", () => {
     expect(within(dialog).getByLabelText("chat poll")).toHaveTextContent("auto");
 
     pick(dialog, "restart", "11h");
-    pick(dialog, "encoder", "Wind rig");
+    pick(dialog, "encoder", /^Wind rig\b/); // EncoderSelect: the name, then what it is doing
     pick(dialog, "chat poll", "every 5 min · ~1.4k units/day");
     fireEvent.change(within(dialog).getByLabelText("name"), { target: { value: "Wind HD" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
