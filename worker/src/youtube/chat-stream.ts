@@ -112,9 +112,13 @@ export class StreamFrameParser {
 
   private drainSse(): unknown[] {
     const out: unknown[] = [];
-    const norm = this.buf.replace(/\r\n?/g, "\n");
+    // A trailing "\r" may be the first half of a CRLF split across chunks: hold it
+    // back until the next chunk says whether a "\n" follows, or a lone "\r" and
+    // the "\n" opening the next chunk would read as a blank line (an event boundary).
+    const held = this.buf.endsWith("\r") ? "\r" : "";
+    const norm = (held ? this.buf.slice(0, -1) : this.buf).replace(/\r\n?/g, "\n");
     const events = norm.split("\n\n");
-    this.buf = events.pop() ?? "";
+    this.buf = (events.pop() ?? "") + held;
     for (const ev of events) {
       const data = ev
         .split("\n")
@@ -234,6 +238,24 @@ export class ResumeState {
     this.seenOrder.push(id);
     if (this.seenOrder.length > this.seenCap) this.seen.delete(this.seenOrder.shift()!);
   }
+}
+
+/**
+ * Whether a failure means the project's quota (or rate limit) is spent, so the
+ * probe should stop rather than hammer. Reads every form Google uses: HTTP 429,
+ * a 403 with reason quotaExceeded / dailyLimitExceeded / rateLimitExceeded /
+ * userRateLimitExceeded (in `errors[]` or anywhere in a raw body), and the gRPC
+ * status RESOURCE_EXHAUSTED a streamed error element carries.
+ */
+export function isQuotaFailure(f: { httpStatus?: number; error?: StreamResponse["error"]; body?: string }): boolean {
+  const reasons = /quotaExceeded|dailyLimitExceeded|rateLimitExceeded|userRateLimitExceeded|RESOURCE_EXHAUSTED/;
+  if (f.httpStatus === 429) return true;
+  const e = f.error;
+  if (e) {
+    if (e.code === 429 || e.status === "RESOURCE_EXHAUSTED") return true;
+    if ((e.errors ?? []).some((x) => reasons.test(x.reason ?? ""))) return true;
+  }
+  return !!f.body && reasons.test(f.body);
 }
 
 /** True when a response says the chat is over (stream offline or a chatEndedEvent). */

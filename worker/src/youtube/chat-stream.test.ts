@@ -2,6 +2,7 @@ import {
   chatEnded,
   connectionSummary,
   DelayStats,
+  isQuotaFailure,
   messageDelayMs,
   percentile,
   ResumeState,
@@ -167,5 +168,19 @@ describe("connectionSummary", () => {
     expect(s).toContain("max=90.0s");
     expect(s).toContain("server-closed×2");
     expect(s).toContain("error×1");
+  });
+});
+
+describe("isQuotaFailure", () => {
+  it("recognises every quota / rate form and nothing else", () => {
+    expect(isQuotaFailure({ httpStatus: 429 })).toBe(true);
+    expect(isQuotaFailure({ httpStatus: 403, body: '{"errors":[{"reason":"quotaExceeded"}]}' })).toBe(true);
+    expect(isQuotaFailure({ httpStatus: 403, body: "rateLimitExceeded" })).toBe(true);
+    expect(isQuotaFailure({ error: { status: "RESOURCE_EXHAUSTED" } })).toBe(true);
+    expect(isQuotaFailure({ error: { code: 429 } })).toBe(true);
+    expect(isQuotaFailure({ error: { code: 403, errors: [{ reason: "dailyLimitExceeded" }] } })).toBe(true);
+    expect(isQuotaFailure({ error: { code: 403, errors: [{ reason: "forbidden" }] } })).toBe(false);
+    expect(isQuotaFailure({ httpStatus: 403, body: "insufficientPermissions" })).toBe(false);
+    expect(isQuotaFailure({ httpStatus: 500 })).toBe(false);
   });
 });
