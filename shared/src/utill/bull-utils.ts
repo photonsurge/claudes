@@ -60,6 +60,7 @@ const BACKGROUND_TYPES = new Set<string>([
   "areaWeather", // polygon-masked area weather
   "climate", // all-city climate backfill
   "basemap", // full-globe basemap texture download + full-decode validation (sharp)
+  "crossword", // puzzle builds + bank index; crossword.inject is sent to foreground explicitly (sendToFore)
 ]);
 
 const FOREGROUND_TYPES = new Set<string>([

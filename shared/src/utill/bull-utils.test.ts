@@ -26,7 +26,7 @@ describe("queueForType", () => {
   it("routes heavy CPU/memory jobs to background", () => {
     // alerts + tracks are here off the live /status ledger (ingest +765MB, aircraft
     // enrich +743MB) — the biggest heap hogs, previously defaulting into mid.
-    for (const t of ["weather", "alertBlobs", "alerts", "tracks", "satimg", "aurora", "geomag", "areaWeather", "climate"]) {
+    for (const t of ["weather", "alertBlobs", "alerts", "tracks", "satimg", "aurora", "geomag", "areaWeather", "climate", "crossword"]) {
       expect(queueForType(t)).toBe("background");
     }
   });
