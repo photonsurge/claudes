@@ -60,6 +60,18 @@ export interface TakeStats {
   estSavedUsd: number;
 }
 
+export interface RoundupPick {
+  key: string;
+  group: "World" | "Countries" | "Regions";
+  label: string;
+  generatedAt: string;
+  text: string;
+}
+
+export async function listRoundups(): Promise<RoundupPick[]> {
+  return (await json<{ items: RoundupPick[] }>(await fetch("/api/admin/presenters/roundups", { cache: "no-store" }), "round-ups")).items;
+}
+
 export async function listTakes(limit = 50): Promise<{ takes: VoiceTest[]; stats: TakeStats | null }> {
   const body = await json<{ takes: VoiceTest[]; stats?: TakeStats }>(
     await fetch(`/api/admin/presenters/tests?limit=${limit}`, { cache: "no-store" }),

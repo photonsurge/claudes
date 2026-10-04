@@ -37,6 +37,8 @@ beforeEach(() => {
         take: { id: "t1", label: "House voice", text: body.text, voice: body.voice, status: "ready", createdAt: "2026-10-04T12:00:00Z", presenterId: "house", createdBy: "" },
       });
     }
+    if (u.startsWith("/api/admin/presenters/roundups"))
+      return reply({ items: [{ key: "world:s1", group: "World", label: "World hourly · 2026-10-04 21:00 UTC", generatedAt: "", text: "A quiet hour worldwide." }] });
     if (u.startsWith("/api/admin/presenters/tests")) return reply({ takes: [], stats: { takes: 0, ready: 0, cached: 0, estSpendUsd: 0, estSavedUsd: 0 } });
     return reply({ presenters: [DEFAULT_PRESENTER], settings: { enabled }, catalog: { models: [], fetchedAt: null }, samples: [] });
   }) as unknown as typeof fetch;
@@ -75,4 +77,23 @@ it("sends fresh: true when a fresh take is asked for", async () => {
     fireEvent.click(screen.getByRole("button", { name: "Test House voice" }));
   });
   expect(posts[0].fresh).toBe(true);
+});
+
+it("reads a picked round-up and labels the take with it", async () => {
+  enabled = true;
+  await act(async () => {
+    render(<PresentersPage />);
+  });
+  const input = screen.getByRole("combobox", { name: "Read a round-up" });
+  await act(async () => {
+    fireEvent.mouseDown(input);
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByText("World hourly · 2026-10-04 21:00 UTC"));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Test House voice" }));
+  });
+  expect(posts[0].text).toBe("A quiet hour worldwide.");
+  expect(posts[0].label).toBe("House voice · World hourly · 2026-10-04 21:00 UTC");
 });

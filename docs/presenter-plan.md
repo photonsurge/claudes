@@ -36,6 +36,9 @@
 > - Takes (`db.voiceTests`, audio in the `presenter-audio` blob namespace) list the
 >   typed text, what was sent after `speakable()`, duration, latency, estimated cost,
 >   whether the style reached the model, and the OpenRouter generation id.
+> - "Read a round-up" picker: any recent world (global) round-up, or the latest round-up
+>   for any country or region, loaded into the text box exactly as the presenter would
+>   read it (`roundupSpeechText`). The take's label names the round-up.
 > - Sample text chips: the latest hourly and daily round-ups, and the latest place
 >   round-up's summary **and** state of play (decision 7 below).
 > - Worker: `lib/openrouter-speech.ts`, `presenter/voice-traits.ts`,

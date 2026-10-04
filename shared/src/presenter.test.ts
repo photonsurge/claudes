@@ -3,6 +3,7 @@ import {
   estimateSpeechCostUsd,
   parseSpeechModels,
   pricePerHour,
+  roundupSpeechText,
   pricePerMillionChars,
   sanitizePresenter,
   sanitizePresenterSettings,
@@ -95,5 +96,15 @@ describe("estimateSpeechCostUsd (shapes from the live list, 2026-10-04)", () => 
     expect(estimateSpeechCostUsd({ prompt: "0", completion: "0" }, 1000)).toBeNull();
     expect(estimateSpeechCostUsd({}, 1000)).toBeNull();
     expect(estimateSpeechCostUsd(undefined, 1000)).toBeNull();
+  });
+});
+
+describe("roundupSpeechText", () => {
+  it("reads a place's summary and state of play", () => {
+    expect(roundupSpeechText({ narrative: "all", summary: "Calm.", stateOfPlay: "Rain in Tokyo." })).toBe("Calm.\n\nRain in Tokyo.");
+  });
+  it("falls back to the narrative (global, or older place docs)", () => {
+    expect(roundupSpeechText({ narrative: " Quiet hour. " })).toBe("Quiet hour.");
+    expect(roundupSpeechText({ narrative: "N", summary: "", stateOfPlay: " " })).toBe("N");
   });
 });

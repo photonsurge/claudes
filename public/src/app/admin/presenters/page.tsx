@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import Alert from "@mui/material/Alert";
+import Autocomplete from "@mui/material/Autocomplete";
 import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
@@ -36,6 +37,7 @@ import {
   deleteTake,
   getPresenters,
   getTake,
+  listRoundups,
   listTakes,
   refreshVoices,
   savePresenter,
@@ -44,6 +46,7 @@ import {
   voiceSummary,
   fmtUsd,
   type PresentersResponse,
+  type RoundupPick,
   type TakeStats,
 } from "../../../lib/presenters";
 import { font } from "../../../theme/tokens";
@@ -59,6 +62,9 @@ export default function PresentersPage() {
   const [takes, setTakes] = useState<VoiceTest[]>([]);
   const [stats, setStats] = useState<TakeStats | null>(null);
   const [fresh, setFresh] = useState(false);
+  const [roundups, setRoundups] = useState<RoundupPick[]>([]);
+  /** The round-up whose text is in the box; cleared once the text is edited by hand. */
+  const [picked, setPicked] = useState<RoundupPick | null>(null);
   const [text, setText] = useState(DEFAULT_TEXT);
   const [editing, setEditing] = useState<string | null>(null);
   /** Bumped to remount the editor with a new starting point (e.g. "Use this voice"). */
@@ -70,8 +76,9 @@ export default function PresentersPage() {
 
   const reload = useCallback(async () => {
     try {
-      const [d, t] = await Promise.all([getPresenters(), listTakes()]);
+      const [d, t, r] = await Promise.all([getPresenters(), listTakes(), listRoundups().catch(() => [] as RoundupPick[])]);
       if (!mounted.current) return;
+      setRoundups(r);
       setData(d);
       setTakes(t.takes);
       setStats(t.stats);
@@ -97,7 +104,8 @@ export default function PresentersPage() {
     setTesting((s) => new Set(s).add(key));
     setMsg(null);
     try {
-      let take = await speakTake({ text, fresh, ...input });
+      const label = picked && input.label ? `${input.label} · ${picked.label}` : input.label;
+      let take = await speakTake({ text, fresh, ...input, label });
       upsertTake(take);
       while (mounted.current && (take.status === "queued" || take.status === "speaking")) {
         await new Promise((r) => setTimeout(r, POLL_MS));
@@ -208,13 +216,41 @@ export default function PresentersPage() {
         <Typography variant="overline" color="text.secondary">
           What to say
         </Typography>
+        <Autocomplete
+          size="small"
+          options={roundups}
+          groupBy={(o) => o.group}
+          getOptionLabel={(o) => o.label}
+          isOptionEqualToValue={(a, b) => a.key === b.key}
+          value={picked}
+          onChange={(_, v) => {
+            setPicked(v);
+            if (v) setText(v.text.slice(0, TEST_TEXT_MAX));
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Read a round-up"
+              placeholder="World, a country or a region"
+              helperText={
+                roundups.length
+                  ? "World round-ups read their narrative; countries and regions read summary + state of play."
+                  : "No round-ups yet — generate one on /admin/summaries or /admin/place-roundups."
+              }
+            />
+          )}
+          sx={{ mt: 0.5, mb: 1 }}
+        />
         <TextField
           fullWidth
           multiline
           minRows={3}
           maxRows={12}
           value={text}
-          onChange={(e) => setText(e.target.value.slice(0, TEST_TEXT_MAX))}
+          onChange={(e) => {
+            setText(e.target.value.slice(0, TEST_TEXT_MAX));
+            setPicked(null);
+          }}
           helperText={`${text.length} characters. Units, magnitudes and symbols are rewritten for the ear before sending.`}
           sx={{ mt: 0.5 }}
         />
@@ -230,7 +266,10 @@ export default function PresentersPage() {
         {!!data?.samples.length && (
           <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
             {data.samples.map((s) => (
-              <Chip key={s.label} size="small" variant="outlined" label={s.label} onClick={() => setText(s.text.slice(0, TEST_TEXT_MAX))} />
+              <Chip key={s.label} size="small" variant="outlined" label={s.label} onClick={() => {
+                  setText(s.text.slice(0, TEST_TEXT_MAX));
+                  setPicked(null);
+                }} />
             ))}
           </Stack>
         )}

@@ -232,6 +232,20 @@ export function pricePerHour(pricing: Record<string, string> | undefined): numbe
 }
 
 // ---------------------------------------------------------------------------
+// Round-up text the presenter reads (plan §7, decision 19).
+// ---------------------------------------------------------------------------
+
+/**
+ * What a presenter reads for a round-up. Global: the narrative. Place: the
+ * summary and the state of play; older docs without the sections fall back to
+ * the composed narrative.
+ */
+export function roundupSpeechText(r: { narrative?: string; summary?: string; stateOfPlay?: string }): string {
+  const sections = [r.summary, r.stateOfPlay].map((x) => x?.trim()).filter(Boolean);
+  return sections.length ? sections.join("\n\n") : (r.narrative ?? "").trim();
+}
+
+// ---------------------------------------------------------------------------
 // Voice tests: one spoken take, stored so earlier takes stay for comparison.
 // ---------------------------------------------------------------------------
 
