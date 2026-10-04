@@ -2,7 +2,7 @@
 
 /**
  * /admin/crosswords/words/:id — one bank word in full (§8.3): status, length,
- * categories, senses with their definitions, every clue with its difficulty,
+ * categories, senses with their definitions, the raw Wiktionary definitions, every clue with its difficulty,
  * source and status, the validation verdict with what each source said, and
  * the raw attempts and validation JSON (collapsed). Read-only for now.
  */
@@ -152,6 +152,22 @@ export function WordDetailView({ word }: { word: BankWordDetail }) {
                   ))
                 )}
               </Box>
+            ))}
+          </Box>
+        )}
+      </Section>
+
+      <Section title={`Wiktionary definitions (${word.definitions.length})`}>
+        {word.definitions.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            None stored.
+          </Typography>
+        ) : (
+          <Box component="ol" sx={{ m: 0, pl: 2.5 }}>
+            {word.definitions.map((d, i) => (
+              <Typography component="li" key={i} variant="body2" sx={{ mb: 0.5 }}>
+                {d}
+              </Typography>
             ))}
           </Box>
         )}

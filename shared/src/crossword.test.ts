@@ -349,7 +349,7 @@ describe("clues", () => {
   });
 
   it("every seed clue validates and answers are A-Z", () => {
-    expect(CROSSWORD_SEED_WORDS.length).toBeGreaterThanOrEqual(40);
+    expect(CROSSWORD_SEED_WORDS.length).toBeGreaterThanOrEqual(30);
     for (const w of CROSSWORD_SEED_WORDS) {
       expect(w.answer).toMatch(/^[A-Z]{3,12}$/);
       expect([w.answer, validateClue(w.clue, w.answer)]).toEqual([w.answer, null]);

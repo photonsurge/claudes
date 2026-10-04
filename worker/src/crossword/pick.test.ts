@@ -87,7 +87,7 @@ describe("pickCandidates", () => {
       // The whole seed set (no no-repeat window on it), each with its clue.
       expect(pick.words).toHaveLength(CROSSWORD_SEED_WORDS.length);
       expect(pick.words.every((w) => !w.bankId && w.clue)).toBe(true);
-      expect(pick.words.map((w) => w.answer)).toContain("COMET");
+      expect(pick.words.map((w) => w.answer)).toContain("ORBIT");
     }
   });
 });

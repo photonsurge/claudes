@@ -12,7 +12,7 @@ const word: BankWordDetail = {
   categories: ["ships"],
   flags: {},
   model: "local-7b",
-  decision: "accept",
+  decision: "accepted",
   decisionBy: "operator",
   zipf: 4.2,
   clueCount: 2,
@@ -25,7 +25,8 @@ const word: BankWordDetail = {
     { id: "c2", text: "Ruin", difficulty: 2, source: "wordnet", status: "rejected" },
   ],
   validationSources: { hunspell: true, wordnet: { found: true, senses: 4 } },
-  raw: { attempts: [{ n: 1, ok: true }], validation: { decision: "accept", zipf: 4.2 } },
+  definitions: ["A wrecked ship", "To ruin"],
+  raw: { attempts: [{ n: 1, ok: true }], validation: { decision: "accepted", zipf: 4.2 } },
 };
 
 beforeEach(() => {
@@ -48,7 +49,7 @@ it("renders senses, clues and the verdict", async () => {
   expect(within(clues).getByText("approved")).toBeInTheDocument();
   expect(within(clues).getByText("rejected")).toBeInTheDocument();
 
-  expect(screen.getAllByText("accept (operator)").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("accepted (operator)").length).toBeGreaterThan(0);
   expect(screen.getByText("hunspell")).toBeInTheDocument();
   expect(screen.getByText("Clue attempts")).toBeInTheDocument();
   expect(screen.getByText("ships")).toBeInTheDocument();

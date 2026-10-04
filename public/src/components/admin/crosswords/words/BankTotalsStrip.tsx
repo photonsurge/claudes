@@ -61,7 +61,7 @@ export default function BankTotalsStrip({ totals }: { totals: BankTotals }) {
           </Typography>
         </Box>
         <Group title="Clue status" rows={ordered(totals.byClueStatus, BANK_CLUE_STATUSES)} />
-        <Group title="Decision" rows={ordered(totals.byDecision, ["accept", "review", "reject", "none"])} />
+        <Group title="Decision" rows={ordered(totals.byDecision, ["accepted", "review", "reject", "none"])} />
         <Group title="Frequency" rows={bands} />
       </Stack>
     </Paper>

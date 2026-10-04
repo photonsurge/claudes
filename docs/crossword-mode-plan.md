@@ -5,7 +5,7 @@
 > Planned on Fable; the work packages
 > in §11 are sized to hand to Opus sub-agents one at a time, as with
 > [short-video-plan.md](./short-video-plan.md).
-> Source material: the February prototype in `../crosswords` (§1).
+> Source material: the February prototype, now checked in at `crosswords/` (§1).
 > Shares the chat seam with [chat-interaction-plan.md](./done/chat-interaction-plan.md) (§6.4).
 > Open questions for the operator are in §13.
 > Revised the same day on the operator's direction: the encoder is picked at go-live
@@ -771,12 +771,16 @@ All seven packages are in, each with its tests. Not yet run against a real Mongo
 real imported bank or a real frame, so M0 is not signed off.
 
 Where the build differs from the plan, or needs the operator:
-- **Bank field names are a guess.** `../crosswords` was not reachable when this was
-  built, so `BANK_WORD_FIELDS` / `BANK_CLUE_FIELDS` in `shared/src/crossword-bank.ts`
-  follow this plan's description. Check them against `db.crosswordbankwords.findOne()`
-  after the import; every reader goes through that one map.
-- **The seed set is new.** The prototype's `data.json` was not available either;
-  `crossword-seeds.ts` holds 43 new space words with clues.
+- **Bank fields follow the prototype's pipeline.** The prototype source is now in this
+  repo at `crosswords/`. `BANK_WORD_FIELDS` / `BANK_CLUE_FIELDS` in
+  `shared/src/crossword-bank.ts` match what `python/words-tools` writes: the decision is
+  `"accepted"` / `"review"` / `"reject"`, the Zipf score is
+  `validation.sources.wordfreq.zipf`, categories are `categorySlugs`, proper nouns are
+  pos `proper-noun`, a clue's `source` is `{ name, ref, createdBy }`, and the clue count
+  is counted from the clues collection (it is not stored on the word). The Wiktionary
+  definitions (`raw.definitions`) show on the Words detail page and go to the builder.
+  Still worth one look at a real imported document after the import.
+- **The seed set is the prototype's `data.json`** (37 space words), uppercased.
 - **Spotlight tie-break**: most letters showing, then the longest word, then the lowest
   number. §4.4's "ties to the lowest number" would contradict "the first pick is the
   longest word", so length breaks ties first.

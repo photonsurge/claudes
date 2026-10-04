@@ -47,8 +47,8 @@ it("builds the Mongo filter, sort and paging from the URL", () => {
       { norm: { $regex: "^C" } },
       { norm: { $regex: "AR" } },
       { "enrichment.status": "done" },
-      { "validation.decision": "accept" },
-      { "validation.zipf": { $gte: 3, $lt: 4 } },
+      { "validation.decision": "accepted" },
+      { "validation.sources.wordfreq.zipf": { $gte: 3, $lt: 4 } },
     ],
   });
   expect(bankWordSort(q)).toEqual({ norm: 1, _id: 1 });

@@ -8,7 +8,7 @@ import { BANK_ZIPF_BANDS, zipfBand, type BankWordRow } from "@photonsurge/shared
 type ChipColor = "default" | "success" | "warning" | "error" | "info";
 
 const STATUS_COLOR: Record<string, ChipColor> = { pending: "default", done: "success", rejected: "warning", failed: "error" };
-const DECISION_COLOR: Record<string, ChipColor> = { accept: "success", review: "warning", reject: "error" };
+const DECISION_COLOR: Record<string, ChipColor> = { accepted: "success", review: "warning", reject: "error" };
 
 export function ClueStatusChip({ status }: { status?: string }) {
   if (!status) return <span>—</span>;

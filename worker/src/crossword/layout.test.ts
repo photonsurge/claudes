@@ -118,7 +118,7 @@ describe("layoutCrossword", () => {
   });
 
   it("keeps a single attempt well under 20 ms on a 60-word list", () => {
-    const extra = "WEATHER STORM THUNDER CLOUD RAINBOW SNOWFALL BREEZE TORNADO HURRICANE DRIZZLE FROST SLEET MONSOON CYCLONE HAIL FOG MIST"
+    const extra = "WEATHER STORM THUNDER CLOUD RAINBOW SNOWFALL BREEZE TORNADO HURRICANE DRIZZLE FROST SLEET MONSOON CYCLONE HAIL FOG MIST COMET CRATER TITAN LUNAR SOLAR AURORA CORONA"
       .split(" ")
       .map((answer) => ({ answer }));
     const words = [...SEED, ...extra].slice(0, 60);

@@ -9,7 +9,7 @@
  * anchor it. Seeded, so a build is repeatable.
  *
  * With no bank imported (or too little of it playable), the pick falls back to
- * the seed set. The no-repeat window does not apply to the seed set: it is 43
+ * the seed set. The no-repeat window does not apply to the seed set: it is a few dozen
  * words, and a box with no bank has nothing else to play.
  */
 import type { AppDb } from "@photonsurge/shared/db/index";

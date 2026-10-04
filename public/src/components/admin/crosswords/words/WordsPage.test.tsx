@@ -21,7 +21,7 @@ const body = (over: Partial<BankWordsResponse> = {}): BankWordsResponse => ({
       categories: ["ships", "accidents"],
       flags: {},
       model: "local-7b",
-      decision: "accept",
+      decision: "accepted",
       zipf: 4.2,
       clueCount: 5,
       reason: "ok",

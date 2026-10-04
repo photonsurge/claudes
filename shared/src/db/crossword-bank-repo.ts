@@ -12,6 +12,7 @@ import {
   bankPlayableFilter,
   bankWordFilter,
   bankWordSort,
+  asStrings,
   getPath,
   toBankClue,
   toBankSenses,
@@ -40,6 +41,8 @@ export interface BankBuildWord {
   id: string;
   norm: string;
   senses: BankSense[];
+  /** Raw Wiktionary definitions: the facts a clue is written from. */
+  definitions: string[];
   /** Usable clues (never the operator-rejected ones). */
   clues: BankClue[];
 }
@@ -83,6 +86,15 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
     return out;
   };
 
+  /** Clue counts per word id for a page of words (the count is not stored on the word). */
+  const clueCounts = async (ids: unknown[]): Promise<Map<string, number>> => {
+    if (!ids.length) return new Map();
+    const rows = await clues()
+      .aggregate([{ $match: { [C.answerId]: { $in: ids } } }, { $group: { _id: `$${C.answerId}`, n: { $sum: 1 } } }])
+      .toArray();
+    return new Map(rows.map((r) => [String(r._id), r.n as number]));
+  };
+
   return {
     words,
     clues,
@@ -95,7 +107,8 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
         words().find(filter).sort(bankWordSort(q)).skip(skip).limit(limit).toArray(),
         words().countDocuments(filter),
       ]);
-      return { rows: docs.map((d) => toBankWordRow(d)), total, page, pageSize };
+      const counts = await clueCounts(docs.map((d) => d._id));
+      return { rows: docs.map((d) => toBankWordRow(d, counts.get(String(d._id)) ?? 0)), total, page, pageSize };
     },
 
     /** Totals above the list: by clue status, decision and frequency band. Cached for a minute. */
@@ -138,10 +151,11 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
       if (!oid) return null;
       const doc = await words().findOne({ _id: oid });
       if (!doc) return null;
-      const clueDocs = await clues().find({ [C.answerId]: oid }).toArray();
+      const clueDocs = await clues().find({ [C.answerId]: oid }).sort({ [C.createdAt]: -1 }).toArray();
       return {
-        ...toBankWordRow(doc),
+        ...toBankWordRow(doc, clueDocs.length),
         senses: toBankSenses(getPath(doc, F.senses)),
+        definitions: asStrings(getPath(doc, F.rawDefinitions)),
         clues: clueDocs.map((c) => toBankClue(c)),
         validationSources: getPath(doc, F.validationSources),
         raw: { attempts: getPath(doc, F.clueAttempts), validation: getPath(doc, F.validation) },
@@ -184,6 +198,7 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
         id: String(d._id),
         norm: String(getPath(d, F.norm) ?? ""),
         senses: toBankSenses(getPath(d, F.senses)),
+        definitions: asStrings(getPath(d, F.rawDefinitions)),
         clues: byWord.get(String(d._id)) ?? [],
       }));
     },
@@ -254,7 +269,7 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
     async addClues(wordId: string, texts: string[], meta: { source: string; model?: string }): Promise<number> {
       const oid = toOid(wordId);
       if (!oid || !texts.length) return 0;
-      const word = await words().findOne({ _id: oid }, { projection: { [F.norm]: 1 } });
+      const word = await words().findOne({ _id: oid }, { projection: { [F.norm]: 1, [F.length]: 1 } });
       if (!word) return 0;
       const existing = new Set(
         (await clues().find({ [C.answerId]: oid }, { projection: { [C.text]: 1 } }).toArray()).map((c) =>
@@ -264,18 +279,22 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
       const fresh = [...new Set(texts.map((t) => t.trim()).filter(Boolean))].filter((t) => !existing.has(t.toLowerCase()));
       if (!fresh.length) return 0;
       const at = new Date(now());
+      // The prototype's clue shape (enritch_words_vllm.py), plus this app's `status`.
       await clues().insertMany(
         fresh.map((t) => ({
           [C.answerId]: oid,
-          answer: getPath(word, F.norm),
+          [C.answerNorm]: getPath(word, F.norm),
+          [C.answerLength]: getPath(word, F.length),
           [C.text]: t,
-          [C.source]: meta.source,
-          ...(meta.model ? { [C.model]: meta.model } : {}),
+          style: "straight",
+          isCryptic: false,
+          source: { name: meta.source, ref: meta.model ?? null, createdBy: "photonsurge" },
           [C.status]: "candidate",
+          [C.createdAt]: at,
           [C.updatedAt]: at,
         })),
       );
-      await words().updateOne({ _id: oid }, { $inc: { [F.clueCount]: fresh.length }, $set: { [F.updatedAt]: at } });
+      await words().updateOne({ _id: oid }, { $set: { [F.updatedAt]: at } });
       return fresh.length;
     },
 

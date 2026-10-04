@@ -4,11 +4,10 @@
  *
  * The bank keeps the prototype's document shape (ObjectId keys, no `id`
  * field), imported whole by the operator as `crosswordbankwords` and
- * `crosswordbankclues`. NOTE: the field paths in BANK_WORD_FIELDS /
- * BANK_CLUE_FIELDS were written from the plan's description of the prototype,
- * without the prototype repo to hand. Check them against a real imported
- * document (`db.crosswordbankwords.findOne()`) and correct them here — every
- * reader goes through this one map.
+ * `crosswordbankclues`. The field paths below follow the prototype's word
+ * pipeline (crosswords/python/words-tools: injest.py, validate_words.py,
+ * enritch_words_vllm.py) and its words admin (crosswords/my-app). Every reader
+ * goes through this one map.
  */
 
 export const BANK_WORDS_COLLECTION = "crosswordbankwords";
@@ -21,8 +20,11 @@ export const BANK_WORD_FIELDS = {
   norm: "norm",
   length: "length",
   pos: "pos",
-  categories: "categories",
+  categories: "categorySlugs",
+  /** `{ pos, definition, register, domains }[]`, written by the enrichment run. */
   senses: "senses",
+  /** The Wiktionary definitions the word was ingested with — the facts a clue is written from. */
+  rawDefinitions: "raw.definitions",
   flagAdult: "flags.adult",
   flagVulgar: "flags.vulgar",
   flagOffensive: "flags.offensive",
@@ -31,8 +33,7 @@ export const BANK_WORD_FIELDS = {
   clueModel: "enrichment.model",
   clueReason: "enrichment.reason",
   clueAttempts: "enrichment.attempts",
-  clueCount: "clueCount",
-  /** Validation decision: accept / review / reject. */
+  /** Validation decision: accepted / review / reject. */
   decision: "validation.decision",
   /** Who made the decision: the pipeline, or "operator" (written by this app). */
   decisionBy: "validation.by",
@@ -40,7 +41,7 @@ export const BANK_WORD_FIELDS = {
   validationSources: "validation.sources",
   validation: "validation",
   /** Word-frequency (Zipf) score, the difficulty dial. */
-  zipf: "validation.zipf",
+  zipf: "validation.sources.wordfreq.zipf",
   updatedAt: "updatedAt",
 } as const;
 
@@ -48,10 +49,15 @@ export const BANK_WORD_FIELDS = {
 export const BANK_CLUE_FIELDS = {
   /** The word document's ObjectId. */
   answerId: "answerId",
+  answerNorm: "answerNorm",
+  answerLength: "answerLength",
   text: "clue",
   difficulty: "difficulty",
-  source: "source",
-  model: "model",
+  /** `source` is `{ name, ref, createdBy }`; `ref` holds the model for an LLM clue. */
+  source: "source.name",
+  model: "source.ref",
+  createdBy: "source.createdBy",
+  createdAt: "createdAt",
   /** Added by this app: candidate / approved / rejected. Missing = candidate. */
   status: "status",
   /** Added by this app: the text before an operator edit. */
@@ -60,10 +66,10 @@ export const BANK_CLUE_FIELDS = {
 } as const;
 
 /** Parts of speech that mark a word as a name, place or proper noun (never playable). */
-export const BANK_PROPER_POS = ["name", "proper noun", "proper-noun", "place", "propn"] as const;
+export const BANK_PROPER_POS = ["proper-noun"] as const;
 
 export type BankClueStatus = "pending" | "done" | "rejected" | "failed";
-export type BankDecision = "accept" | "review" | "reject";
+export type BankDecision = "accepted" | "review" | "reject";
 export type BankClueDecision = "candidate" | "approved" | "rejected";
 
 /** Frequency bands for the list filter and the totals. Upper bound exclusive. */
@@ -112,6 +118,8 @@ export interface BankSense {
 /** The Words detail page. */
 export interface BankWordDetail extends BankWordRow {
   senses: BankSense[];
+  /** The raw Wiktionary definitions the word was ingested with. */
+  definitions: string[];
   clues: BankClue[];
   /** What each validation source said (raw). */
   validationSources?: unknown;
@@ -157,7 +165,7 @@ export function bankWordFilter(q: BankWordQuery): Record<string, unknown> {
   if (letter) and.push({ [F.norm]: { $regex: `^${letter}` } });
   if (search) and.push({ [F.norm]: { $regex: escapeRe(search) } });
   if (q.clueStatus) and.push({ [F.clueStatus]: q.clueStatus });
-  if (q.acceptedOnly) and.push({ [F.decision]: "accept" });
+  if (q.acceptedOnly) and.push({ [F.decision]: "accepted" });
   if (q.reviewOnly) and.push({ [F.decision]: "review" });
   if (q.band) {
     if (q.band === "none") and.push({ [F.zipf]: { $exists: false } });
@@ -200,12 +208,12 @@ export interface BankPlayableQuery {
 /**
  * Mongo filter for playable words: accepted, with clues, unflagged, 3–12
  * letters (or the given range), not a name, place or proper noun, at or above
- * `minZipf`. Operator rejections are covered by `decision: accept` (the
+ * `minZipf`. Operator rejections are covered by `decision: accepted` (the
  * operator's Reject writes `reject`).
  */
 export function bankPlayableFilter(q: BankPlayableQuery): Record<string, unknown> {
   const f: Record<string, unknown> = {
-    [F.decision]: "accept",
+    [F.decision]: "accepted",
     [F.clueStatus]: "done",
     [F.length]: { $gte: Math.max(3, q.minLength ?? 3), $lte: Math.min(12, q.maxLength ?? 12) },
     [F.zipf]: { $gte: q.minZipf },
@@ -247,15 +255,15 @@ export function getPath(doc: unknown, path: string): unknown {
   return cur;
 }
 
-const asStrings = (v: unknown): string[] =>
+export const asStrings = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x) => typeof x === "string") : typeof v === "string" && v ? [v] : [];
 const asNum = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 const asStr = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 const asIso = (v: unknown): string | undefined =>
   v instanceof Date ? v.toISOString() : typeof v === "string" ? v : typeof v === "number" ? new Date(v).toISOString() : undefined;
 
-/** A raw prototype word document → list row. */
-export function toBankWordRow(doc: Record<string, unknown>): BankWordRow {
+/** A raw prototype word document → list row. The clue count is not stored on the word. */
+export function toBankWordRow(doc: Record<string, unknown>, clueCount = 0): BankWordRow {
   const word = asStr(getPath(doc, F.word)) ?? asStr(getPath(doc, F.norm)) ?? "";
   const norm = asStr(getPath(doc, F.norm)) ?? word.toUpperCase().replace(/[^A-Z]/g, "");
   return {
@@ -274,7 +282,7 @@ export function toBankWordRow(doc: Record<string, unknown>): BankWordRow {
     decision: asStr(getPath(doc, F.decision)),
     decisionBy: asStr(getPath(doc, F.decisionBy)),
     zipf: asNum(getPath(doc, F.zipf)),
-    clueCount: asNum(getPath(doc, F.clueCount)) ?? 0,
+    clueCount,
     reason: asStr(getPath(doc, F.clueReason)),
     updatedAt: asIso(getPath(doc, F.updatedAt)),
   };
@@ -295,14 +303,14 @@ export function toBankClue(doc: Record<string, unknown>): BankClue {
   };
 }
 
-/** Senses with their definitions, tolerant of `definitions` / `glosses` / `definition`. */
+/** Senses with their definitions (the pipeline writes one `definition` a sense; lists tolerated). */
 export function toBankSenses(v: unknown): BankSense[] {
   if (!Array.isArray(v)) return [];
   return v
     .filter((s) => s && typeof s === "object")
     .map((s: Record<string, unknown>) => ({
       pos: asStr(s.pos),
-      definitions: [...asStrings(s.definitions), ...asStrings(s.glosses), ...asStrings(s.definition)],
+      definitions: [...asStrings(s.definition), ...asStrings(s.definitions), ...asStrings(s.glosses)],
     }));
 }
 
