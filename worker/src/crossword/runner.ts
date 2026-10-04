@@ -87,6 +87,8 @@ export interface SceneRuntime {
   rate: Map<string, number[]>;
   lastBeatAt: number;
   lastIdleCheckAt: number;
+  /** Why the scene is replaying or idle (§7.5), or null with fresh stock. Logged when it changes. */
+  stockNote: string | null;
   /** Serialises the tick, answers and commands on this scene. */
   lock: Promise<unknown>;
 }
@@ -201,19 +203,44 @@ const resetBoard = (g: CrosswordGame): CrosswordGame => ({
 });
 
 /**
+ * Why the scene is replaying or idle (§7.5: "the Desk says why"), or null when
+ * `next` is a puzzle this scene has not played. Stock is shared across
+ * channels, so a family-friendly one can be short while others are not.
+ */
+export function stockNote(
+  ready: CrosswordPuzzle[],
+  next: CrosswordPuzzle | null,
+  sceneId: string,
+  cfg: Pick<CrosswordConfig, "familyFriendlyOnly" | "noRepeatPuzzles">,
+): string | null {
+  if (next) return next.plays.some((x) => x.sceneId === sceneId) ? "no unplayed stock: replaying" : null;
+  const playable = ready.filter((p) => p.entries.length);
+  if (!playable.length) return "no ready puzzles: idle";
+  if (cfg.familyFriendlyOnly && !playable.some((p) => p.familyFriendly === true)) return "no family-friendly stock: idle";
+  return `every puzzle is in the last ${cfg.noRepeatPuzzles} played: idle`;
+}
+
+/** Keep the stock note, logging only when it changes (an idle scene re-checks every 5 s). */
+function noteStock(rt: SceneRuntime, note: string | null): void {
+  if (note === rt.stockNote) return;
+  rt.stockNote = note;
+  log(TAG, note ? `stock: ${note}` : `stock: fresh puzzles again`, { sceneId: rt.sceneId });
+}
+
+/**
  * Put the next puzzle on its intro card, or go `idle` with no stock. The
- * no-repeat rule is `chooseNextPuzzle`'s over the ready list. Commits when the
- * game changed.
+ * no-repeat and family-friendly rules are `chooseNextPuzzle`'s over the ready
+ * list. Commits when the game changed.
  */
 async function startNext(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps): Promise<void> {
   rt.lastIdleCheckAt = now;
   const ready = await deps.db.crosswordPuzzles.list({ status: "ready" });
-  const next = chooseNextPuzzle(ready, rt.sceneId, rt.cfg.noRepeatPuzzles);
+  const next = chooseNextPuzzle(ready, rt.sceneId, rt.cfg.noRepeatPuzzles, { familyFriendlyOnly: rt.cfg.familyFriendlyOnly });
+  noteStock(rt, stockNote(ready, next, rt.sceneId, rt.cfg));
   if (!next) {
     if (rt.game.phase === "idle" && !rt.game.puzzleId) return;
     rt.puzzle = null;
     rt.game = { ...resetBoard(rt.game), phase: "idle", puzzleId: "" };
-    log(TAG, `no stock — idle`, { sceneId: rt.sceneId });
     await commit(rt, now, deps);
     return;
   }
@@ -348,6 +375,7 @@ async function loadScene(
     rate: new Map(),
     lastBeatAt: -Infinity,
     lastIdleCheckAt: -Infinity,
+    stockNote: null,
     lock: Promise.resolve(),
   };
   if (isFrozen(rt) && game.phase !== "idle") rt.frozenAt = savedAt;

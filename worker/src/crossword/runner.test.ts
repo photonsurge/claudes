@@ -36,11 +36,10 @@ const T0 = Date.UTC(2026, 9, 4, 12, 0, 0);
  *  A . A .      1D CAR, 2D TAD
  *  R O D E
  */
-function puzzle(id = "p1", createdAt = 1): CrosswordPuzzle {
+function puzzle(id = "p1", createdAt = 1, familyFriendly = true): CrosswordPuzzle {
   return {
     id,
     title: `Puzzle ${id}`,
-    theme: "test",
     width: 4,
     height: 3,
     entries: numberEntries([
@@ -50,6 +49,7 @@ function puzzle(id = "p1", createdAt = 1): CrosswordPuzzle {
       { answer: "RODE", clue: "Sat on a horse", row: 2, col: 0, dir: "across" },
     ]),
     status: "ready",
+    familyFriendly,
     source: "seed",
     createdAt,
     plays: [],
@@ -319,6 +319,33 @@ describe("crossword runner", () => {
     await h.run(5_000);
     expect(h.game().phase).toBe("idle");
     expect(h.game().puzzleNo).toBe(3);
+    expect(h.state.scenes.get(SCENE)!.stockNote).toBe("every puzzle is in the last 2 played: idle");
+  });
+
+  test("a family-friendly channel never plays an untagged puzzle, and notes why it is idle or replaying", async () => {
+    const f = fakeDb({ puzzles: [puzzle("adult", 1, false), puzzle("p2", 2)], cfg: { noRepeatPuzzles: 0, introS: 3, finaleS: 5 } });
+    const h = harness(f);
+    await h.first();
+    const rt = () => h.state.scenes.get(SCENE)!;
+    expect(h.game().puzzleId).toBe("p2");
+    expect(rt().stockNote).toBeNull();
+    await h.command("nextPuzzle");
+    await h.run(5_000);
+    // Only p2 fits: it replays, never the older untagged one.
+    expect(h.game()).toMatchObject({ puzzleId: "p2", puzzleNo: 2, phase: "intro" });
+    expect(rt().stockNote).toBe("no unplayed stock: replaying");
+
+    f.puzzles.delete("p2");
+    await h.command("nextPuzzle");
+    await h.run(5_000);
+    expect(h.game().phase).toBe("idle");
+    expect(rt().stockNote).toBe("no family-friendly stock: idle");
+
+    // With the switch off, the untagged puzzle plays.
+    f.setCfg({ familyFriendlyOnly: false });
+    await h.run(5_000);
+    expect(h.game()).toMatchObject({ puzzleId: "adult", phase: "intro" });
+    expect(rt().stockNote).toBeNull();
   });
 
   test("pause freezes the clock; resume moves the deadlines on", async () => {
