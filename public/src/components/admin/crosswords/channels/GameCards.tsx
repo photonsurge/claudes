@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * The Game group of a crossword channel's settings (plan §8.2): five cards over
- * the channel's CrosswordConfig. Like every other card they are pure forms over
- * the page draft — they read `crossword` and call `stageCrossword`, and nothing
- * reaches the game until the Save bar PATCHes /api/crossword/:scene/config. The
- * worker's runner re-reads the config each tick, so a Save lands live.
+ * The Game group of a crossword channel's settings (plan §8.2): cards over the
+ * channel's CrosswordConfig. Pure forms over the page draft — they read
+ * `crossword` and call `stageCrossword`, and nothing reaches the game until the
+ * Save bar PATCHes /api/crossword/:scene/config. The worker's runner re-reads
+ * the config each tick, so a Save lands live.
  *
  * Every number is bounded by CROSSWORD_CONFIG_LIMITS, the same table the
  * server's merge clamps to, so the field can never offer a value the save would
@@ -21,9 +21,9 @@ import {
   DEFAULT_CROSSWORD_CONFIG,
   type CrosswordConfig,
 } from "@photonsurge/shared/crossword";
-import SettingsCard from "./SettingsCard";
-import TuningField from "./TuningField";
-import { useSceneDraft } from "./SceneDraft";
+import TuningField from "../../scenes/TuningField";
+import ChannelCard from "./ChannelCard";
+import { useChannelDraft } from "./ChannelDraft";
 
 type NumKey = keyof typeof CROSSWORD_CONFIG_LIMITS;
 
@@ -44,7 +44,7 @@ function GameField({
   /** A tighter floor than the table's (maxWords never below minWords). */
   min?: number;
 }) {
-  const { crossword, stageCrossword } = useSceneDraft();
+  const { crossword, stageCrossword } = useChannelDraft();
   const [lo, hi] = CROSSWORD_CONFIG_LIMITS[field];
   return (
     <TuningField
@@ -62,7 +62,7 @@ function GameField({
 
 /** A yes/no from the config. */
 function GameSwitch({ field, label }: { field: "enabled" | "playOffAir" | "familyFriendlyOnly"; label: string }) {
-  const { crossword, stageCrossword } = useSceneDraft();
+  const { crossword, stageCrossword } = useChannelDraft();
   return (
     <FormControlLabel
       control={
@@ -91,7 +91,7 @@ function GameList({
   label: string;
   helperText: string;
 }) {
-  const { crossword, stageCrossword } = useSceneDraft();
+  const { crossword, stageCrossword } = useChannelDraft();
   const value = crossword[field];
   const [draft, setDraft] = useState(value.join("\n"));
   useEffect(() => setDraft(value.join("\n")), [value]);
@@ -117,11 +117,11 @@ function GameList({
   );
 }
 
-export function CrosswordOnSettings() {
-  const { crossword } = useSceneDraft();
+export function OnCard() {
+  const { crossword } = useChannelDraft();
   return (
-    <SettingsCard
-      id="crossword-on"
+    <ChannelCard
+      id="on"
       blurb="Whether the host runs this channel's game at all."
       note={
         <>
@@ -137,14 +137,14 @@ export function CrosswordOnSettings() {
           <GameSwitch field="playOffAir" label="Play off air" />
         </Box>
       </Box>
-    </SettingsCard>
+    </ChannelCard>
   );
 }
 
-export function CrosswordPacingSettings() {
+export function PacingCard() {
   return (
-    <SettingsCard
-      id="crossword-pacing"
+    <ChannelCard
+      id="pacing"
       blurb="How long each clue stays in the spotlight, when hint letters start to leak, and how long the beats between words and puzzles last."
     >
       <Box sx={row}>
@@ -159,28 +159,28 @@ export function CrosswordPacingSettings() {
         <GameField field="solveBeatS" label="Beat after a solve" unit="s" />
         <GameField field="ceilingMin" label="Puzzle ceiling" unit="min" />
       </Box>
-    </SettingsCard>
+    </ChannelCard>
   );
 }
 
-export function CrosswordDifficultySettings() {
+export function DifficultyCard() {
   return (
-    <SettingsCard
-      id="crossword-difficulty"
+    <ChannelCard
+      id="difficulty"
       blurb="How common a word must be to be picked (a Zipf frequency: 3 is uncommon, 5 is everyday)."
     >
       <Box sx={row}>
         <GameField field="minZipf" label="Word frequency floor" integer={false} />
       </Box>
-    </SettingsCard>
+    </ChannelCard>
   );
 }
 
-export function CrosswordPuzzleSettings() {
-  const { crossword } = useSceneDraft();
+export function PuzzlesCard() {
+  const { crossword } = useChannelDraft();
   return (
-    <SettingsCard
-      id="crossword-puzzles"
+    <ChannelCard
+      id="puzzles"
       blurb="How many approved puzzles to keep in stock, how big they are, and how long before a puzzle or a word comes round again."
     >
       <Box sx={row}>
@@ -196,14 +196,14 @@ export function CrosswordPuzzleSettings() {
         <GameField field="noRepeatPuzzles" label="Puzzle not replayed within" unit="puzzles" />
         <GameField field="noRepeatWordsPuzzles" label="Word not reused within" unit="puzzles" />
       </Box>
-    </SettingsCard>
+    </ChannelCard>
   );
 }
 
-export function CrosswordChatSettings() {
+export function ChatCard() {
   return (
-    <SettingsCard
-      id="crossword-chat"
+    <ChannelCard
+      id="chat"
       blurb="How chat answers count: the stream delay that decides a late answer, and how many guesses one viewer may send."
     >
       <Box sx={row}>
@@ -216,6 +216,6 @@ export function CrosswordChatSettings() {
         label="Blocked words"
         helperText="One per line, on top of the built-in list. A viewer name that hits one is replaced on air, and a clue that uses one is never aired."
       />
-    </SettingsCard>
+    </ChannelCard>
   );
 }

@@ -13,10 +13,7 @@
  *
  * Nothing reaches the channel until Save applies the accumulated delta as ONE
  * write per bucket: `stage` → a SCENE_STATE emit plus an awaited PATCH of
- * /api/scenes/:id, `stageDirector` → PATCH /api/director/:scene/config, and on a
- * crossword channel `stageCrossword` → PATCH /api/crossword/:scene/config. A
- * crossword channel has no director, so its DirectorConfig is not read (the
- * defaults stand in); a weather channel never reads a crossword config. All
+ * /api/scenes/:id, `stageDirector` → PATCH /api/director/:scene/config. Both
  * buckets shallow-merge, so cards MUST stage complete top-level fields (the
  * whole `kinds` record, the whole `countries` array…) — a partial nested object
  * would clobber staged siblings.
@@ -45,20 +42,15 @@ import {
   SCENE_STATE,
   type ControlState,
   type SceneStatePayload,
-  type SceneSurface,
 } from "@photonsurge/shared/control";
 import { DEFAULT_DIRECTOR_CONFIG, type DirectorConfig } from "@photonsurge/shared/director";
-import { DEFAULT_CROSSWORD_CONFIG, type CrosswordConfig } from "@photonsurge/shared/crossword";
 import { emitScenePatch, fetchSceneState, patchScene } from "../../../lib/scenes";
 import { fetchDirectorConfig, mergeConfig, patchDirectorConfig } from "../../../lib/director";
 import { useSocket } from "../../../lib/socket-provider";
-import { fetchCrosswordConfig, patchCrosswordConfig } from "./crossword-config";
 
 export type SceneDraftValue = {
   sceneId: string;
-  /** Which kind of channel this is; decides which documents are read. */
-  surface: SceneSurface;
-  /** Every document this channel uses has loaded. Cards render only once this is true. */
+  /** Both documents have loaded. Cards render only once this is true. */
   ready: boolean;
   /** Server ControlState with the staged delta merged on top — what cards render. */
   state: ControlState;
@@ -68,14 +60,9 @@ export type SceneDraftValue = {
   stage: (patch: Partial<ControlState>) => void;
   /** Stage a DirectorConfig delta for the same Save. */
   stageDirector: (patch: Partial<DirectorConfig>) => void;
-  /** Server CrosswordConfig with its staged delta on top (defaults on a weather channel). */
-  crossword: CrosswordConfig;
-  /** Stage a CrosswordConfig delta for the same Save. */
-  stageCrossword: (patch: Partial<CrosswordConfig>) => void;
   /** The staged deltas themselves — the Save bar names what they touch. */
   pending: Partial<ControlState>;
   pendingDirector: Partial<DirectorConfig>;
-  pendingCrossword: Partial<CrosswordConfig>;
   dirty: boolean;
   /** Staged fields the operator's desk has ALSO changed since they were staged. */
   conflictKeys: readonly string[];
@@ -103,24 +90,19 @@ export function useSceneDraft(): SceneDraftValue {
 
 export default function SceneDraftProvider({
   sceneId,
-  surface = "globe",
   children,
 }: {
   sceneId: string;
-  surface?: SceneSurface;
   children: ReactNode;
 }) {
-  const isCrossword = surface === "crossword";
   const { socket } = useSocket();
 
   // The server documents, as last read (cold start + live SCENE_STATE).
   const [base, setBase] = useState<ControlState | null>(null);
   const [baseConfig, setBaseConfig] = useState<DirectorConfig | null>(null);
-  const [baseCrossword, setBaseCrossword] = useState<CrosswordConfig | null>(null);
   // The staged deltas.
   const [pending, setPending] = useState<Partial<ControlState>>({});
   const [pendingDirector, setPendingDirector] = useState<Partial<DirectorConfig>>({});
-  const [pendingCrossword, setPendingCrossword] = useState<Partial<CrosswordConfig>>({});
   const [conflictKeys, setConflictKeys] = useState<readonly string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -135,28 +117,19 @@ export default function SceneDraftProvider({
     let cancelled = false;
     setBase(null);
     setBaseConfig(null);
-    setBaseCrossword(null);
     setPending({});
     setPendingDirector({});
-    setPendingCrossword({});
     setConflictKeys([]);
     fetchSceneState(sceneId).then(({ state: s }) => {
       if (!cancelled) setBase(s);
     });
-    if (isCrossword) {
-      setBaseConfig(DEFAULT_DIRECTOR_CONFIG);
-      fetchCrosswordConfig(sceneId).then((c) => {
-        if (!cancelled) setBaseCrossword(c);
-      });
-    } else {
-      fetchDirectorConfig(sceneId).then((c) => {
-        if (!cancelled) setBaseConfig(c);
-      });
-    }
+    fetchDirectorConfig(sceneId).then((c) => {
+      if (!cancelled) setBaseConfig(c);
+    });
     return () => {
       cancelled = true;
     };
-  }, [sceneId, isCrossword]);
+  }, [sceneId]);
 
   const stage = useCallback((over: Partial<ControlState>) => {
     setPending((prev) => ({ ...prev, ...over }));
@@ -168,11 +141,6 @@ export default function SceneDraftProvider({
     setSaveError(null);
   }, []);
 
-  const stageCrossword = useCallback((over: Partial<CrosswordConfig>) => {
-    setPendingCrossword((prev) => ({ ...prev, ...over }));
-    setSaveError(null);
-  }, []);
-
   /** A live change from the desk: adopt it, unless it hits a staged field. */
   const applyLive = useCallback((over: Partial<ControlState>) => {
     const staged = Object.keys(pendingRef.current);
@@ -181,7 +149,7 @@ export default function SceneDraftProvider({
     setBase((prev) => (prev ? mergeControlState(prev, over) : prev));
   }, []);
 
-  const ready = base !== null && baseConfig !== null && (!isCrossword || baseCrossword !== null);
+  const ready = base !== null && baseConfig !== null;
 
   const state = useMemo(
     () => (base ? mergeControlState(base, pending) : DEFAULT_CONTROL_STATE),
@@ -192,17 +160,7 @@ export default function SceneDraftProvider({
     [baseConfig, pendingDirector],
   );
 
-  // The cards clamp what they stage, and the server clamps again on Save, so a
-  // plain overlay is enough here.
-  const crossword = useMemo(
-    () => ({ ...(baseCrossword ?? DEFAULT_CROSSWORD_CONFIG), ...pendingCrossword }),
-    [baseCrossword, pendingCrossword],
-  );
-
-  const dirty =
-    Object.keys(pending).length > 0 ||
-    Object.keys(pendingDirector).length > 0 ||
-    Object.keys(pendingCrossword).length > 0;
+  const dirty = Object.keys(pending).length > 0 || Object.keys(pendingDirector).length > 0;
 
   const save = useCallback(() => {
     if (!dirty || saving) return;
@@ -213,8 +171,6 @@ export default function SceneDraftProvider({
     // not at the click that staged it minutes earlier.
     if ("spinEpoch" in out) out.spinEpoch = Date.now();
     const director = { ...pendingDirector };
-    const game = { ...pendingCrossword };
-    let savedGame: CrosswordConfig | null = null;
 
     void (async () => {
       const errors: string[] = [];
@@ -234,13 +190,6 @@ export default function SceneDraftProvider({
           errors.push(err instanceof Error ? err.message : String(err));
         }
       }
-      if (Object.keys(game).length > 0) {
-        try {
-          savedGame = await patchCrosswordConfig(sceneId, game);
-        } catch (err) {
-          errors.push(err instanceof Error ? err.message : String(err));
-        }
-      }
       setSaving(false);
       if (errors.length > 0) {
         // Keep the draft: the operator's edits are still the only copy.
@@ -251,19 +200,15 @@ export default function SceneDraftProvider({
       // and clear the draft without a refetch.
       setBase((prev) => (prev ? mergeControlState(prev, out) : prev));
       setBaseConfig((prev) => (prev ? mergeConfig(prev, director) : prev));
-      // The route returns the clamped result, which is the truth to show.
-      if (savedGame) setBaseCrossword(savedGame);
       setPending({});
       setPendingDirector({});
-      setPendingCrossword({});
       setConflictKeys([]);
     })();
-  }, [dirty, saving, pending, pendingDirector, pendingCrossword, socket, sceneId]);
+  }, [dirty, saving, pending, pendingDirector, socket, sceneId]);
 
   const discard = useCallback(() => {
     setPending({});
     setPendingDirector({});
-    setPendingCrossword({});
     setConflictKeys([]);
     setSaveError(null);
   }, []);
@@ -284,17 +229,13 @@ export default function SceneDraftProvider({
   // memo's deps would cover everything that can change and it could never hit.
   const value: SceneDraftValue = {
     sceneId,
-    surface,
     ready,
     state,
     config,
     stage,
     stageDirector,
-    crossword,
-    stageCrossword,
     pending,
     pendingDirector,
-    pendingCrossword,
     dirty,
     conflictKeys,
     saving,

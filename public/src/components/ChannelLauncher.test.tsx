@@ -50,7 +50,7 @@ describe("ChannelLauncher", () => {
     expect(controls[0]).toHaveAttribute("href", "/control");
     expect(controls[1]).toHaveAttribute("href", "/control?scene=wind");
 
-    const watches = screen.getAllByRole("link", { name: "Watch ↗" });
+    const watches = screen.getAllByRole("link", { name: "Output ↗" });
     expect(watches[0]).toHaveAttribute("href", "/watch/default");
     expect(watches[1]).toHaveAttribute("href", "/watch/wind");
 
@@ -167,7 +167,7 @@ describe("ChannelLauncher", () => {
       ],
     };
 
-    it("shows the puzzle line and links Desk / Watch / Settings", async () => {
+    it("shows the puzzle line and links Desk / Output / Settings", async () => {
       global.fetch = jest.fn(async () => ({ ok: true, json: async () => xwState })) as unknown as typeof fetch;
       mockList.mockResolvedValue([
         { id: "default", name: "Main" },
@@ -181,9 +181,9 @@ describe("ChannelLauncher", () => {
       // Only the crossword card reads game state.
       expect(global.fetch).toHaveBeenCalledTimes(1);
       expect(screen.getByRole("link", { name: "Desk" })).toHaveAttribute("href", "/admin/crosswords/desk/word-up");
-      const watches = screen.getAllByRole("link", { name: "Watch ↗" });
+      const watches = screen.getAllByRole("link", { name: "Output ↗" });
       expect(watches[1]).toHaveAttribute("href", "/crossword/word-up");
-      expect(screen.getAllByRole("link", { name: "Settings" })[1]).toHaveAttribute("href", "/admin/scenes/word-up");
+      expect(screen.getAllByRole("link", { name: "Settings" })[1]).toHaveAttribute("href", "/admin/crosswords/channels/word-up");
       expect(screen.getAllByRole("link", { name: "Control" })).toHaveLength(1);
     });
 

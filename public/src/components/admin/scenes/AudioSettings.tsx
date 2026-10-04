@@ -19,7 +19,7 @@ import SettingsCard from "./SettingsCard";
 import { useSceneDraft } from "./SceneDraft";
 
 /** Operator-facing labels for the bed's modes (see shared AUDIO_MODES). */
-const AUDIO_MODE_LABELS: Record<AudioMode, string> = {
+export const AUDIO_MODE_LABELS: Record<AudioMode, string> = {
   auto: "Auto — follows broadcast",
   chill: "Chill Out",
   lounge: "Lounge House",

@@ -6,7 +6,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DEFAULT_CONTROL_STATE, type ControlState } from "@photonsurge/shared/control";
 import { DEFAULT_DIRECTOR_CONFIG } from "@photonsurge/shared/director";
-import { DEFAULT_CROSSWORD_CONFIG } from "@photonsurge/shared/crossword";
 import SceneDraftProvider, { useSceneDraft } from "./SceneDraft";
 
 const fetchState = jest.fn();
@@ -27,13 +26,6 @@ jest.mock("../../../lib/director", () => ({
   fetchDirectorConfig: (...a: unknown[]) => fetchConfig(...a),
   patchDirectorConfig: (...a: unknown[]) => patchDirector(...(a as [])),
   mergeConfig: (prev: object, patch: object) => ({ ...prev, ...patch }),
-}));
-
-const fetchCrossword = jest.fn();
-const patchCrossword = jest.fn();
-jest.mock("./crossword-config", () => ({
-  fetchCrosswordConfig: (...a: unknown[]) => fetchCrossword(...a),
-  patchCrosswordConfig: (...a: unknown[]) => patchCrossword(...a),
 }));
 
 /** A socket whose SCENE_STATE handler the test can fire by hand. */
@@ -76,11 +68,7 @@ const renderProvider = () =>
 
 beforeEach(() => {
   handlers.clear();
-  [fetchState, emitPatch, patchSceneMock, fetchConfig, patchDirector, fetchCrossword, patchCrossword].forEach((m) =>
-    m.mockClear(),
-  );
-  fetchCrossword.mockResolvedValue({ ...DEFAULT_CROSSWORD_CONFIG });
-  patchCrossword.mockImplementation(async (_id: string, p: object) => ({ ...DEFAULT_CROSSWORD_CONFIG, ...p }));
+  [fetchState, emitPatch, patchSceneMock, fetchConfig, patchDirector].forEach((m) => m.mockClear());
   fetchState.mockResolvedValue({ state: { ...DEFAULT_CONTROL_STATE }, tokenError: false });
   fetchConfig.mockResolvedValue({ ...DEFAULT_DIRECTOR_CONFIG });
   patchSceneMock.mockResolvedValue({ ok: true });
@@ -211,84 +199,5 @@ describe("SceneDraftProvider", () => {
     expect(screen.getByTestId("pace")).toHaveTextContent("9");
     // …while an untouched field adopts the desk's value.
     expect(screen.getByTestId("hold")).toHaveTextContent("5000");
-  });
-});
-
-/** Stand-in Game card: reads the crossword bucket and stages into it. */
-function GameCard() {
-  const { ready, crossword, stageCrossword, stage, save, dirty, saveError, pendingCrossword } = useSceneDraft();
-  if (!ready) return <span>loading</span>;
-  return (
-    <div>
-      <span data-testid="clue">{crossword.clueS}</span>
-      <span data-testid="dirty">{String(dirty)}</span>
-      <span data-testid="staged">{Object.keys(pendingCrossword).join(",")}</span>
-      {saveError && <span data-testid="error">{saveError}</span>}
-      <button onClick={() => stageCrossword({ clueS: 45, enabled: true })}>set clue</button>
-      <button onClick={() => stage({ readPaceCps: 9 })}>set pace</button>
-      <button onClick={save}>Save</button>
-    </div>
-  );
-}
-
-const renderCrossword = () =>
-  render(
-    <SceneDraftProvider sceneId="xw" surface="crossword">
-      <GameCard />
-    </SceneDraftProvider>,
-  );
-
-describe("SceneDraftProvider on a crossword channel", () => {
-  it("reads the crossword config, not the director's", async () => {
-    renderCrossword();
-    expect(await screen.findByTestId("clue")).toHaveTextContent(String(DEFAULT_CROSSWORD_CONFIG.clueS));
-    expect(fetchCrossword).toHaveBeenCalledWith("xw");
-    expect(fetchConfig).not.toHaveBeenCalled();
-  });
-
-  it("a weather channel never reads a crossword config", async () => {
-    renderProvider();
-    await screen.findByTestId("pace");
-    expect(fetchCrossword).not.toHaveBeenCalled();
-  });
-
-  it("stages a Game edit without writing it", async () => {
-    renderCrossword();
-    await screen.findByTestId("clue");
-
-    fireEvent.click(screen.getByRole("button", { name: "set clue" }));
-
-    expect(screen.getByTestId("clue")).toHaveTextContent("45");
-    expect(screen.getByTestId("dirty")).toHaveTextContent("true");
-    expect(screen.getByTestId("staged")).toHaveTextContent("clueS,enabled");
-    expect(patchCrossword).not.toHaveBeenCalled();
-  });
-
-  it("Save sends the Game bucket to the config route beside the channel patch", async () => {
-    renderCrossword();
-    await screen.findByTestId("clue");
-
-    fireEvent.click(screen.getByRole("button", { name: "set clue" }));
-    fireEvent.click(screen.getByRole("button", { name: "set pace" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => expect(screen.getByTestId("dirty")).toHaveTextContent("false"));
-    expect(patchCrossword).toHaveBeenCalledWith("xw", { clueS: 45, enabled: true });
-    expect(patchSceneMock).toHaveBeenCalledWith("xw", { readPaceCps: 9 });
-    expect(patchDirector).not.toHaveBeenCalled();
-    // The saved (server-clamped) config is now the base.
-    expect(screen.getByTestId("clue")).toHaveTextContent("45");
-  });
-
-  it("keeps the Game draft when the config route rejects the save", async () => {
-    patchCrossword.mockRejectedValue(new Error("crossword config write failed (401)"));
-    renderCrossword();
-    await screen.findByTestId("clue");
-
-    fireEvent.click(screen.getByRole("button", { name: "set clue" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByTestId("error")).toHaveTextContent("401");
-    expect(screen.getByTestId("dirty")).toHaveTextContent("true");
   });
 });

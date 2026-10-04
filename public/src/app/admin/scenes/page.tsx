@@ -31,9 +31,10 @@ import {
   type SceneMeta,
   type SceneSurface,
 } from "@photonsurge/shared/control";
-import { listScenes, createScene, deleteScene } from "../../../lib/scenes";
-import { consoleHref, settingsHref, surfaceLabel } from "../../../lib/channel-links";
+import { listScenes, createScene, deleteScene, fetchSceneState } from "../../../lib/scenes";
+import { consoleHref, settingsHrefFor, surfaceLabel } from "../../../lib/channel-links";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import { fetchYoutubeChannels, type YoutubeChannel } from "../../../components/admin/crosswords/channels/client";
 import { font } from "../../../theme/tokens";
 
 export default function ScenesPage() {
@@ -45,8 +46,20 @@ export default function ScenesPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Which YouTube channel each scene goes out on: scene id → youtube.accountId.
+  const [accountOf, setAccountOf] = useState<Record<string, string>>({});
+  const [youtube, setYoutube] = useState<YoutubeChannel[]>([]);
+
   const refresh = useCallback(async () => {
-    setScenes(await listScenes());
+    const list = await listScenes();
+    setScenes(list);
+    // The scene list carries no YouTube settings, so read each channel's own.
+    const [channels, states] = await Promise.all([
+      fetchYoutubeChannels(),
+      Promise.all(list.map(async (s) => [s.id, (await fetchSceneState(s.id)).state.youtube?.accountId ?? ""] as const)),
+    ]);
+    setYoutube(channels);
+    setAccountOf(Object.fromEntries(states));
   }, []);
 
   useEffect(() => {
@@ -87,7 +100,7 @@ export default function ScenesPage() {
           live in <MuiLink component={Link} href="/admin/access">Access</MuiLink>.
         </>
       }
-      maxWidth={760}
+      maxWidth={860}
     >
       {/* Create */}
       <Paper sx={{ p: 1.75, mt: 1.75 }}>
@@ -164,6 +177,9 @@ export default function ScenesPage() {
           const kind = sceneSurface(s);
           const watch = outputPath(s);
           const control = consoleHref(s);
+          const accountId = accountOf[s.id] ?? "";
+          const accountName = youtube.find((a) => a.id === accountId)?.title ?? accountId;
+          const goesOutOn = accountName || (kind === "crossword" ? "none" : "default channel");
           return (
             <Paper key={s.id} sx={{ p: 1.75 }}>
               <Stack direction="row" spacing={1.75} sx={{ alignItems: "center" }}>
@@ -189,15 +205,18 @@ export default function ScenesPage() {
                     {origin}
                     {watch}
                   </Typography>
+                  <Typography variant="caption" color="text.secondary" component="div">
+                    YouTube: <span data-testid={`youtube-${s.id}`}>{goesOutOn}</span>
+                  </Typography>
                 </Box>
-                <MuiLink component={Link} href={settingsHref(s.id)} variant="body2" sx={{ whiteSpace: "nowrap" }}>
+                <MuiLink component={Link} href={settingsHrefFor(s)} variant="body2" sx={{ whiteSpace: "nowrap" }}>
                   Settings
                 </MuiLink>
                 <MuiLink component={Link} href={control} variant="body2" sx={{ whiteSpace: "nowrap" }}>
                   {kind === "crossword" ? "Desk" : "Control"}
                 </MuiLink>
                 <MuiLink component={Link} href={watch} target="_blank" variant="body2" sx={{ whiteSpace: "nowrap" }}>
-                  Watch ↗
+                  Output ↗
                 </MuiLink>
                 {s.id !== MAIN_SCENE_ID && (
                   <Button variant="outlined" color="error" onClick={() => remove(s.id)}>

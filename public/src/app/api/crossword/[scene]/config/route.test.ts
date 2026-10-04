@@ -69,3 +69,11 @@ it("400s a body that isn't an object", async () => {
   expect((await patch([1, 2])).status).toBe(400);
   expect(mockSaveConfig).not.toHaveBeenCalled();
 });
+
+it("passes the theme to the db merge, which sanitizes it", async () => {
+  const theme = { brand: { title: "Word Up", logoUrl: "/l.png" } };
+  const res = await patch({ theme });
+  expect(res.status).toBe(200);
+  expect(mockSaveConfig).toHaveBeenCalledWith("xw", { theme });
+  expect((await res.json()).theme).toEqual(theme);
+});

@@ -6,7 +6,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { DEFAULT_CONTROL_STATE, type ControlState } from "@photonsurge/shared/control";
 import { DEFAULT_DIRECTOR_CONFIG, type DirectorConfig } from "@photonsurge/shared/director";
-import { DEFAULT_CROSSWORD_CONFIG, type CrosswordConfig } from "@photonsurge/shared/crossword";
 import SceneSaveBar from "./SceneSaveBar";
 import { SceneDraftContext, type SceneDraftValue } from "./SceneDraft";
 
@@ -16,17 +15,13 @@ const discard = jest.fn();
 function renderBar(over: Partial<SceneDraftValue> = {}) {
   const value: SceneDraftValue = {
     sceneId: "wind",
-    surface: "globe",
     ready: true,
     state: DEFAULT_CONTROL_STATE,
     config: DEFAULT_DIRECTOR_CONFIG,
     stage: () => {},
     stageDirector: () => {},
-    crossword: DEFAULT_CROSSWORD_CONFIG,
-    stageCrossword: () => {},
     pending: {} as Partial<ControlState>,
     pendingDirector: {} as Partial<DirectorConfig>,
-    pendingCrossword: {} as Partial<CrosswordConfig>,
     dirty: false,
     conflictKeys: [],
     saving: false,
@@ -58,13 +53,6 @@ describe("SceneSaveBar", () => {
 
     expect(screen.getByText(/2 unsaved changes/)).toBeInTheDocument();
     expect(screen.getByText(/Music bed, Reading pace/)).toBeInTheDocument();
-  });
-
-  it("names a staged Game card on a crossword channel", () => {
-    renderBar({ surface: "crossword", dirty: true, pending: { audio: DEFAULT_CONTROL_STATE.audio }, pendingCrossword: { clueS: 45 } });
-
-    expect(screen.getByText(/2 unsaved changes/)).toBeInTheDocument();
-    expect(screen.getByText(/Pacing, Music bed/)).toBeInTheDocument();
   });
 
   it("counts a director change alongside a channel one", () => {

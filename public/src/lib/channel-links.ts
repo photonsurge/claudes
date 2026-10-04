@@ -16,3 +16,13 @@ export const settingsHref = (id: string) => `/admin/scenes/${id}`;
 
 /** "Weather" / "Crossword" — the Type chip's label. */
 export const surfaceLabel = (surface: SceneSurface) => (surface === "crossword" ? "Crossword" : "Weather");
+
+/** A crossword channel's settings page (the weather one redirects to it). */
+export const crosswordSettingsHref = (id: string) => `/admin/crosswords/channels/${encodeURIComponent(id)}`;
+
+/** The channel's settings page for its kind. */
+export const settingsHrefFor = (scene: { id: string; surface?: SceneSurface }) =>
+  sceneSurface(scene) === "crossword" ? crosswordSettingsHref(scene.id) : settingsHref(scene.id);
+
+/** A seam for tests: a full-page replace, as the settings redirect does. */
+export const replaceLocation = (href: string) => window.location.replace(href);

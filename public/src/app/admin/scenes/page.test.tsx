@@ -1,6 +1,6 @@
 /**
  * /admin/scenes — the Channels list, both kinds together (plan §8.1): a Type
- * chip per row, a filter by type, a type picker on the New channel form, Watch
+ * chip per row, a filter by type, a type picker on the New channel form, Output
  * links built with `outputPath`, and Control going to /control for weather and
  * to the Desk for a crossword.
  */
@@ -11,8 +11,13 @@ jest.mock("../../../lib/scenes", () => ({
   listScenes: jest.fn(),
   createScene: jest.fn(),
   deleteScene: jest.fn(),
+  fetchSceneState: jest.fn(),
 }));
-import { createScene, listScenes } from "../../../lib/scenes";
+jest.mock("../../../components/admin/crosswords/channels/client", () => ({
+  fetchYoutubeChannels: jest.fn(),
+}));
+import { createScene, fetchSceneState, listScenes } from "../../../lib/scenes";
+import { fetchYoutubeChannels } from "../../../components/admin/crosswords/channels/client";
 
 const mockList = listScenes as jest.Mock;
 const mockCreate = createScene as jest.Mock;
@@ -24,6 +29,13 @@ beforeEach(() => {
     { id: "word-up", name: "Word Up", surface: "crossword" },
   ]);
   mockCreate.mockReset().mockResolvedValue({ id: "new" });
+  // Each channel's own record says which YouTube channel it goes out on.
+  (fetchSceneState as jest.Mock).mockReset().mockImplementation(async (id: string) => ({
+    state: { youtube: { accountId: id === "word-up" ? "UCword" : "" } },
+  }));
+  (fetchYoutubeChannels as jest.Mock).mockReset().mockResolvedValue([
+    { id: "UCword", title: "Word Up TV", needsReconnect: false },
+  ]);
 });
 
 /** The row (Paper) that carries a channel's name. */
@@ -40,17 +52,34 @@ describe("Channels list", () => {
   it("builds Watch with outputPath and Control by type", async () => {
     render(<ScenesPage />);
     const wind = await rowOf("Atlantic Wind");
-    expect(within(wind).getByRole("link", { name: "Watch ↗" })).toHaveAttribute("href", "/watch/wind");
+    expect(within(wind).getByRole("link", { name: "Output ↗" })).toHaveAttribute("href", "/watch/wind");
     expect(within(wind).getByRole("link", { name: "Control" })).toHaveAttribute("href", "/control?scene=wind");
     expect(within(wind).getByText(/\/watch\/wind$/)).toBeInTheDocument();
 
     const xw = await rowOf("Word Up");
-    expect(within(xw).getByRole("link", { name: "Watch ↗" })).toHaveAttribute("href", "/crossword/word-up");
+    expect(within(xw).getByRole("link", { name: "Output ↗" })).toHaveAttribute("href", "/crossword/word-up");
     expect(within(xw).getByRole("link", { name: "Desk" })).toHaveAttribute("href", "/admin/crosswords/desk/word-up");
-    expect(within(xw).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/scenes/word-up");
+    expect(within(xw).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/crosswords/channels/word-up");
 
     const main = await rowOf("Main");
     expect(within(main).getByRole("link", { name: "Control" })).toHaveAttribute("href", "/control");
+  });
+
+  it("sends Settings to the page for the channel's kind", async () => {
+    render(<ScenesPage />);
+    const wind = await rowOf("Atlantic Wind");
+    expect(within(wind).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/scenes/wind");
+  });
+
+  it("names the YouTube channel each row goes out on", async () => {
+    render(<ScenesPage />);
+    await rowOf("Word Up");
+    await waitFor(() => expect(screen.getByTestId("youtube-word-up")).toHaveTextContent("Word Up TV"));
+    // No channel chosen: "none" for a crossword channel, the default for a weather one.
+    (fetchSceneState as jest.Mock).mockImplementation(async () => ({ state: { youtube: { accountId: "" } } }));
+    render(<ScenesPage />);
+    await waitFor(() => expect(screen.getAllByTestId("youtube-word-up").some((e) => e.textContent === "none")).toBe(true));
+    expect(screen.getAllByTestId("youtube-wind")[1]).toHaveTextContent("default channel");
   });
 
   it("filters the list by type", async () => {

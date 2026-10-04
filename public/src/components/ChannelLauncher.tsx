@@ -3,14 +3,14 @@
 /**
  * Home-page channel launcher: one card per broadcast channel (a scene) with a
  * link to its operator console (/control?scene=:id) and its full-screen output
- * (/watch/:id). Mirrors the links on /admin/scenes so the signed-in home page
+ * (`outputPath`). Mirrors the links on /admin/scenes so the signed-in home page
  * is a fast jump-off to drive or preview any channel.
  *
  * Each card also carries the director's NOW/NEXT shots and a Next button that
  * cuts the channel to the queued shot (ChannelNowNext), so the launcher can drive
  * a running channel without opening its console. A crossword channel has no
  * director: its card shows the puzzle and its progress (ChannelPuzzleLine) and
- * links its Desk instead of /control. Watch links come from `outputPath`.
+ * links its Desk instead of /control. Output links come from `outputPath`, Settings from the channel's kind.
  *
  * Each card carries its own ON AIR state: a live streaming run on the channel
  * (usePublicLiveRuns) is the real signal — and when that run publishes to
@@ -24,7 +24,7 @@ import { MAIN_SCENE_ID, sceneSurface, outputPath, type SceneMeta } from "@photon
 import { listScenes } from "../lib/scenes";
 import { useDirector } from "../lib/director";
 import { usePublicLiveRuns, type PublicRunLite } from "../lib/stream";
-import { consoleHref, settingsHref } from "../lib/channel-links";
+import { consoleHref, settingsHrefFor } from "../lib/channel-links";
 import ChannelNowNext from "./ChannelNowNext";
 import ChannelPuzzleLine from "./ChannelPuzzleLine";
 
@@ -120,9 +120,9 @@ function ChannelCard({ scene, run }: { scene: SceneMeta; run: PublicRunLite | nu
           {crossword ? "Desk" : "Control"}
         </Link>
         <Link href={outputPath(scene)} target="_blank" rel="noreferrer" style={{ color: "#6b93e0", textDecoration: "none" }}>
-          Watch ↗
+          Output ↗
         </Link>
-        <Link href={settingsHref(scene.id)} style={{ color: "#6b93e0", textDecoration: "none" }}>
+        <Link href={settingsHrefFor(scene)} style={{ color: "#6b93e0", textDecoration: "none" }}>
           Settings
         </Link>
         {run?.watchUrl && (

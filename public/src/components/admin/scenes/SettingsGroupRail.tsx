@@ -3,16 +3,15 @@
 /**
  * The settings page's left rail: one row per group, each showing how many of its
  * cards have unsaved edits. The count is the point — a change staged in a group
- * you are not looking at has to be visible from wherever you are. Only the
- * groups this kind of channel has are listed.
+ * you are not looking at has to be visible from wherever you are.
  */
 import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import {
+  SETTINGS_GROUPS,
   cardsForStagedKeys,
-  groupsForSurface,
   type SettingsGroupId,
 } from "./catalog";
 import { useSceneDraft } from "./SceneDraft";
@@ -24,12 +23,8 @@ export default function SettingsGroupRail({
   active: SettingsGroupId;
   onSelect: (id: SettingsGroupId) => void;
 }) {
-  const { surface, pending, pendingDirector, pendingCrossword } = useSceneDraft();
-  const changed = cardsForStagedKeys(
-    Object.keys(pending),
-    Object.keys(pendingDirector),
-    Object.keys(pendingCrossword),
-  );
+  const { pending, pendingDirector } = useSceneDraft();
+  const changed = cardsForStagedKeys(Object.keys(pending), Object.keys(pendingDirector));
 
   return (
     <Stack
@@ -44,7 +39,7 @@ export default function SettingsGroupRail({
         flexShrink: 0,
       }}
     >
-      {groupsForSurface(surface).map((g) => {
+      {SETTINGS_GROUPS.map((g) => {
         const dirtyHere = changed.filter((c) => c.group === g.id).length;
         const selected = g.id === active;
         return (

@@ -16,8 +16,6 @@ import {
   type ControlState,
 } from "@photonsurge/shared/control";
 import { DEFAULT_DIRECTOR_CONFIG, type DirectorConfig } from "@photonsurge/shared/director";
-import { DEFAULT_CROSSWORD_CONFIG, type CrosswordConfig } from "@photonsurge/shared/crossword";
-import type { SceneSurface } from "@photonsurge/shared/control";
 import { mergeConfig } from "../../../lib/director";
 import { SceneDraftContext, type SceneDraftValue } from "./SceneDraft";
 
@@ -26,12 +24,9 @@ export type DraftHarness = RenderResult & {
   staged: Partial<ControlState>[];
   /** Every DirectorConfig delta staged, in order. */
   stagedDirector: Partial<DirectorConfig>[];
-  /** Every CrosswordConfig delta staged, in order. */
-  stagedCrossword: Partial<CrosswordConfig>[];
   /** The most recent delta of each kind — what a test usually asserts on. */
   last: () => Partial<ControlState>;
   lastDirector: () => Partial<DirectorConfig>;
-  lastCrossword: () => Partial<CrosswordConfig>;
 };
 
 export function renderInDraft(
@@ -40,24 +35,18 @@ export function renderInDraft(
     sceneId?: string;
     state?: Partial<ControlState>;
     config?: Partial<DirectorConfig>;
-    crossword?: Partial<CrosswordConfig>;
-    surface?: SceneSurface;
   } = {},
 ): DraftHarness {
   const staged: Partial<ControlState>[] = [];
   const stagedDirector: Partial<DirectorConfig>[] = [];
-  const stagedCrossword: Partial<CrosswordConfig>[] = [];
 
   const result = render(
     <TestDraftProvider
       sceneId={opts.sceneId ?? "wind"}
       initialState={mergeControlState(DEFAULT_CONTROL_STATE, opts.state ?? {})}
       initialConfig={mergeConfig(DEFAULT_DIRECTOR_CONFIG, opts.config ?? {})}
-      initialCrossword={{ ...DEFAULT_CROSSWORD_CONFIG, ...opts.crossword }}
-      surface={opts.surface ?? (opts.crossword ? "crossword" : "globe")}
       onStage={(over) => staged.push(over)}
       onStageDirector={(over) => stagedDirector.push(over)}
-      onStageCrossword={(over) => stagedCrossword.push(over)}
     >
       {ui}
     </TestDraftProvider>,
@@ -67,10 +56,8 @@ export function renderInDraft(
     ...result,
     staged,
     stagedDirector,
-    stagedCrossword,
     last: () => staged[staged.length - 1],
     lastDirector: () => stagedDirector[stagedDirector.length - 1],
-    lastCrossword: () => stagedCrossword[stagedCrossword.length - 1],
   };
 }
 
@@ -83,31 +70,23 @@ function TestDraftProvider({
   sceneId,
   initialState,
   initialConfig,
-  initialCrossword,
-  surface,
   onStage,
   onStageDirector,
-  onStageCrossword,
   children,
 }: {
   sceneId: string;
   initialState: ControlState;
   initialConfig: DirectorConfig;
-  initialCrossword: CrosswordConfig;
-  surface: SceneSurface;
   onStage: (over: Partial<ControlState>) => void;
   onStageDirector: (over: Partial<DirectorConfig>) => void;
-  onStageCrossword: (over: Partial<CrosswordConfig>) => void;
   children: ReactNode;
 }) {
   const [pending, setPending] = useState<Partial<ControlState>>({});
   const [pendingDirector, setPendingDirector] = useState<Partial<DirectorConfig>>({});
-  const [pendingCrossword, setPendingCrossword] = useState<Partial<CrosswordConfig>>({});
 
   const value = useMemo<SceneDraftValue>(
     () => ({
       sceneId,
-      surface,
       ready: true,
       state: mergeControlState(initialState, pending),
       config: mergeConfig(initialConfig, pendingDirector),
@@ -119,18 +98,9 @@ function TestDraftProvider({
         onStageDirector(over);
         setPendingDirector((prev) => ({ ...prev, ...over }));
       },
-      crossword: { ...initialCrossword, ...pendingCrossword },
-      stageCrossword: (over) => {
-        onStageCrossword(over);
-        setPendingCrossword((prev) => ({ ...prev, ...over }));
-      },
       pending,
       pendingDirector,
-      pendingCrossword,
-      dirty:
-        Object.keys(pending).length > 0 ||
-        Object.keys(pendingDirector).length > 0 ||
-        Object.keys(pendingCrossword).length > 0,
+      dirty: Object.keys(pending).length > 0 || Object.keys(pendingDirector).length > 0,
       conflictKeys: [],
       saving: false,
       saveError: null,
@@ -138,22 +108,9 @@ function TestDraftProvider({
       discard: () => {
         setPending({});
         setPendingDirector({});
-        setPendingCrossword({});
       },
     }),
-    [
-      sceneId,
-      surface,
-      initialState,
-      initialConfig,
-      initialCrossword,
-      pending,
-      pendingDirector,
-      pendingCrossword,
-      onStage,
-      onStageDirector,
-      onStageCrossword,
-    ],
+    [sceneId, initialState, initialConfig, pending, pendingDirector, onStage, onStageDirector],
   );
 
   return <SceneDraftContext.Provider value={value}>{children}</SceneDraftContext.Provider>;
