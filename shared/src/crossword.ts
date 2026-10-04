@@ -24,9 +24,18 @@ export interface CrosswordEntry {
   /** A–Z only. Never leaves the worker or admin. */
   answer: string;
   clue: string;
+  /** The approved bank word it came from ("" or a seed id for the seed set). */
+  wordId: string;
+  /** The approved bank clue it came from ("" or a seed id for the seed set). */
+  clueId: string;
 }
 
-export type CrosswordPuzzleStatus = "draft" | "ready" | "rejected";
+/**
+ * Built only from approved words and clues (§7.4), so a puzzle is `ready` the
+ * moment it is built; Reject removes it from play.
+ */
+export type CrosswordPuzzleStatus = "ready" | "rejected";
+export const CROSSWORD_PUZZLE_STATUSES: readonly CrosswordPuzzleStatus[] = ["ready", "rejected"];
 export type CrosswordPuzzleSource = "seed" | "bank" | "themed";
 
 export interface CrosswordPlay {
@@ -37,16 +46,15 @@ export interface CrosswordPlay {
 
 export interface CrosswordPuzzle {
   id: string;
-  /** "Volcanoes". */
+  /** "Puzzle 42", or a theme name later. */
   title: string;
-  theme: string;
   width: number;
   height: number;
   entries: CrosswordEntry[];
   status: CrosswordPuzzleStatus;
+  /** Every word and clue in it carries the family-friendly tag. */
+  familyFriendly: boolean;
   source: CrosswordPuzzleSource;
-  /** The model that polished or wrote the clues, if one did. */
-  model?: string;
   createdAt: number;
   plays: CrosswordPlay[];
 }
@@ -167,7 +175,6 @@ export const CROSSWORD_COMMANDS: readonly CrosswordCommand[] = ["pause", "resume
 /** Payload of `crossword.generate` (background). */
 export interface CrosswordGenerateRequest {
   sceneId: string;
-  theme?: string;
   /** Repeatable build. */
   seed?: number;
 }
@@ -181,6 +188,167 @@ export interface CrosswordBeat {
   sceneId: string;
   seq: number;
   serverNow: number;
+}
+
+// ---------------------------------------------------------------------------
+// Theme (§5.1): the crossword's own look, not the weather broadcast's
+// ---------------------------------------------------------------------------
+
+export interface CrosswordThemeColors {
+  /** The page behind everything. */
+  background: string;
+  /** Cards: spotlight, clue lists, scoreboard. */
+  panel: string;
+  /** An open cell. */
+  cell: string;
+  /** A cell whose word is solved. */
+  cellSolved: string;
+  /** A block (no letter). */
+  block: string;
+  ink: string;
+  inkMuted: string;
+  accent: string;
+}
+
+export interface CrosswordTheme {
+  /** A named starting point (CROSSWORD_THEME_PRESETS). */
+  preset: string;
+  /** The crossword channel's own brand: it goes out on its own YouTube channel. */
+  brand: { title: string; logoUrl: string };
+  colors: CrosswordThemeColors;
+  font: { display: string; text: string };
+}
+
+export interface CrosswordThemePreset {
+  id: string;
+  label: string;
+  colors: CrosswordThemeColors;
+  font: CrosswordTheme["font"];
+}
+
+/**
+ * One preset for now: the February prototype's look, carried over as it is
+ * (operator, 2026-10-04: it looks poor, use it for now). From its light MUI
+ * palette (crosswords/my-app/src/theme.ts, globals.css) and its board
+ * renderer's styles (crosswords/src/crossword.ts): a light board, slate-900
+ * blocks and ink, slate-blue muted ink, blue highlight.
+ */
+export const CROSSWORD_THEME_PRESETS: readonly CrosswordThemePreset[] = [
+  {
+    id: "prototype",
+    label: "Prototype",
+    colors: {
+      background: "#f3f6fb",
+      panel: "#ffffff",
+      cell: "#f8fafc",
+      cellSolved: "#ffffff",
+      block: "#0f172a",
+      ink: "#0f172a",
+      inkMuted: "#4c6078",
+      accent: "#2563eb",
+    },
+    font: {
+      display: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+      text: 'Roboto, Helvetica, Arial, sans-serif',
+    },
+  },
+];
+
+const PROTOTYPE_PRESET = CROSSWORD_THEME_PRESETS[0];
+
+export const DEFAULT_CROSSWORD_THEME: CrosswordTheme = {
+  preset: PROTOTYPE_PRESET.id,
+  brand: { title: "Crossword", logoUrl: "" },
+  colors: { ...PROTOTYPE_PRESET.colors },
+  font: { ...PROTOTYPE_PRESET.font },
+};
+
+const COLOR_KEYS = Object.keys(PROTOTYPE_PRESET.colors) as (keyof CrosswordThemeColors)[];
+export const BRAND_TITLE_MAX = 60;
+
+/**
+ * A CSS colour safe to drop into a custom property: hex, rgb()/rgba()/hsl()/
+ * hsla() with plain numbers, or a bare keyword. Nothing that could close the
+ * declaration (`;`, `}`) or load anything (`url(`).
+ */
+export function isThemeColor(v: unknown): v is string {
+  if (typeof v !== "string") return false;
+  const s = v.trim();
+  return (
+    s.length <= 64 &&
+    (/^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(s) ||
+      /^(?:rgb|rgba|hsl|hsla)\(\s*[0-9.%\s,/+-]+\)$/i.test(s) ||
+      /^[a-z]{3,20}$/i.test(s))
+  );
+}
+
+/** A font-family list: letters, digits, spaces, commas, hyphens and quotes. */
+export function isThemeFont(v: unknown): v is string {
+  return typeof v === "string" && v.trim().length > 0 && v.length <= 200 && /^[\w\s,'"-]+$/.test(v);
+}
+
+/** A logo source: an http(s) URL or a site path. "" = none. */
+function themeLogoUrl(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim().slice(0, 500);
+  if (!s) return "";
+  return /^https?:\/\/[^\s"'()<>]+$/i.test(s) || /^\/[^\s"'()<>]*$/.test(s) ? s : null;
+}
+
+/**
+ * Sanitize a theme (or a partial patch) over `base`. A known `preset` that
+ * differs from base's resets colours and fonts to that preset before the
+ * patch's own colours and fonts apply; the brand is kept. An unknown preset
+ * is ignored. Bad values fall back to base's.
+ */
+export function sanitizeCrosswordTheme(v: unknown, base: CrosswordTheme = DEFAULT_CROSSWORD_THEME): CrosswordTheme {
+  const b = base && typeof base === "object" ? base : DEFAULT_CROSSWORD_THEME;
+  const p = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  const basePreset = CROSSWORD_THEME_PRESETS.find((x) => x.id === b.preset) ?? PROTOTYPE_PRESET;
+  const newPreset = typeof p.preset === "string" ? CROSSWORD_THEME_PRESETS.find((x) => x.id === p.preset) : undefined;
+  const start =
+    newPreset && newPreset.id !== b.preset
+      ? { preset: newPreset.id, colors: newPreset.colors, font: newPreset.font }
+      : { preset: basePreset.id, colors: { ...basePreset.colors, ...b.colors }, font: { ...basePreset.font, ...b.font } };
+
+  const colors = { ...PROTOTYPE_PRESET.colors };
+  const pc = (p.colors && typeof p.colors === "object" ? p.colors : {}) as Record<string, unknown>;
+  for (const k of COLOR_KEYS) {
+    colors[k] = isThemeColor(pc[k]) ? (pc[k] as string).trim() : isThemeColor(start.colors[k]) ? start.colors[k] : colors[k];
+  }
+  const pf = (p.font && typeof p.font === "object" ? p.font : {}) as Record<string, unknown>;
+  const font = { ...PROTOTYPE_PRESET.font };
+  for (const k of ["display", "text"] as const) {
+    font[k] = isThemeFont(pf[k]) ? (pf[k] as string).trim() : isThemeFont(start.font[k]) ? start.font[k] : font[k];
+  }
+  const pb = (p.brand && typeof p.brand === "object" ? p.brand : {}) as Record<string, unknown>;
+  const baseTitle = typeof b.brand?.title === "string" ? b.brand.title : DEFAULT_CROSSWORD_THEME.brand.title;
+  const title =
+    typeof pb.title === "string"
+      ? pb.title.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, BRAND_TITLE_MAX)
+      : baseTitle.slice(0, BRAND_TITLE_MAX);
+  const logoUrl = themeLogoUrl(pb.logoUrl) ?? themeLogoUrl(b.brand?.logoUrl) ?? "";
+  return { preset: start.preset, brand: { title, logoUrl }, colors, font };
+}
+
+/**
+ * The theme as CSS custom properties, set once on the page root (§5.1). Pure;
+ * the page spreads the result into its root style.
+ */
+export function crosswordThemeVars(theme: CrosswordTheme): Record<string, string> {
+  const t = sanitizeCrosswordTheme(theme, theme);
+  return {
+    "--cw-background": t.colors.background,
+    "--cw-panel": t.colors.panel,
+    "--cw-cell": t.colors.cell,
+    "--cw-cell-solved": t.colors.cellSolved,
+    "--cw-block": t.colors.block,
+    "--cw-ink": t.colors.ink,
+    "--cw-ink-muted": t.colors.inkMuted,
+    "--cw-accent": t.colors.accent,
+    "--cw-font-display": t.font.display,
+    "--cw-font-text": t.font.text,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -206,19 +374,19 @@ export interface CrosswordConfig {
   hintStartFrac: number;
   /** Hints stop once this fraction of the word shows. */
   hintMaxFrac: number;
-  // Difficulty and themes
+  /** The channel's look (§5.1). */
+  theme: CrosswordTheme;
+  // Difficulty
   /** Word-frequency floor for the candidate pick. */
   minZipf: number;
-  themes: string[];
-  /** 0 = never, 3 = every third puzzle. */
-  themeEvery: number;
   // Puzzles
   minWords: number;
   maxWords: number;
   /** Largest grid side, in cells. */
   maxSize: number;
   stockTarget: number;
-  autoApprove: boolean;
+  /** Build only from words and clues tagged family friendly (untagged counts as not). */
+  familyFriendlyOnly: boolean;
   /** A replayed puzzle is never one of the scene's last N. */
   noRepeatPuzzles: number;
   /** A word is not reused within the scene's last N puzzles. */
@@ -242,14 +410,13 @@ export const DEFAULT_CROSSWORD_CONFIG: CrosswordConfig = {
   ceilingMin: 20,
   hintStartFrac: 0.4,
   hintMaxFrac: 0.5,
+  theme: DEFAULT_CROSSWORD_THEME,
   minZipf: 3.5,
-  themes: [],
-  themeEvery: 0,
   minWords: 10,
   maxWords: 16,
   maxSize: 13,
   stockTarget: 6,
-  autoApprove: false,
+  familyFriendlyOnly: true,
   noRepeatPuzzles: 30,
   noRepeatWordsPuzzles: 20,
   streamDelayS: 10,
@@ -273,7 +440,6 @@ export const CROSSWORD_CONFIG_LIMITS: Record<NumKey, [number, number]> = {
   hintStartFrac: [0, 0.95],
   hintMaxFrac: [0, 0.9],
   minZipf: [0, 8],
-  themeEvery: [0, 20],
   minWords: [4, 30],
   maxWords: [4, 30],
   maxSize: [7, 21],
@@ -292,9 +458,9 @@ export function mergeCrosswordConfig(
   base: CrosswordConfig,
   patch: Partial<Record<keyof CrosswordConfig, unknown>> | null | undefined,
 ): CrosswordConfig {
-  const out: CrosswordConfig = { ...base, themes: [...base.themes], blocklist: [...base.blocklist] };
+  const out: CrosswordConfig = { ...base, theme: sanitizeCrosswordTheme(base.theme), blocklist: [...base.blocklist] };
   if (!patch || typeof patch !== "object") return out;
-  for (const k of ["enabled", "playOffAir", "autoApprove"] as const) {
+  for (const k of ["enabled", "playOffAir", "familyFriendlyOnly"] as const) {
     if (typeof patch[k] === "boolean") out[k] = patch[k] as boolean;
   }
   for (const k of Object.keys(CROSSWORD_CONFIG_LIMITS) as NumKey[]) {
@@ -304,12 +470,12 @@ export function mergeCrosswordConfig(
       out[k] = clamp(v, lo, hi);
     }
   }
-  for (const k of ["themes", "blocklist"] as const) {
-    const v = patch[k];
-    if (Array.isArray(v)) {
-      out[k] = [...new Set(v.filter((s) => typeof s === "string").map((s) => s.trim()).filter(Boolean))].slice(0, 200);
-    }
+  if (Array.isArray(patch.blocklist)) {
+    out.blocklist = [
+      ...new Set(patch.blocklist.filter((s) => typeof s === "string").map((s: string) => s.trim()).filter(Boolean)),
+    ].slice(0, 200);
   }
+  if (patch.theme && typeof patch.theme === "object") out.theme = sanitizeCrosswordTheme(patch.theme, out.theme);
   for (const k of ["minWords", "maxWords", "clueS", "introS", "finaleS"] as const) {
     out[k] = Math.round(out[k]);
   }
@@ -328,6 +494,9 @@ export interface CrosswordPlacement {
   row: number;
   col: number;
   dir: CrosswordDir;
+  /** The bank word and clue it came from; "" when not known. */
+  wordId?: string;
+  clueId?: string;
 }
 
 export const cellKey = (row: number, col: number) => `${row},${col}`;
@@ -368,6 +537,8 @@ export function numberEntries(placements: CrosswordPlacement[]): CrosswordEntry[
         col: p.col,
         answer: normalizeAnswer(p.answer),
         clue: p.clue,
+        wordId: p.wordId ?? "",
+        clueId: p.clueId ?? "",
       };
     })
     .sort((a, b) => (a.dir === b.dir ? a.num - b.num : a.dir === "across" ? -1 : 1));

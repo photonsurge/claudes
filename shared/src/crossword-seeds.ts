@@ -4,16 +4,28 @@
  * clues pass `validateClue` (crossword.test.ts pins that).
  *
  * The words and clues are the February prototype's `data.json`
- * (crosswords/data.json), uppercased.
+ * (crosswords/data.json), uppercased. After a read-through they count as
+ * approved and family friendly, words and clues alike (§7.3, §7.4). Each
+ * carries a seed id for the puzzle entry's `wordId` / `clueId`.
  */
 export interface CrosswordSeedWord {
+  /** "seed:<ANSWER>". */
+  id: string;
+  /** "seed:<ANSWER>:1". */
+  clueId: string;
   answer: string;
   clue: string;
+  approved: true;
+  familyFriendly: true;
 }
 
 export const CROSSWORD_SEED_THEME = "Space";
 
-export const CROSSWORD_SEED_WORDS: readonly CrosswordSeedWord[] = [
+/** The seed word id for an answer. */
+export const seedWordId = (answer: string) => `seed:${answer}`;
+export const isSeedId = (id: string) => id.startsWith("seed:");
+
+const RAW: readonly { answer: string; clue: string }[] = [
   { answer: "SPACE", clue: "The region beyond Earth's atmosphere" },
   { answer: "ORBIT", clue: "Path a body follows around another" },
   { answer: "EQUINOX", clue: "Day when day and night are nearly equal" },
@@ -52,3 +64,12 @@ export const CROSSWORD_SEED_WORDS: readonly CrosswordSeedWord[] = [
   { answer: "TERRAFORM", clue: "Make a planet more Earth-like" },
   { answer: "HYPERSPACE", clue: "Sci-fi realm for rapid travel" },
 ];
+
+export const CROSSWORD_SEED_WORDS: readonly CrosswordSeedWord[] = RAW.map((w) => ({
+  id: seedWordId(w.answer),
+  clueId: `${seedWordId(w.answer)}:1`,
+  answer: w.answer,
+  clue: w.clue,
+  approved: true as const,
+  familyFriendly: true as const,
+}));

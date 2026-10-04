@@ -24,6 +24,8 @@ const EntrySchema = sub({
   col: { type: Number, required: true },
   answer: { type: String, required: true },
   clue: { type: String, required: true },
+  wordId: { type: String, default: "" },
+  clueId: { type: String, default: "" },
 });
 
 const PlaySchema = sub({
@@ -36,13 +38,12 @@ export const CrosswordPuzzleSchema = new mongoose.Schema<iCrosswordPuzzleModel>(
   {
     id: { type: String, required: true, unique: true },
     title: { type: String, required: true },
-    theme: { type: String, default: "" },
     width: { type: Number, required: true },
     height: { type: Number, required: true },
     entries: { type: [EntrySchema], default: [] },
-    status: { type: String, required: true, enum: ["draft", "ready", "rejected"], default: "draft" },
+    status: { type: String, required: true, enum: ["ready", "rejected"], default: "ready" },
+    familyFriendly: { type: Boolean, required: true, default: false },
     source: { type: String, required: true, enum: ["seed", "bank", "themed"], default: "bank" },
-    model: { type: String },
     createdAt: { type: Number, required: true },
     plays: { type: [PlaySchema], default: [] },
   },

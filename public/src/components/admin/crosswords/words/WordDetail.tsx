@@ -24,8 +24,9 @@ import { font } from "../../../../theme/tokens";
 import { getBankWord } from "./api";
 import { ClueStatusChip, DecisionChip, FlagChips, fmtTime, zipfLabel } from "./chips";
 
-const CLUE_STATUS_COLOR: Record<BankClue["status"], "default" | "success" | "error"> = {
-  candidate: "default",
+// WP5 rework: approval and family-friendly decisions are not on this page yet.
+const CLUE_STATUS_COLOR: Record<BankClue["approval"]["status"], "default" | "success" | "error"> = {
+  pending: "default",
   approved: "success",
   rejected: "error",
 };
@@ -204,7 +205,7 @@ export function WordDetailView({ word }: { word: BankWordDetail }) {
                   <TableCell>{c.source ?? "—"}</TableCell>
                   <TableCell sx={{ fontFamily: font.mono, fontSize: 12 }}>{c.model ?? "—"}</TableCell>
                   <TableCell>
-                    <Chip size="small" label={c.status} color={CLUE_STATUS_COLOR[c.status]} variant="outlined" />
+                    <Chip size="small" label={c.approval.status} color={CLUE_STATUS_COLOR[c.approval.status]} variant="outlined" />
                   </TableCell>
                 </TableRow>
               ))}

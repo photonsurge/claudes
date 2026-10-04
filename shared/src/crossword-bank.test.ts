@@ -1,7 +1,12 @@
 import {
+  BANK_CLUE_FIELDS as C,
   BANK_WORD_FIELDS as F,
+  BANK_WORD_INDEXES,
   bankPaging,
+  bankPlayableClueFilter,
   bankPlayableFilter,
+  bankQueueFilter,
+  poolCounts,
   bankWordFilter,
   bankWordSort,
   toBankClue,
@@ -23,6 +28,13 @@ describe("bankWordFilter", () => {
     expect(bankWordFilter({ band: "rare" })).toEqual({ [F.zipf]: { $lt: 2 } });
     expect(bankWordFilter({ band: "everyday" })).toEqual({ [F.zipf]: { $gte: 5 } });
     expect(bankWordFilter({ band: "none" })).toEqual({ [F.zipf]: { $exists: false } });
+    expect(bankWordFilter({ approval: "approved" })).toEqual({ "approval.status": "approved" });
+    expect(bankWordFilter({ approval: "rejected" })).toEqual({ "approval.status": "rejected" });
+    // Missing approval counts as pending.
+    expect(bankWordFilter({ approval: "pending" })).toEqual({ "approval.status": { $nin: ["approved", "rejected"] } });
+    expect(bankWordFilter({ familyFriendly: "yes" })).toEqual({ familyFriendly: true });
+    expect(bankWordFilter({ familyFriendly: "no" })).toEqual({ familyFriendly: false });
+    expect(bankWordFilter({ familyFriendly: "untagged" })).toEqual({ familyFriendly: { $nin: [true, false] } });
   });
 
   it("ands several filters", () => {
@@ -47,19 +59,94 @@ describe("sort and paging", () => {
 });
 
 describe("bankPlayableFilter", () => {
-  it("requires accepted, clued, unflagged, common, non-proper words", () => {
+  it("requires approved, 3–12 letters, common enough, not excluded", () => {
     const f = bankPlayableFilter({ minZipf: 3.5, excludeNorms: ["CRATER"] });
+    expect(f).toEqual({
+      "approval.status": "approved",
+      [F.length]: { $gte: 3, $lte: 12 },
+      [F.zipf]: { $gte: 3.5 },
+      [F.norm]: { $nin: ["CRATER"] },
+    });
+  });
+
+  it("asks for the family-friendly tag on a family-friendly channel", () => {
+    expect(bankPlayableFilter({ minZipf: 3, familyFriendlyOnly: true })[F.familyFriendly]).toBe(true);
+    const c = bankPlayableClueFilter(["a"], { familyFriendlyOnly: true });
+    expect(c).toEqual({ [C.answerId]: { $in: ["a"] }, "approval.status": "approved", familyFriendly: true });
+    expect(bankPlayableClueFilter(["a"], {})).toEqual({ [C.answerId]: { $in: ["a"] }, "approval.status": "approved" });
+  });
+
+  it("with allowUnapproved uses the pipeline filter, pending words included", () => {
+    const f = bankPlayableFilter({ minZipf: 3.5, allowUnapproved: true, familyFriendlyOnly: true });
     expect(f[F.decision]).toBe("accepted");
     expect(f[F.clueStatus]).toBe("done");
-    expect(f[F.length]).toEqual({ $gte: 3, $lte: 12 });
-    expect(f[F.zipf]).toEqual({ $gte: 3.5 });
+    expect(f["approval.status"]).toEqual({ $ne: "rejected" });
     expect(f[F.flagAdult]).toEqual({ $ne: true });
     expect((f[F.pos] as { $nin: string[] }).$nin).toContain("proper-noun");
-    expect(f[F.norm]).toEqual({ $nin: ["CRATER"] });
+    expect(f[F.familyFriendly]).toBeUndefined();
+    expect(bankPlayableClueFilter(["a"], { allowUnapproved: true })).toEqual({
+      [C.answerId]: { $in: ["a"] },
+      "approval.status": { $ne: "rejected" },
+    });
   });
 
   it("keeps the length range inside 3–12", () => {
     expect(bankPlayableFilter({ minZipf: 0, minLength: 1, maxLength: 20 })[F.length]).toEqual({ $gte: 3, $lte: 12 });
+  });
+
+  it("indexes the pick by approval, family friendly, length and frequency", () => {
+    const pick = BANK_WORD_INDEXES.find((i) => i.name === "xwbank_approved_pick_ix")!;
+    expect(Object.entries(pick.key)).toEqual([
+      ["approval.status", 1],
+      ["familyFriendly", 1],
+      [F.length, 1],
+      [F.zipf, -1],
+    ]);
+  });
+});
+
+describe("approval queue order", () => {
+  const lengths = (f: Record<string, unknown>) =>
+    ((f as { $and: Record<string, unknown>[] }).$and.find((c) => F.length in c) as Record<string, unknown>)[F.length];
+
+  it("serves pending, accepted, clued words, 4–9 letters first, then the rest", () => {
+    const pref = bankQueueFilter({}, "preferred") as { $and: Record<string, unknown>[] };
+    expect(pref.$and).toEqual(
+      expect.arrayContaining([
+        { "approval.status": { $nin: ["approved", "rejected"] } },
+        { [F.decision]: "accepted" },
+        { [F.clueStatus]: "done" },
+        { [F.zipf]: { $type: "number" } },
+      ]),
+    );
+    expect(lengths(pref)).toEqual({ $gte: 4, $lte: 9 });
+    expect(lengths(bankQueueFilter({}, "rest"))).toEqual({ $in: [3, 10, 11, 12] });
+  });
+
+  it("applies the filters", () => {
+    expect(lengths(bankQueueFilter({ minLength: 6, maxLength: 11 }, "preferred"))).toEqual({ $gte: 6, $lte: 9 });
+    expect(lengths(bankQueueFilter({ minLength: 6, maxLength: 11 }, "rest"))).toEqual({ $in: [10, 11] });
+    const f = bankQueueFilter({ band: "common", startsWith: "b", withSuggestions: true }, "preferred") as { $and: unknown[] };
+    expect(f.$and).toEqual(
+      expect.arrayContaining([
+        { [F.zipf]: { $type: "number", $gte: 4, $lt: 5 } },
+        { [F.norm]: { $regex: "^B" } },
+        { suggestion: { $type: "object" } },
+      ]),
+    );
+  });
+});
+
+describe("poolCounts", () => {
+  it("about 14 words a puzzle, 280 words fill the 20-puzzle window", () => {
+    expect(poolCounts(300, 100)).toEqual({
+      words: 300,
+      ffWords: 100,
+      puzzlesWithoutRepeat: 21,
+      ffPuzzlesWithoutRepeat: 7,
+      targetWords: 280,
+    });
+    expect(poolCounts(13, 0).puzzlesWithoutRepeat).toBe(0);
   });
 });
 
@@ -77,6 +164,11 @@ describe("document mapping", () => {
     raw: { importWord: "crater", definitions: ["A bowl-shaped depression"] },
     enrichment: { status: "done", model: "some-7b", reason: "ok" },
     validation: { decision: "accepted", by: "operator", sources: { wordfreq: { checked: true, zipf: 3.9, rankBand: "mid" } } },
+    approval: { status: "approved", by: "rich", at: 1700 },
+    familyFriendly: true,
+    familyFriendlyBy: "rich",
+    familyFriendlyAt: 1701,
+    suggestion: { clue: "Bowl-shaped hollow", familyFriendly: true, reason: "plain", model: "m", at: 9 },
     updatedAt: new Date("2026-02-01T00:00:00Z"),
     senses: [{ pos: "noun", definition: "A bowl-shaped depression", register: null, domains: [] }, { glosses: ["A pit"] }],
   };
@@ -90,6 +182,7 @@ describe("document mapping", () => {
       pos: ["noun"],
       categories: ["geology"],
       flags: { adult: undefined, vulgar: true, offensive: undefined },
+      warnings: ["vulgar"],
       model: "some-7b",
       decision: "accepted",
       decisionBy: "operator",
@@ -97,7 +190,20 @@ describe("document mapping", () => {
       clueCount: 5,
       reason: "ok",
       updatedAt: "2026-02-01T00:00:00.000Z",
+      approval: { status: "approved", by: "rich", at: 1700 },
+      familyFriendly: true,
+      familyFriendlyBy: "rich",
+      familyFriendlyAt: 1701,
+      suggestion: { clue: "Bowl-shaped hollow", familyFriendly: true, reason: "plain", model: "m", at: 9 },
     });
+  });
+
+  it("reads a missing approval as pending and a missing tag as untagged", () => {
+    const row = toBankWordRow({ _id: "w", norm: "ORBIT" });
+    expect(row.approval).toEqual({ status: "pending" });
+    expect(row.familyFriendly).toBeNull();
+    expect(row.warnings).toEqual([]);
+    expect(row.suggestion).toBeUndefined();
   });
 
   it("maps senses and clues", () => {
@@ -107,8 +213,17 @@ describe("document mapping", () => {
     ]);
     expect(
       toBankClue({ _id: "c1", clue: "Bowl (6)", difficulty: 3, source: { name: "llm", ref: "some-7b", createdBy: "enrich_words_vllm.py" } }),
-    ).toMatchObject({ id: "c1", text: "Bowl (6)", status: "candidate", source: "llm", model: "some-7b" });
-    expect(toBankClue({ _id: "c1", clue: "x", status: "approved" }).status).toBe("approved");
+    ).toMatchObject({
+      id: "c1",
+      text: "Bowl (6)",
+      approval: { status: "pending" },
+      familyFriendly: null,
+      source: "llm",
+      model: "some-7b",
+    });
+    expect(
+      toBankClue({ _id: "c1", clue: "x", approval: { status: "approved", by: "rich", at: 5 }, familyFriendly: false, original: "y", editedBy: "rich", editedAt: 4 }),
+    ).toMatchObject({ approval: { status: "approved", by: "rich", at: 5 }, familyFriendly: false, original: "y", editedBy: "rich", editedAt: 4 });
   });
 
   it("bands zipf scores", () => {

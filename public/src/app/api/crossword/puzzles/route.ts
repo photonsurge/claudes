@@ -1,7 +1,7 @@
 import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
-import type { CrosswordPuzzle, CrosswordPuzzleSource, CrosswordPuzzleStatus } from "@photonsurge/shared/crossword";
+import { CROSSWORD_PUZZLE_STATUSES, type CrosswordPuzzle, type CrosswordPuzzleSource } from "@photonsurge/shared/crossword";
 import { requireAdmin } from "../../../../lib/require-admin";
 import type { PuzzleListResponse, PuzzleRow } from "../../../../components/admin/crosswords/puzzles/api";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 const NO_CACHE = { "Cache-Control": "no-store" };
 
-const STATUSES: readonly CrosswordPuzzleStatus[] = ["draft", "ready", "rejected"];
+const STATUSES = CROSSWORD_PUZZLE_STATUSES;
 const SOURCES: readonly CrosswordPuzzleSource[] = ["seed", "bank", "themed"];
 const LIST_LIMIT = 500;
 
@@ -24,7 +24,8 @@ function toRow(p: CrosswordPuzzle): PuzzleRow {
   const row: PuzzleRow = {
     id: p.id,
     title: p.title,
-    theme: p.theme,
+    // WP6 rework: puzzles have no theme or model now; the row keeps the field until the page drops it.
+    theme: "",
     status: p.status,
     source: p.source,
     createdAt: p.createdAt,
@@ -34,7 +35,6 @@ function toRow(p: CrosswordPuzzle): PuzzleRow {
     plays: p.plays.length,
     scenes,
   };
-  if (p.model) row.model = p.model;
   if (last) row.lastPlayedAt = last;
   return row;
 }
@@ -58,7 +58,7 @@ async function GET__impl(req: Request) {
   const puzzles = await db.crosswordPuzzles.list({ ...(status ? { status } : {}), limit: LIST_LIMIT });
   const rows = puzzles
     .filter((p) => !source || p.source === source)
-    .filter((p) => !theme || p.theme.toLowerCase().includes(theme) || p.title.toLowerCase().includes(theme))
+    .filter((p) => !theme || p.title.toLowerCase().includes(theme))
     .map(toRow);
   const body: PuzzleListResponse = { puzzles: rows };
   return NextResponse.json(body, { status: 200, headers: NO_CACHE });

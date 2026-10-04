@@ -1,7 +1,7 @@
 /**
  * /admin/scenes — the Channels list, both kinds together (plan §8.1): a Type
  * chip per row, a filter by type, a type picker on the New channel form, Watch
- * links built with `watchPath`, and Control going to /control for weather and
+ * links built with `outputPath`, and Control going to /control for weather and
  * to the Desk for a crossword.
  */
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -37,7 +37,7 @@ describe("Channels list", () => {
     expect(within(await rowOf("Word Up")).getByText("Crossword")).toBeInTheDocument();
   });
 
-  it("builds Watch with watchPath and Control by type", async () => {
+  it("builds Watch with outputPath and Control by type", async () => {
     render(<ScenesPage />);
     const wind = await rowOf("Atlantic Wind");
     expect(within(wind).getByRole("link", { name: "Watch ↗" })).toHaveAttribute("href", "/watch/wind");
@@ -45,7 +45,7 @@ describe("Channels list", () => {
     expect(within(wind).getByText(/\/watch\/wind$/)).toBeInTheDocument();
 
     const xw = await rowOf("Word Up");
-    expect(within(xw).getByRole("link", { name: "Watch ↗" })).toHaveAttribute("href", "/watch/crossword/word-up");
+    expect(within(xw).getByRole("link", { name: "Watch ↗" })).toHaveAttribute("href", "/crossword/word-up");
     expect(within(xw).getByRole("link", { name: "Desk" })).toHaveAttribute("href", "/admin/crosswords/desk/word-up");
     expect(within(xw).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/scenes/word-up");
 

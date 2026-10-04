@@ -87,9 +87,7 @@ export default function PuzzleDetailPage({ id }: { id: string }) {
           <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
             <Chip size="small" variant="outlined" label={puzzle.status} color={STATUS_COLOR[puzzle.status]} />
             <Typography variant="body2" color="text.secondary">
-              {puzzle.theme ? `Theme: ${puzzle.theme} · ` : ""}
-              {puzzle.source}
-              {puzzle.model ? ` (${puzzle.model})` : ""} · {puzzle.entries.length} words · {puzzle.width}×{puzzle.height} · built{" "}
+              {puzzle.source} · {puzzle.entries.length} words · {puzzle.width}×{puzzle.height} · built{" "}
               {fmtTime(puzzle.createdAt)} · played {puzzle.plays.length} time{puzzle.plays.length === 1 ? "" : "s"}
             </Typography>
           </Stack>

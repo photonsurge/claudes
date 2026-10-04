@@ -49,7 +49,7 @@ describe("crossword.generate", () => {
     const result = await generate(job("generate", { sceneId: "xw", seed: 4 }));
     expect(f.upsert).toHaveBeenCalledTimes(1);
     const saved = f.upsert.mock.calls[0][0];
-    expect(result).toMatchObject({ id: saved.id, title: "Space", status: "draft", source: "seed", seed: 4, words: saved.entries.length });
+    expect(result).toMatchObject({ id: saved.id, title: "Space", status: "ready", source: "seed", seed: 4, words: saved.entries.length });
   });
 
   it("fails terminally: no scene, or too few words", async () => {
@@ -62,7 +62,7 @@ describe("crossword.generate", () => {
 
 describe("crossword.topUp", () => {
   it("builds for an enabled scene short of stock", async () => {
-    const f = fakeDb({ enabled: true, autoApprove: true });
+    const f = fakeDb({ enabled: true });
     const result = await topUp(job("topUp"));
     expect(result.scenes).toEqual([expect.objectContaining({ sceneId: "xw", outcome: "built", status: "ready" })]);
     expect(f.upsert).toHaveBeenCalledTimes(1);

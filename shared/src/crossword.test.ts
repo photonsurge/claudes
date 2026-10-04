@@ -6,6 +6,10 @@ import {
   cleanPlayerName,
   CROSSWORD_HOST_ID,
   DEFAULT_CROSSWORD_CONFIG,
+  DEFAULT_CROSSWORD_THEME,
+  CROSSWORD_THEME_PRESETS,
+  sanitizeCrosswordTheme,
+  crosswordThemeVars,
   emptyGame,
   entryCells,
   fallbackPlayerName,
@@ -28,7 +32,7 @@ import {
   type CrosswordPuzzle,
 } from "./crossword";
 import { CROSSWORD_SEED_WORDS } from "./crossword-seeds";
-import { watchPath, sceneSurface } from "./control";
+import { outputPath, sceneSurface } from "./control";
 
 /**
  * A small hand-made grid:
@@ -48,11 +52,11 @@ function makePuzzle(over: Partial<CrosswordPuzzle> = {}): CrosswordPuzzle {
   return {
     id: "p1",
     title: "Space",
-    theme: "space",
     width: 6,
     height: 5,
     entries,
     status: "ready",
+    familyFriendly: true,
     source: "seed",
     createdAt: 1,
     plays: [],
@@ -288,7 +292,7 @@ describe("chooseNextPuzzle", () => {
     makePuzzle({ id, createdAt, plays, status });
 
   it("oldest unplayed ready puzzle first", () => {
-    const list = [P("b", 2), P("a", 1), P("c", 0, [], "draft"), P("d", 0, [{ sceneId: "xw", startedAt: 5 }])];
+    const list = [P("b", 2), P("a", 1), P("c", 0, [], "rejected"), P("d", 0, [{ sceneId: "xw", startedAt: 5 }])];
     expect(chooseNextPuzzle(list, "xw", 30)!.id).toBe("a");
     expect(unplayedStock(list, "xw")).toBe(2);
   });
@@ -364,23 +368,78 @@ describe("config", () => {
       clueS: 5,
       minWords: 12,
       maxWords: 8,
-      themes: ["weather", " weather ", "", 3],
+      blocklist: ["foo", " foo ", "", 3],
+      familyFriendlyOnly: false,
+      autoApprove: true,
       bogus: 1,
     } as any);
     expect(c.enabled).toBe(true);
     expect(c.clueS).toBe(15);
     expect(c.maxWords).toBe(12);
-    expect(c.themes).toEqual(["weather"]);
+    expect(c.blocklist).toEqual(["foo"]);
+    expect(c.familyFriendlyOnly).toBe(false);
     expect((c as any).bogus).toBeUndefined();
-    expect(DEFAULT_CROSSWORD_CONFIG.themes).toEqual([]);
+    expect((c as any).autoApprove).toBeUndefined();
+    expect(DEFAULT_CROSSWORD_CONFIG.familyFriendlyOnly).toBe(true);
+    expect(DEFAULT_CROSSWORD_CONFIG.theme).toEqual(DEFAULT_CROSSWORD_THEME);
+  });
+
+  it("merges a theme patch through the sanitizer", () => {
+    const c = mergeCrosswordConfig(DEFAULT_CROSSWORD_CONFIG, {
+      theme: { brand: { title: "  Word Hour  " }, colors: { accent: "#ff0000", ink: "red; background:url(x)" } },
+    } as any);
+    expect(c.theme.brand).toEqual({ title: "Word Hour", logoUrl: "" });
+    expect(c.theme.colors.accent).toBe("#ff0000");
+    expect(c.theme.colors.ink).toBe(DEFAULT_CROSSWORD_THEME.colors.ink);
   });
 });
 
-describe("surface and watchPath", () => {
-  it("maps each surface to its watch route", () => {
-    expect(watchPath({ id: "studio-b" })).toBe("/watch/studio-b");
-    expect(watchPath({ id: "words", surface: "crossword" })).toBe("/watch/crossword/words");
-    expect(watchPath({ id: "x", surface: "nonsense" })).toBe("/watch/x");
+describe("theme", () => {
+  it("has one preset, the prototype's light board", () => {
+    expect(CROSSWORD_THEME_PRESETS.map((p) => p.id)).toEqual(["prototype"]);
+    expect(DEFAULT_CROSSWORD_THEME.preset).toBe("prototype");
+    expect(DEFAULT_CROSSWORD_THEME.colors).toMatchObject({ background: "#f3f6fb", block: "#0f172a", ink: "#0f172a" });
+  });
+
+  it("sanitizes colours, fonts and the logo, falling back to base", () => {
+    const t = sanitizeCrosswordTheme({
+      preset: "nope",
+      brand: { title: "X".repeat(100), logoUrl: "javascript:alert(1)" },
+      colors: { panel: "rgba(255, 255, 255, 0.5)", cell: "}" },
+      font: { display: "Inter, sans-serif", text: "x;y" },
+    });
+    expect(t.preset).toBe("prototype");
+    expect(t.brand.title).toHaveLength(60);
+    expect(t.brand.logoUrl).toBe("");
+    expect(t.colors.panel).toBe("rgba(255, 255, 255, 0.5)");
+    expect(t.colors.cell).toBe(DEFAULT_CROSSWORD_THEME.colors.cell);
+    expect(t.font).toEqual({ display: "Inter, sans-serif", text: DEFAULT_CROSSWORD_THEME.font.text });
+    expect(sanitizeCrosswordTheme({ brand: { logoUrl: "/logo.png" } }).brand.logoUrl).toBe("/logo.png");
+    expect(sanitizeCrosswordTheme(null)).toEqual(DEFAULT_CROSSWORD_THEME);
+  });
+
+  it("turns the theme into CSS custom properties", () => {
+    const vars = crosswordThemeVars(DEFAULT_CROSSWORD_THEME);
+    expect(Object.keys(vars).every((k) => k.startsWith("--cw-"))).toBe(true);
+    expect(vars["--cw-block"]).toBe("#0f172a");
+    expect(vars["--cw-cell-solved"]).toBe(DEFAULT_CROSSWORD_THEME.colors.cellSolved);
+    expect(vars["--cw-font-display"]).toBe(DEFAULT_CROSSWORD_THEME.font.display);
+  });
+});
+
+describe("numbering carries the bank ids", () => {
+  it("passes wordId and clueId through, defaulting to empty", () => {
+    const [e] = numberEntries([{ answer: "orbit", clue: "Path round a star", row: 0, col: 0, dir: "across", wordId: "w1", clueId: "c1" }]);
+    expect(e).toMatchObject({ answer: "ORBIT", wordId: "w1", clueId: "c1" });
+    expect(numberEntries([{ answer: "ORBIT", clue: "x", row: 0, col: 0, dir: "down" }])[0]).toMatchObject({ wordId: "", clueId: "" });
+  });
+});
+
+describe("surface and outputPath", () => {
+  it("maps each surface to its own page", () => {
+    expect(outputPath({ id: "studio-b" })).toBe("/watch/studio-b");
+    expect(outputPath({ id: "words", surface: "crossword" })).toBe("/crossword/words");
+    expect(outputPath({ id: "x", surface: "nonsense" })).toBe("/watch/x");
     expect(sceneSurface(undefined)).toBe("globe");
   });
 });

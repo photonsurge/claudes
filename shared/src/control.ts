@@ -107,13 +107,14 @@ export function sceneSurface(scene: { surface?: unknown } | null | undefined): S
 }
 
 /**
- * "/watch/<id>" for a globe channel, "/watch/crossword/<id>" for a crossword
- * one. The one place that knows the mapping: the Channels list, the Access
- * page, the launcher and the worker's watchUrlForScene all call it. No token.
+ * "/watch/<id>" for a weather channel, "/crossword/<id>" for a crossword one
+ * (docs/crossword-mode-plan.md §3). The one place that knows which page a
+ * channel uses: the Channels list, the Access page, the launcher and the
+ * worker's watchUrlForScene all call it. No token.
  */
-export function watchPath(scene: { id: string; surface?: unknown }): string {
+export function outputPath(scene: { id: string; surface?: unknown }): string {
   const id = encodeURIComponent(scene.id);
-  return sceneSurface(scene) === "crossword" ? `/watch/crossword/${id}` : `/watch/${id}`;
+  return sceneSurface(scene) === "crossword" ? `/crossword/${id}` : `/watch/${id}`;
 }
 
 /**
@@ -275,12 +276,19 @@ export interface YoutubeSettings {
   description: string;
   /** Thumbnail image: http(s) URL or site path (/x.png). Empty = YOUTUBE_THUMBNAIL_URL, else the logo. */
   thumbnailUrl: string;
+  /**
+   * The connected YouTube account this channel goes out on (§10 of the
+   * crossword plan). Set on the channel's YouTube card; go-live preselects it.
+   * Empty = none stored.
+   */
+  accountId?: string;
 }
 
 export const DEFAULT_YOUTUBE_SETTINGS: YoutubeSettings = {
   title: "",
   description: "",
   thumbnailUrl: "",
+  accountId: "",
 };
 
 /** How elevation contour lines are coloured. */
@@ -1202,6 +1210,10 @@ function buildControlState(base: ControlState, patch: Partial<ControlState>): Co
         typeof patch.youtube?.thumbnailUrl === "string"
           ? patch.youtube.thumbnailUrl.trim().slice(0, 500)
           : base.youtube?.thumbnailUrl ?? DEFAULT_YOUTUBE_SETTINGS.thumbnailUrl,
+      accountId:
+        typeof patch.youtube?.accountId === "string"
+          ? patch.youtube.accountId.trim().slice(0, 200)
+          : base.youtube?.accountId ?? DEFAULT_YOUTUBE_SETTINGS.accountId,
     },
     audio: {
       enabled:

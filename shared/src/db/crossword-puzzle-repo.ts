@@ -3,10 +3,9 @@ import type { CrosswordEntry, CrosswordPlay, CrosswordPuzzle, CrosswordPuzzleSta
 import type { iCrosswordPuzzleModel } from "./crossword-puzzle-model";
 
 function toPuzzle(d: iCrosswordPuzzleModel): CrosswordPuzzle {
-  const p: CrosswordPuzzle = {
+  return {
     id: d.id,
     title: d.title,
-    theme: d.theme ?? "",
     width: d.width,
     height: d.height,
     entries: (d.entries ?? []).map((e: CrosswordEntry) => ({
@@ -17,8 +16,12 @@ function toPuzzle(d: iCrosswordPuzzleModel): CrosswordPuzzle {
       col: e.col,
       answer: e.answer,
       clue: e.clue,
+      wordId: e.wordId ?? "",
+      clueId: e.clueId ?? "",
     })),
-    status: d.status,
+    // A puzzle stored by the first build may say "draft": it was never approved.
+    status: d.status === "ready" ? "ready" : "rejected",
+    familyFriendly: d.familyFriendly === true,
     source: d.source,
     createdAt: d.createdAt,
     plays: (d.plays ?? []).map((x: CrosswordPlay) => ({
@@ -27,21 +30,18 @@ function toPuzzle(d: iCrosswordPuzzleModel): CrosswordPuzzle {
       ...(typeof x.endedAt === "number" ? { endedAt: x.endedAt } : {}),
     })),
   };
-  if (d.model) p.model = d.model;
-  return p;
 }
 
 /** Fields an upsert writes. Never `plays`: those belong to the runner. */
 const setDoc = (p: CrosswordPuzzle) => ({
   title: p.title,
-  theme: p.theme,
   width: p.width,
   height: p.height,
   entries: p.entries,
   status: p.status,
+  familyFriendly: p.familyFriendly === true,
   source: p.source,
   createdAt: p.createdAt,
-  ...(p.model ? { model: p.model } : {}),
 });
 
 /**

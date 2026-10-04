@@ -3,7 +3,12 @@ import { CROSSWORD_SEED_WORDS } from "@photonsurge/shared/crossword-seeds";
 import type { BankClue } from "@photonsurge/shared/crossword-bank";
 import { approvedClue, buildPuzzle, CrosswordBuildError, GENERAL_TITLE, indexBank, rankStoredClues, topUpScenes } from "./build";
 
-const clue = (id: string, text: string, status: BankClue["status"] = "candidate"): BankClue => ({ id, text, status });
+const clue = (id: string, text: string, status: BankClue["approval"]["status"] = "pending"): BankClue => ({
+  id,
+  text,
+  approval: { status },
+  familyFriendly: null,
+});
 
 /** The seed set dressed as a bank: one word per seed word, its clue stored with a "(N)" tail. */
 const WORDS = CROSSWORD_SEED_WORDS.map((w, i) => ({ id: `b${i}`, norm: w.answer, length: w.answer.length, zipf: 5, clue: w.clue }));
@@ -44,10 +49,9 @@ describe("buildPuzzle", () => {
     const r = await buildPuzzle(f.db, { sceneId: "xw", seed: 3 }, FAST);
     const p = r.puzzle;
     expect(r.source).toBe("bank");
-    expect(p).toMatchObject({ status: "draft", source: "bank", title: GENERAL_TITLE, theme: "", plays: [] });
+    expect(p).toMatchObject({ status: "ready", source: "bank", title: GENERAL_TITLE, plays: [] });
     expect(p.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(p.entries.length).toBeGreaterThanOrEqual(10);
-    expect(p.model).toBeUndefined();
     for (const e of p.entries) {
       // The seed clue, its "(N)" stripped; never the leaky one.
       expect(e.clue).toBe(CROSSWORD_SEED_WORDS.find((w) => w.answer === e.answer)!.clue);
@@ -75,17 +79,17 @@ describe("buildPuzzle", () => {
     expect(b.puzzle.entries).toEqual(a.puzzle.entries);
   });
 
-  it("is ready under auto-approve, titled by the theme, and stores nothing on a dry run", async () => {
-    const f = fakeDb({ cfg: { autoApprove: true } });
-    const r = await buildPuzzle(f.db, { sceneId: "xw", seed: 3, theme: " Night sky " }, { ...FAST, dryRun: true });
-    expect(r.puzzle).toMatchObject({ status: "ready", title: "Night sky", theme: "Night sky" });
+  it("is ready, and stores nothing on a dry run", async () => {
+    const f = fakeDb();
+    const r = await buildPuzzle(f.db, { sceneId: "xw", seed: 3 }, { ...FAST, dryRun: true });
+    expect(r.puzzle).toMatchObject({ status: "ready", title: GENERAL_TITLE });
     expect(f.upsert).not.toHaveBeenCalled();
   });
 
   it("builds from the seed set when the bank is empty", async () => {
     const f = fakeDb({ bank: [] });
     const r = await buildPuzzle(f.db, { sceneId: "xw", seed: 3 }, FAST);
-    expect(r.puzzle).toMatchObject({ source: "seed", title: "Space", theme: "Space" });
+    expect(r.puzzle).toMatchObject({ source: "seed", title: "Space", familyFriendly: true });
     expect(Object.values(r.clueVia).every((v) => v === "seed")).toBe(true);
     expect(f.forBuild).not.toHaveBeenCalled();
   });
@@ -126,7 +130,6 @@ describe("buildPuzzle", () => {
     expect(vias.filter((v) => v === "polish").length).toBe(r.puzzle.entries.length - 1);
     // The leaking one fell back to the stored clue.
     expect(r.clueVia[offered[0].answer]).toBe("stored");
-    expect(r.puzzle.model).toBe("test-model");
   });
 });
 
@@ -165,7 +168,7 @@ describe("topUpScenes", () => {
   it("builds one puzzle for an enabled scene short of stock, and skips the rest", async () => {
     const f = fakeDb({ scenes: ["xw"], cfg: { enabled: true, stockTarget: 2 }, ready: [ready("p1")] });
     const out = await topUpScenes(f.db, FAST);
-    expect(out).toEqual([expect.objectContaining({ sceneId: "xw", outcome: "built", status: "draft" })]);
+    expect(out).toEqual([expect.objectContaining({ sceneId: "xw", outcome: "built", status: "ready" })]);
     expect(f.upsert).toHaveBeenCalledTimes(1);
 
     const stocked = fakeDb({ scenes: ["xw"], cfg: { enabled: true, stockTarget: 1 }, ready: [ready("p1")] });
@@ -179,13 +182,6 @@ describe("topUpScenes", () => {
   it("counts a puzzle the scene already played as spent", async () => {
     const f = fakeDb({ scenes: ["xw"], cfg: { enabled: true, stockTarget: 1 }, ready: [ready("p1", ["xw"])] });
     expect((await topUpScenes(f.db, FAST))[0].outcome).toBe("built");
-  });
-
-  it("waits for review while the drafts already reach the target", async () => {
-    const f = fakeDb({ scenes: ["xw"], cfg: { enabled: true, stockTarget: 2 }, drafts: [{}, {}] });
-    expect(await topUpScenes(f.db, FAST)).toEqual([{ sceneId: "xw", outcome: "awaiting review" }]);
-    const auto = fakeDb({ scenes: ["xw"], cfg: { enabled: true, stockTarget: 2, autoApprove: true }, drafts: [{}, {}] });
-    expect((await topUpScenes(auto.db, FAST))[0]).toMatchObject({ outcome: "built", status: "ready" });
   });
 
   it("reports a failed build and carries on", async () => {

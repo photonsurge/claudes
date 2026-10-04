@@ -4,8 +4,8 @@
  * /admin/scenes — CRUD for broadcast channels, both kinds in one list (plan
  * §8.1). Each channel is a named ControlState (a "scene" in the data model)
  * rendered full-bleed at its watch page (an OBS browser source / overlay
- * window): `/watch/:id` for weather, `/watch/crossword/:id` for a crossword
- * (`watchPath` decides). Its console is `/control?scene=:id` for weather and
+ * window): `/watch/:id` for weather, `/crossword/:id` for a crossword
+ * (`outputPath` decides). Its console is `/control?scene=:id` for weather and
  * the crossword Desk for a crossword. Create seeds from the main channel (or a
  * chosen one) and picks the kind. The main channel is protected (no delete).
  */
@@ -27,7 +27,7 @@ import {
   MAIN_SCENE_ID,
   SCENE_SURFACES,
   sceneSurface,
-  watchPath,
+  outputPath,
   type SceneMeta,
   type SceneSurface,
 } from "@photonsurge/shared/control";
@@ -82,7 +82,7 @@ export default function ScenesPage() {
       description={
         <>
           A weather channel renders at <code>/watch/&lt;id&gt;</code> and a crossword at{" "}
-          <code>/watch/crossword/&lt;id&gt;</code> (use that URL as an OBS browser source). Control
+          <code>/crossword/&lt;id&gt;</code> (use that URL as an OBS browser source). Control
           opens a weather channel&apos;s console, Desk a crossword&apos;s live game. Tokened OBS URLs
           live in <MuiLink component={Link} href="/admin/access">Access</MuiLink>.
         </>
@@ -162,7 +162,7 @@ export default function ScenesPage() {
       <Box sx={{ display: "grid", gap: 1.25, mt: 1.5 }}>
         {shown.map((s) => {
           const kind = sceneSurface(s);
-          const watch = watchPath(s);
+          const watch = outputPath(s);
           const control = consoleHref(s);
           return (
             <Paper key={s.id} sx={{ p: 1.75 }}>

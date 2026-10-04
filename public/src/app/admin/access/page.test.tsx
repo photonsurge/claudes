@@ -1,5 +1,5 @@
 /**
- * /admin/access — the tokened OBS URL per channel is built with `watchPath`, so
+ * /admin/access — the tokened OBS URL per channel is built with `outputPath`, so
  * a crossword channel's URL points at its own watch page.
  */
 import { render, screen } from "@testing-library/react";
@@ -19,7 +19,7 @@ describe("Access page", () => {
     render(<AccessPage />);
     const origin = window.location.origin;
     expect(await screen.findByText(`${origin}/watch/wind?token=tok-w`)).toBeInTheDocument();
-    expect(screen.getByText(`${origin}/watch/crossword/word-up?token=tok-x`)).toBeInTheDocument();
+    expect(screen.getByText(`${origin}/crossword/word-up?token=tok-x`)).toBeInTheDocument();
     expect(screen.getAllByText("Crossword")).toHaveLength(2);
   });
 

@@ -7,7 +7,6 @@ import { fireEvent, screen } from "@testing-library/react";
 import { CROSSWORD_CONFIG_LIMITS } from "@photonsurge/shared/crossword";
 import {
   CrosswordChatSettings,
-  CrosswordDifficultySettings,
   CrosswordOnSettings,
   CrosswordPacingSettings,
   CrosswordPuzzleSettings,
@@ -49,18 +48,12 @@ describe("Game cards", () => {
     expect(screen.getByLabelText("Puzzle ceiling")).toHaveValue("33");
   });
 
-  it("commits a theme list on blur, trimmed and de-duplicated", () => {
-    const d = renderInDraft(<CrosswordDifficultySettings />, { crossword: {} });
-    type("Themes", "weather, space\n weather \n\nearth");
-    expect(d.lastCrossword()).toEqual({ themes: ["weather", "space", "earth"] });
-  });
-
   it("never lets Most words drop below Fewest words", () => {
     const d = renderInDraft(<CrosswordPuzzleSettings />, { crossword: { minWords: 12, maxWords: 16 } });
     type("Most words", "5");
     expect(d.lastCrossword()).toEqual({ maxWords: 12 });
-    fireEvent.click(screen.getByRole("switch", { name: "Auto-approve new puzzles" }));
-    expect(d.lastCrossword()).toEqual({ autoApprove: true });
+    fireEvent.click(screen.getByRole("switch", { name: "Family friendly only" }));
+    expect(d.lastCrossword()).toEqual({ familyFriendlyOnly: false });
   });
 
   it("stages the chat limits and the blocklist", () => {

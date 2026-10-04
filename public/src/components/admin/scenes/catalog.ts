@@ -111,7 +111,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
     title: "Difficulty & themes",
     group: "game",
     bucket: "crossword",
-    fields: ["minZipf", "themes", "themeEvery"],
+    fields: ["minZipf"],
     surfaces: CROSSWORD,
   },
   {
@@ -119,7 +119,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
     title: "Puzzles",
     group: "game",
     bucket: "crossword",
-    fields: ["stockTarget", "autoApprove", "noRepeatPuzzles", "noRepeatWordsPuzzles", "minWords", "maxWords", "maxSize"],
+    fields: ["stockTarget", "familyFriendlyOnly", "noRepeatPuzzles", "noRepeatWordsPuzzles", "minWords", "maxWords", "maxSize"],
     surfaces: CROSSWORD,
   },
   {

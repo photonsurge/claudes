@@ -137,7 +137,7 @@ describe("mergeControlState", () => {
         sources: "NOAA GFS, USGS, GDACS",
         footer: "Custom small print.",
       },
-      youtube: { title: "Atlantic Wind %d/%m", description: "Gusts on %A", thumbnailUrl: "/thumbs/wind.png" },
+      youtube: { title: "Atlantic Wind %d/%m", description: "Gusts on %A", thumbnailUrl: "/thumbs/wind.png", accountId: "acc-1" },
       audio: { enabled: true, mode: "deep", volume: 0.45, muted: true },
       chat: {
         enabled: true,
@@ -229,10 +229,17 @@ describe("mergeControlState", () => {
     const next = mergeControlState(seeded, {
       youtube: { description: "New copy", thumbnailUrl: "  https://cdn.example/t.png ", title: 7 } as never,
     });
-    expect(next.youtube).toEqual({ title: "Wind %d", description: "New copy", thumbnailUrl: "https://cdn.example/t.png" });
+    expect(next.youtube).toEqual({ title: "Wind %d", description: "New copy", thumbnailUrl: "https://cdn.example/t.png", accountId: "" });
     // Missing from the patch → keeps the base value; defaults are all-empty.
     expect(mergeControlState(next, {}).youtube.description).toBe("New copy");
-    expect(mergeControlState(DEFAULT_CONTROL_STATE, {}).youtube).toEqual({ title: "", description: "", thumbnailUrl: "" });
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, {}).youtube).toEqual({ title: "", description: "", thumbnailUrl: "", accountId: "" });
+  });
+
+  it("keeps the channel's YouTube account, trimmed, and ignores a non-string", () => {
+    const next = mergeControlState(DEFAULT_CONTROL_STATE, { youtube: { accountId: "  acc-1 " } as never });
+    expect(next.youtube.accountId).toBe("acc-1");
+    expect(mergeControlState(next, { youtube: { accountId: 5 } as never }).youtube.accountId).toBe("acc-1");
+    expect(mergeControlState(next, { youtube: { accountId: "" } as never }).youtube.accountId).toBe("");
   });
 
   it("sanitises alertHazardsOff to known hazard types and dedupes", () => {

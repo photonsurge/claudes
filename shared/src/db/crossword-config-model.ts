@@ -14,6 +14,7 @@ export interface iCrosswordConfigModel extends iGeneralModel, CrosswordConfig {
 }
 
 const D = DEFAULT_CROSSWORD_CONFIG;
+const T = D.theme;
 const num = (v: number) => ({ type: Number, default: v });
 const bool = (v: boolean) => ({ type: Boolean, default: v });
 
@@ -30,14 +31,33 @@ export const CrosswordConfigSchema = new mongoose.Schema<iCrosswordConfigModel>(
     ceilingMin: num(D.ceilingMin),
     hintStartFrac: num(D.hintStartFrac),
     hintMaxFrac: num(D.hintMaxFrac),
+    theme: {
+      preset: { type: String, default: T.preset },
+      brand: {
+        title: { type: String, default: T.brand.title },
+        logoUrl: { type: String, default: T.brand.logoUrl },
+      },
+      colors: {
+        background: { type: String, default: T.colors.background },
+        panel: { type: String, default: T.colors.panel },
+        cell: { type: String, default: T.colors.cell },
+        cellSolved: { type: String, default: T.colors.cellSolved },
+        block: { type: String, default: T.colors.block },
+        ink: { type: String, default: T.colors.ink },
+        inkMuted: { type: String, default: T.colors.inkMuted },
+        accent: { type: String, default: T.colors.accent },
+      },
+      font: {
+        display: { type: String, default: T.font.display },
+        text: { type: String, default: T.font.text },
+      },
+    },
     minZipf: num(D.minZipf),
-    themes: { type: [String], default: [] },
-    themeEvery: num(D.themeEvery),
     minWords: num(D.minWords),
     maxWords: num(D.maxWords),
     maxSize: num(D.maxSize),
     stockTarget: num(D.stockTarget),
-    autoApprove: bool(D.autoApprove),
+    familyFriendlyOnly: bool(D.familyFriendlyOnly),
     noRepeatPuzzles: num(D.noRepeatPuzzles),
     noRepeatWordsPuzzles: num(D.noRepeatWordsPuzzles),
     streamDelayS: num(D.streamDelayS),

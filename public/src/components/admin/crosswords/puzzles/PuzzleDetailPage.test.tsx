@@ -23,10 +23,10 @@ beforeEach(() => {
   puzzle = {
     id: "p1",
     title: "Chain",
-    theme: "Pets",
     width: 5,
     height: 3,
-    status: "draft",
+    status: "rejected",
+    familyFriendly: false,
     source: "seed",
     createdAt: 1,
     plays: [],

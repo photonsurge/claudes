@@ -22,7 +22,7 @@ import {
   type CrosswordBeat,
   type CrosswordPublicState,
 } from "@photonsurge/shared/crossword";
-import { sceneSurface, watchPath, type SceneSurface } from "@photonsurge/shared/control";
+import { sceneSurface, outputPath, type SceneSurface } from "@photonsurge/shared/control";
 import { useSocket } from "./socket-provider";
 import { useLoadAndResync } from "./use-resync";
 import { listScenes } from "./scenes";
@@ -186,12 +186,12 @@ export function surfaceRedirect(
   search: string,
 ): string | null {
   if (!scene || sceneSurface(scene) === here) return null;
-  return `${watchPath(scene)}${search ? `?${search.replace(/^\?/, "")}` : ""}`;
+  return `${outputPath(scene)}${search ? `?${search.replace(/^\?/, "")}` : ""}`;
 }
 
 /**
  * Send a scene opened on the wrong watch route (a crossword scene on
- * `/watch/:id`, or a globe one on `/watch/crossword/:id`) to its own page,
+ * `/watch/:id`, or a globe one on `/crossword/:id`) to its own page,
  * keeping the query (token, `obs=1`). True while a redirect is under way, so
  * the caller can render nothing. One read of `/api/scenes`; if it fails the
  * page simply stays where it is.

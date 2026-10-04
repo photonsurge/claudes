@@ -27,7 +27,7 @@ import MuiLink from "@mui/material/Link";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { MAIN_SCENE_ID, sceneSurface, watchPath, type SceneMeta } from "@photonsurge/shared/control";
+import { MAIN_SCENE_ID, sceneSurface, outputPath, type SceneMeta } from "@photonsurge/shared/control";
 import { consoleHref } from "../../../../lib/channel-links";
 import { listScenes } from "../../../../lib/scenes";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
@@ -109,7 +109,7 @@ export default function ChannelSettingsPage() {
   const name = scene?.name ?? sceneId;
   const surface = sceneSurface(scene);
   const control = consoleHref({ id: sceneId, surface });
-  const watch = watchPath({ id: sceneId, surface });
+  const watch = outputPath({ id: sceneId, surface });
 
   return (
     <AdminPageShell

@@ -194,6 +194,7 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
       title: { type: String, required: false, default: "" },
       description: { type: String, required: false, default: "" },
       thumbnailUrl: { type: String, required: false, default: "" },
+      accountId: { type: String, required: false, default: "" },
     },
     audio: {
       enabled: { type: Boolean, required: true, default: false },

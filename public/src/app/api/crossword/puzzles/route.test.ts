@@ -47,10 +47,9 @@ it("lists rows with counts and no answers", async () => {
   expect(body.puzzles[0]).toEqual({
     id: "a",
     title: "T a",
-    theme: "Volcanoes",
+    theme: "",
     status: "draft",
     source: "themed",
-    model: "m",
     createdAt: 100,
     width: 9,
     height: 7,
@@ -68,6 +67,7 @@ it("filters status in Mongo, source and theme here; ignores junk", async () => {
   await get("?status=nope");
   expect(mockDb.crosswordPuzzles.list).toHaveBeenLastCalledWith({ limit: 500 });
   expect((await (await get("?source=themed")).json()).puzzles.map((r: { id: string }) => r.id)).toEqual(["a"]);
-  expect((await (await get("?theme=volc")).json()).puzzles.map((r: { id: string }) => r.id)).toEqual(["a"]);
+  // Puzzles have no theme now (§4.1): the filter matches the title only.
+  expect((await (await get("?theme=volc")).json()).puzzles.map((r: { id: string }) => r.id)).toEqual([]);
   expect((await (await get("?theme=t%20b")).json()).puzzles.map((r: { id: string }) => r.id)).toEqual(["b"]);
 });

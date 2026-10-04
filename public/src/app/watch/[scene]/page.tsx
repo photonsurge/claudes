@@ -138,7 +138,7 @@ function SceneWatchPageInner() {
     };
   }, [socket]);
 
-  // A crossword channel opened here goes to /watch/crossword/:scene.
+  // A crossword channel opened here goes to /crossword/:scene (outputPath).
   if (redirecting) return null;
 
   if (tokenError) {

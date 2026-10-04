@@ -4,36 +4,63 @@ import {
   BANK_CLUE_FIELDS as C,
   BANK_CLUE_INDEXES,
   BANK_CLUES_COLLECTION,
+  BANK_QUEUE_SORT,
   BANK_WORD_FIELDS as F,
   BANK_WORD_INDEXES,
   BANK_WORDS_COLLECTION,
   BANK_ZIPF_BANDS,
+  QUEUE_LIMIT_MAX,
   bankPaging,
+  bankPlayableClueFilter,
   bankPlayableFilter,
+  bankQueueFilter,
   bankWordFilter,
   bankWordSort,
   asStrings,
   getPath,
+  poolCounts,
+  toBankApproval,
   toBankClue,
   toBankSenses,
   toBankWordRow,
+  toFamilyFriendly,
+  type BankApprovalStatus,
   type BankClue,
-  type BankClueDecision,
-  type BankDecision,
   type BankPlayableQuery,
+  type BankPoolCounts,
+  type BankQueueQuery,
+  type BankQueueWord,
   type BankSense,
+  type BankSuggestion,
   type BankTotals,
   type BankWordDetail,
   type BankWordQuery,
   type BankWordRow,
 } from "../crossword-bank";
+import { cleanClue, validateClue } from "../crossword";
 
-/** A playable word as the builder's candidate pick sees it. */
-export interface BankPlayable {
+/** A word reference: id, answer, length and frequency. */
+export interface BankWordRef {
   id: string;
   norm: string;
   length: number;
   zipf?: number;
+}
+
+/** A clue a playable word may use, with its ids for the puzzle entry. */
+export interface BankPlayableClue {
+  id: string;
+  text: string;
+  familyFriendly: boolean | null;
+}
+
+/**
+ * A playable word as the builder's candidate pick sees it (§7.3 step 1): an
+ * approved word with its approved clues (never empty).
+ */
+export interface BankPlayable extends BankWordRef {
+  familyFriendly: boolean | null;
+  clues: BankPlayableClue[];
 }
 
 /** What the puzzle builder needs to clue a word. */
@@ -43,11 +70,19 @@ export interface BankBuildWord {
   senses: BankSense[];
   /** Raw Wiktionary definitions: the facts a clue is written from. */
   definitions: string[];
-  /** Usable clues (never the operator-rejected ones). */
+  /** Every clue but the rejected ones. */
   clues: BankClue[];
 }
 
 const TOTALS_TTL_MS = 60_000;
+/** Words per clue lookup in the playable pick. */
+const PLAYABLE_CHUNK = 5_000;
+/** Longest stored clue text (the on-air cap, CLUE_MAX, is checked by validateClue). */
+const CLUE_TEXT_MAX = 200;
+
+const isStatus = (v: unknown): v is BankApprovalStatus => v === "pending" || v === "approved" || v === "rejected";
+/** Who decided, as stored. */
+const who = (by: string) => String(by ?? "").trim().slice(0, 200) || "operator";
 
 const toOid = (id: string) => {
   try {
@@ -162,32 +197,63 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
       };
     },
 
-    /** Every playable word (norm, length, zipf only) — the builder samples from these. */
+    /**
+     * The playable pick (§7.3 step 1): every word the builder may sample, each
+     * with the clues it may use. Approved words with at least one approved
+     * clue, 3–12 letters, at or above `minZipf`, not excluded; on a
+     * family-friendly channel the word and the clue both tagged true
+     * (untagged counts as not). With `allowUnapproved` (dev only): pending
+     * pipeline-accepted words with their stored clues, cleaned.
+     */
     async playable(q: BankPlayableQuery): Promise<BankPlayable[]> {
       const docs = await words()
         .find(bankPlayableFilter(q) as Filter<Document>, {
-          projection: { _id: 1, [F.norm]: 1, [F.length]: 1, [F.zipf]: 1 },
+          projection: { _id: 1, [F.norm]: 1, [F.length]: 1, [F.zipf]: 1, [F.familyFriendly]: 1 },
         })
         .toArray();
-      return docs.map((d) => {
+      const byWord = new Map<string, BankPlayableClue[]>();
+      for (let i = 0; i < docs.length; i += PLAYABLE_CHUNK) {
+        const ids = docs.slice(i, i + PLAYABLE_CHUNK).map((d) => d._id);
+        const clueDocs = await clues()
+          .find(bankPlayableClueFilter(ids, q) as Filter<Document>, {
+            projection: { _id: 1, [C.answerId]: 1, [C.text]: 1, [C.familyFriendly]: 1 },
+          })
+          .toArray();
+        for (const c of clueDocs) {
+          const raw = String(getPath(c, C.text) ?? "");
+          const text = q.allowUnapproved ? cleanClue(raw) : raw.trim();
+          if (!text) continue;
+          const k = String(getPath(c, C.answerId));
+          const list = byWord.get(k) ?? [];
+          list.push({ id: String(c._id), text, familyFriendly: toFamilyFriendly(getPath(c, C.familyFriendly)) });
+          byWord.set(k, list);
+        }
+      }
+      const out: BankPlayable[] = [];
+      for (const d of docs) {
+        const list = byWord.get(String(d._id));
+        if (!list?.length) continue;
         const norm = String(getPath(d, F.norm) ?? "");
         const z = getPath(d, F.zipf);
-        return {
+        out.push({
           id: String(d._id),
           norm,
           length: (getPath(d, F.length) as number) ?? norm.length,
           ...(typeof z === "number" ? { zipf: z } : {}),
-        };
-      });
+          familyFriendly: toFamilyFriendly(getPath(d, F.familyFriendly)),
+          clues: list.sort((a, b) => a.id.localeCompare(b.id)),
+        });
+      }
+      return out;
     },
 
-    /** Words by id with senses and usable clues, for clueing a built grid. */
+    /** Words by id with senses and every clue not rejected, for clueing a built grid. */
     async forBuild(ids: string[]): Promise<BankBuildWord[]> {
       const oids = ids.map(toOid).filter((x): x is mongoose.Types.ObjectId => !!x);
       if (!oids.length) return [];
       const [docs, clueDocs] = await Promise.all([
         words().find({ _id: { $in: oids } }).toArray(),
-        clues().find({ [C.answerId]: { $in: oids }, [C.status]: { $ne: "rejected" } }).toArray(),
+        clues().find({ [C.answerId]: { $in: oids }, [C.approvalStatus]: { $ne: "rejected" } }).toArray(),
       ]);
       const byWord = new Map<string, BankClue[]>();
       for (const c of clueDocs) {
@@ -203,8 +269,8 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
       }));
     },
 
-    /** Bank words matching these answers (themed puzzles: a word must be in the bank). */
-    async findByNorms(norms: string[]): Promise<BankPlayable[]> {
+    /** Bank words matching these answers (themed puzzles, later: a word must be in the bank). */
+    async findByNorms(norms: string[]): Promise<BankWordRef[]> {
       if (!norms.length) return [];
       const docs = await words()
         .find({ [F.norm]: { $in: norms } }, { projection: { _id: 1, [F.norm]: 1, [F.length]: 1, [F.zipf]: 1 } })
@@ -217,54 +283,202 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
       }));
     },
 
-    /** Operator's word decision: writes the validation decision, marked as the operator's. */
-    async setWordDecision(id: string, decision: BankDecision): Promise<boolean> {
+    /**
+     * The approval queue (§7.4): pending words, the lengths the builder needs
+     * first, most common first — the order is documented on
+     * `bankQueueFilter`. Each with its definitions, flags as warnings, every
+     * clue not rejected (as stored, after `cleanClue`, and `validateClue`'s
+     * verdict) and any stored suggestion.
+     */
+    async approvalQueue(q: BankQueueQuery): Promise<BankQueueWord[]> {
+      const limit = Math.max(1, Math.min(QUEUE_LIMIT_MAX, Math.floor(q.limit) || 1));
+      const skip = (q.excludeIds ?? []).map(toOid).filter((x): x is mongoose.Types.ObjectId => !!x);
+      const tier = async (t: "preferred" | "rest", n: number) => {
+        const f = bankQueueFilter(q, t) as { $and: Record<string, unknown>[] };
+        if (skip.length) f.$and.push({ _id: { $nin: skip } });
+        return words().find(f as Filter<Document>).sort(BANK_QUEUE_SORT).limit(n).toArray();
+      };
+      const docs = await tier("preferred", limit);
+      if (docs.length < limit) docs.push(...(await tier("rest", limit - docs.length)));
+      if (!docs.length) return [];
+      const clueDocs = await clues()
+        .find({ [C.answerId]: { $in: docs.map((d) => d._id) }, [C.approvalStatus]: { $ne: "rejected" } })
+        .sort({ [C.createdAt]: 1, _id: 1 })
+        .toArray();
+      const byWord = new Map<string, BankClue[]>();
+      for (const c of clueDocs) {
+        const k = String(getPath(c, C.answerId));
+        byWord.set(k, [...(byWord.get(k) ?? []), toBankClue(c)]);
+      }
+      return docs.map((d) => {
+        const list = byWord.get(String(d._id)) ?? [];
+        const row = toBankWordRow(d, list.length);
+        const norm = String(getPath(d, F.norm) ?? row.word).toUpperCase().replace(/[^A-Z]/g, "");
+        return {
+          ...row,
+          norm,
+          senses: toBankSenses(getPath(d, F.senses)),
+          definitions: asStrings(getPath(d, F.rawDefinitions)),
+          clues: list.map((c) => {
+            const cleaned = cleanClue(c.text);
+            return { ...c, cleaned, problem: validateClue(cleaned, norm) };
+          }),
+        };
+      });
+    },
+
+    /**
+     * The approved-pool counter (§7.4): approved words of 3–12 letters with at
+     * least one approved clue, the family-friendly ones (word and an approved
+     * clue both tagged), and the puzzles that supports (`poolCounts`). Starts
+     * from the approved clues, which the clue approval index finds.
+     */
+    async poolCounts(): Promise<BankPoolCounts> {
+      const rows = await clues()
+        .aggregate(
+          [
+            { $match: { [C.approvalStatus]: "approved" } },
+            {
+              $group: {
+                _id: `$${C.answerId}`,
+                ff: { $max: { $cond: [{ $eq: [`$${C.familyFriendly}`, true] }, 1, 0] } },
+              },
+            },
+            { $lookup: { from: BANK_WORDS_COLLECTION, localField: "_id", foreignField: "_id", as: "w" } },
+            { $unwind: "$w" },
+            { $match: { [`w.${F.approvalStatus}`]: "approved", [`w.${F.length}`]: { $gte: 3, $lte: 12 } } },
+            {
+              $group: {
+                _id: null,
+                words: { $sum: 1 },
+                ffWords: {
+                  $sum: { $cond: [{ $and: [{ $eq: ["$ff", 1] }, { $eq: [`$w.${F.familyFriendly}`, true] }] }, 1, 0] },
+                },
+              },
+            },
+          ],
+          { allowDiskUse: true },
+        )
+        .toArray();
+      return poolCounts(rows[0]?.words ?? 0, rows[0]?.ffWords ?? 0);
+    },
+
+    /** Approve, reject or return a word to pending; records who and when. */
+    async setWordApproval(id: string, status: BankApprovalStatus, by: string): Promise<boolean> {
       const oid = toOid(id);
-      if (!oid) return false;
+      if (!oid || !isStatus(status)) return false;
+      const at = now();
       const res = await words().updateOne(
         { _id: oid },
-        { $set: { [F.decision]: decision, [F.decisionBy]: "operator", [F.decisionAt]: new Date(now()), [F.updatedAt]: new Date(now()) } },
+        { $set: { [F.approval]: { status, by: who(by), at }, [F.updatedAt]: new Date(at) } },
       );
-      totalsCache = null;
       return res.matchedCount > 0;
     },
 
-    /** Operator's adult / vulgar / offensive flags (only the keys given). */
-    async setWordFlags(id: string, flags: { adult?: boolean; vulgar?: boolean; offensive?: boolean }): Promise<boolean> {
+    /** Tag a word family friendly (true), not (false), or untag it (null); records who and when. */
+    async setWordFamilyFriendly(id: string, value: boolean | null, by: string): Promise<boolean> {
       const oid = toOid(id);
-      if (!oid) return false;
-      const set: Record<string, unknown> = { [F.updatedAt]: new Date(now()) };
-      if (typeof flags.adult === "boolean") set[F.flagAdult] = flags.adult;
-      if (typeof flags.vulgar === "boolean") set[F.flagVulgar] = flags.vulgar;
-      if (typeof flags.offensive === "boolean") set[F.flagOffensive] = flags.offensive;
-      const res = await words().updateOne({ _id: oid }, { $set: set });
+      if (!oid || (value !== null && typeof value !== "boolean")) return false;
+      const at = now();
+      const res = await words().updateOne(
+        { _id: oid },
+        {
+          $set: {
+            [F.familyFriendly]: value,
+            [F.familyFriendlyBy]: who(by),
+            [F.familyFriendlyAt]: at,
+            [F.updatedAt]: new Date(at),
+          },
+        },
+      );
       return res.matchedCount > 0;
     },
 
-    /** Approve or reject a clue (or put it back to candidate). */
-    async setClueStatus(clueId: string, status: BankClueDecision): Promise<boolean> {
+    /** Approve, reject or return a clue to pending; records who and when. */
+    async setClueApproval(clueId: string, status: BankApprovalStatus, by: string): Promise<boolean> {
       const oid = toOid(clueId);
-      if (!oid) return false;
-      const res = await clues().updateOne({ _id: oid }, { $set: { [C.status]: status, [C.updatedAt]: new Date(now()) } });
+      if (!oid || !isStatus(status)) return false;
+      const at = now();
+      const res = await clues().updateOne(
+        { _id: oid },
+        { $set: { [C.approval]: { status, by: who(by), at }, [C.updatedAt]: new Date(at) } },
+      );
       return res.matchedCount > 0;
     },
 
-    /** Edit a clue's text, keeping the first original. */
-    async editClue(clueId: string, text: string): Promise<boolean> {
+    /** Tag a clue family friendly (true), not (false), or untag it (null); records who and when. */
+    async setClueFamilyFriendly(clueId: string, value: boolean | null, by: string): Promise<boolean> {
       const oid = toOid(clueId);
-      if (!oid) return false;
+      if (!oid || (value !== null && typeof value !== "boolean")) return false;
+      const at = now();
+      const res = await clues().updateOne(
+        { _id: oid },
+        {
+          $set: {
+            [C.familyFriendly]: value,
+            [C.familyFriendlyBy]: who(by),
+            [C.familyFriendlyAt]: at,
+            [C.updatedAt]: new Date(at),
+          },
+        },
+      );
+      return res.matchedCount > 0;
+    },
+
+    /**
+     * Edit a clue's text, keeping the first original and recording who and
+     * when. An approved clue goes back to `pending` (§7.4); a pending or
+     * rejected one keeps its status. Empty text is refused.
+     */
+    async editClue(clueId: string, text: string, by: string): Promise<boolean> {
+      const oid = toOid(clueId);
+      const t = typeof text === "string" ? text.replace(/\s+/g, " ").trim().slice(0, CLUE_TEXT_MAX) : "";
+      if (!oid || !t) return false;
       const doc = await clues().findOne({ _id: oid });
       if (!doc) return false;
-      const set: Record<string, unknown> = { [C.text]: text, [C.updatedAt]: new Date(now()) };
+      const at = now();
+      const set: Record<string, unknown> = {
+        [C.text]: t,
+        [C.editedBy]: who(by),
+        [C.editedAt]: at,
+        [C.updatedAt]: new Date(at),
+      };
       if (getPath(doc, C.original) === undefined) set[C.original] = getPath(doc, C.text);
+      if (toBankApproval(getPath(doc, C.approval)).status === "approved") {
+        set[C.approval] = { status: "pending", by: who(by), at };
+      }
       await clues().updateOne({ _id: oid }, { $set: set });
       return true;
     },
 
     /**
-     * Save clues for a word as new candidates (a polished clue saved back, or
-     * the operator's Write clues). Skips texts the word already has. Returns
-     * the number added.
+     * Store (or, with null, clear) a word's suggestion (`crossword.suggest`,
+     * WP11). Never touches the approval or the tag.
+     */
+    async setWordSuggestion(id: string, suggestion: BankSuggestion | null): Promise<boolean> {
+      const oid = toOid(id);
+      if (!oid) return false;
+      const update = suggestion
+        ? {
+            $set: {
+              [F.suggestion]: {
+                clue: String(suggestion.clue ?? "").trim().slice(0, CLUE_TEXT_MAX),
+                familyFriendly: suggestion.familyFriendly === true,
+                reason: String(suggestion.reason ?? "").trim().slice(0, 300),
+                model: String(suggestion.model ?? "").slice(0, 200),
+                at: Number.isFinite(suggestion.at) ? suggestion.at : now(),
+              },
+            },
+          }
+        : { $unset: { [F.suggestion]: "" } };
+      const res = await words().updateOne({ _id: oid }, update);
+      return res.matchedCount > 0;
+    },
+
+    /**
+     * Save clues for a word as new pending, untagged clues (a polished clue
+     * saved back, or the operator's own). Skips texts the word already has.
+     * Returns the number added.
      */
     async addClues(wordId: string, texts: string[], meta: { source: string; model?: string }): Promise<number> {
       const oid = toOid(wordId);
@@ -279,7 +493,7 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
       const fresh = [...new Set(texts.map((t) => t.trim()).filter(Boolean))].filter((t) => !existing.has(t.toLowerCase()));
       if (!fresh.length) return 0;
       const at = new Date(now());
-      // The prototype's clue shape (enritch_words_vllm.py), plus this app's `status`.
+      // The prototype's clue shape (enritch_words_vllm.py), plus this app's approval and tag.
       await clues().insertMany(
         fresh.map((t) => ({
           [C.answerId]: oid,
@@ -289,7 +503,8 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
           style: "straight",
           isCryptic: false,
           source: { name: meta.source, ref: meta.model ?? null, createdBy: "photonsurge" },
-          [C.status]: "candidate",
+          [C.approval]: { status: "pending" },
+          [C.familyFriendly]: null,
           [C.createdAt]: at,
           [C.updatedAt]: at,
         })),

@@ -19,7 +19,7 @@ const row: PuzzleRow = {
   id: "p1",
   title: "Volcanoes",
   theme: "Volcanoes",
-  status: "draft",
+  status: "rejected",
   source: "themed",
   createdAt: 1_700_000_000_000,
   width: 11,
@@ -58,7 +58,7 @@ it("lists puzzles with a link to each", async () => {
   const link = await screen.findByRole("link", { name: "Volcanoes" });
   expect(link).toHaveAttribute("href", "/admin/crosswords/puzzles/p1");
   const tr = link.closest("tr")!;
-  expect(within(tr).getByText("draft")).toBeInTheDocument();
+  expect(within(tr).getByText("rejected")).toBeInTheDocument();
   expect(within(tr).getByText("14")).toBeInTheDocument();
 });
 

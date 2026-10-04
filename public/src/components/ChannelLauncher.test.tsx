@@ -3,7 +3,7 @@
  * and Settings links, the per-channel ON AIR badge (live run OR director
  * heartbeat) with YouTube watch/chat links, the director NOW/NEXT strip, and
  * the empty-state prompt. A crossword card shows its puzzle progress instead of
- * now/next and links its Desk; Watch links come from `watchPath`.
+ * now/next and links its Desk; Watch links come from `outputPath`.
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import ChannelLauncher from "./ChannelLauncher";
@@ -182,7 +182,7 @@ describe("ChannelLauncher", () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
       expect(screen.getByRole("link", { name: "Desk" })).toHaveAttribute("href", "/admin/crosswords/desk/word-up");
       const watches = screen.getAllByRole("link", { name: "Watch ↗" });
-      expect(watches[1]).toHaveAttribute("href", "/watch/crossword/word-up");
+      expect(watches[1]).toHaveAttribute("href", "/crossword/word-up");
       expect(screen.getAllByRole("link", { name: "Settings" })[1]).toHaveAttribute("href", "/admin/scenes/word-up");
       expect(screen.getAllByRole("link", { name: "Control" })).toHaveLength(1);
     });

@@ -72,7 +72,7 @@ describe("surfaceRedirect", () => {
   });
 
   it("sends a crossword scene off the globe route", () => {
-    expect(surfaceRedirect({ id: "xw", surface: "crossword" }, "globe", "token=t")).toBe("/watch/crossword/xw?token=t");
+    expect(surfaceRedirect({ id: "xw", surface: "crossword" }, "globe", "token=t")).toBe("/crossword/xw?token=t");
   });
 
   it("leaves a scene on its own route, and an unknown scene where it is", () => {

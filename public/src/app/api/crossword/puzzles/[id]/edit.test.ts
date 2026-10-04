@@ -10,10 +10,10 @@ import { dropEntry, editClue, isConnected } from "./edit";
 const chainPuzzle = (): CrosswordPuzzle => ({
   id: "p1",
   title: "Chain",
-  theme: "",
   width: 5,
   height: 3,
-  status: "draft",
+  status: "rejected",
+  familyFriendly: false,
   source: "seed",
   createdAt: 1,
   plays: [],

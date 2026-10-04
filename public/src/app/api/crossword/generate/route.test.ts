@@ -32,11 +32,11 @@ it("needs a crossword sceneId and a short theme", async () => {
   expect(sendToBack).not.toHaveBeenCalled();
 });
 
-it("queues a build, with the theme when one is given", async () => {
+it("queues a build (a theme in the body is ignored: puzzles have none)", async () => {
   expect((await post({ sceneId: "xw" })).status).toBe(202);
   expect(sendToBack).toHaveBeenLastCalledWith("crossword", "crossword", "generate", { sceneId: "xw" });
   await post({ sceneId: "xw", theme: "  Volcanoes   of  Iceland " });
-  expect(sendToBack).toHaveBeenLastCalledWith("crossword", "crossword", "generate", { sceneId: "xw", theme: "Volcanoes of Iceland" });
+  expect(sendToBack).toHaveBeenLastCalledWith("crossword", "crossword", "generate", { sceneId: "xw" });
   await post({ sceneId: "xw", theme: "   " });
   expect(sendToBack).toHaveBeenLastCalledWith("crossword", "crossword", "generate", { sceneId: "xw" });
 });

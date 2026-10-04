@@ -116,7 +116,7 @@ export function rankStoredClues(clues: readonly BankClue[], answer: string, bloc
   const seen = new Set<string>();
   const out: string[] = [];
   for (const c of clues) {
-    if (c.status !== "candidate") continue;
+    if (c.approval.status !== "pending") continue;
     const t = usable(c.text, answer, blocklist);
     if (t && !seen.has(t.toLowerCase())) {
       seen.add(t.toLowerCase());
@@ -131,7 +131,7 @@ export function rankStoredClues(clues: readonly BankClue[], answer: string, bloc
 /** An approved clue that passes, if the operator approved one. */
 export function approvedClue(clues: readonly BankClue[], answer: string, blocklist: readonly string[] = []): string | null {
   for (const c of clues) {
-    if (c.status !== "approved") continue;
+    if (c.approval.status !== "approved") continue;
     const t = usable(c.text, answer, blocklist);
     if (t) return t;
   }
@@ -228,19 +228,20 @@ export async function buildPuzzle(db: BuildDb, req: CrosswordGenerateRequest, op
     const missing = placed.filter((w) => !known.get(w.answer));
     if (!missing.length) {
       const placements = layout.placements.map((p) => ({ ...p, clue: known.get(p.answer)!.text }));
-      const title = req.theme?.trim() || pick.theme || GENERAL_TITLE;
+      const title = pick.theme || GENERAL_TITLE;
+      // WP2 rework: entries carry no wordId/clueId yet, the puzzle is not built
+      // only from approved words and clues, and familyFriendly is not derived.
       const puzzle: CrosswordPuzzle = {
         id: randomUUID(),
         title,
-        theme: req.theme?.trim() || pick.theme,
         width: layout.width,
         height: layout.height,
         entries: numberEntries(placements),
-        status: cfg.autoApprove ? "ready" : "draft",
+        status: "ready",
+        familyFriendly: pick.source === "seed",
         source: pick.source,
         createdAt: now(),
         plays: [],
-        ...(model && placed.some((w) => known.get(w.answer)?.via === "polish") ? { model } : {}),
       };
       if (!opts.dryRun) await db.crosswordPuzzles.upsert(puzzle);
       const clueVia: Record<string, ClueVia> = {};
@@ -291,10 +292,7 @@ export async function topUpScenes(db: TopUpDb, opts: BuildOptions = {}): Promise
   const out: TopUpOutcome[] = [];
   const sceneIds = await db.crosswordScenes();
   if (!sceneIds.length) return out;
-  const [ready, drafts] = await Promise.all([
-    db.crosswordPuzzles.list({ status: "ready" }),
-    db.crosswordPuzzles.list({ status: "draft" }),
-  ]);
+  const ready = await db.crosswordPuzzles.list({ status: "ready" });
   for (const sceneId of sceneIds) {
     try {
       const cfg = await db.getOrInitCrosswordConfig(sceneId);
@@ -306,13 +304,8 @@ export async function topUpScenes(db: TopUpDb, opts: BuildOptions = {}): Promise
         out.push({ sceneId, outcome: "stocked" });
         continue;
       }
-      if (!cfg.autoApprove && drafts.length >= cfg.stockTarget) {
-        out.push({ sceneId, outcome: "awaiting review" });
-        continue;
-      }
       const r = await buildPuzzle(db, { sceneId }, opts);
-      if (r.puzzle.status === "ready") ready.push(r.puzzle);
-      else drafts.push(r.puzzle);
+      ready.push(r.puzzle);
       out.push({ sceneId, outcome: "built", puzzleId: r.puzzle.id, words: r.puzzle.entries.length, status: r.puzzle.status });
     } catch (err) {
       out.push({ sceneId, outcome: "failed", error: (err as Error)?.message ?? String(err) });

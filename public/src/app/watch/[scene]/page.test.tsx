@@ -1,6 +1,6 @@
 /**
  * /watch/:scene — only the crossword hand-off is pinned here: a crossword
- * scene opened on the weather page is sent to /watch/crossword/:scene with its
+ * scene opened on the weather page is sent to /crossword/:scene with its
  * query, and a globe scene stays and draws the globe surface. The globe, the
  * director and the data hooks are stubbed; each has its own suite.
  */
@@ -52,7 +52,7 @@ describe("/watch/:scene surface hand-off", () => {
     serveScenes("crossword");
     render(<SceneWatchPage />);
     await flush();
-    expect(mockReplace).toHaveBeenCalledWith("/watch/crossword/atlantic?token=tok");
+    expect(mockReplace).toHaveBeenCalledWith("/crossword/atlantic?token=tok");
     expect(screen.queryByTestId("watch-surface")).toBeNull();
   });
 

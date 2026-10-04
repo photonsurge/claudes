@@ -16,7 +16,7 @@ import Chip from "@mui/material/Chip";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { sceneSurface, watchPath, type SceneMeta } from "@photonsurge/shared/control";
+import { sceneSurface, outputPath, type SceneMeta } from "@photonsurge/shared/control";
 import type { CrosswordPublicState } from "@photonsurge/shared/crossword";
 import AdminPageShell from "../../AdminPageShell";
 import MiniGrid from "../puzzles/MiniGrid";
@@ -52,7 +52,7 @@ export default function DeskPage({ sceneId }: { sceneId: string }) {
   const name = scene?.name ?? sceneId;
   const notCrossword = scene && sceneSurface(scene) !== "crossword";
   const watchHref = scene
-    ? `${watchPath(scene)}${scene.watchToken ? `?token=${encodeURIComponent(scene.watchToken)}` : ""}`
+    ? `${outputPath(scene)}${scene.watchToken ? `?token=${encodeURIComponent(scene.watchToken)}` : ""}`
     : null;
   const spot = state?.spotlight ? state.entries.find((e) => e.id === state.spotlight!.entryId) : undefined;
   const solved = state?.entries.filter((e) => e.solved).length ?? 0;

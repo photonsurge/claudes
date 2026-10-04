@@ -73,7 +73,7 @@ it("draws the board, the spotlight and the boards", async () => {
 
 it("links Watch to the tokened crossword page and Go live to Streams", async () => {
   render(<DeskPage sceneId="xw" />);
-  await waitFor(() => expect(screen.getByRole("link", { name: "Watch" })).toHaveAttribute("href", "/watch/crossword/xw?token=tok"));
+  await waitFor(() => expect(screen.getByRole("link", { name: "Watch" })).toHaveAttribute("href", "/crossword/xw?token=tok"));
   expect(screen.getByRole("link", { name: "Go live" })).toHaveAttribute("href", "/admin/streams");
 });
 

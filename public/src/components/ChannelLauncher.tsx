@@ -10,7 +10,7 @@
  * cuts the channel to the queued shot (ChannelNowNext), so the launcher can drive
  * a running channel without opening its console. A crossword channel has no
  * director: its card shows the puzzle and its progress (ChannelPuzzleLine) and
- * links its Desk instead of /control. Watch links come from `watchPath`.
+ * links its Desk instead of /control. Watch links come from `outputPath`.
  *
  * Each card carries its own ON AIR state: a live streaming run on the channel
  * (usePublicLiveRuns) is the real signal — and when that run publishes to
@@ -20,7 +20,7 @@
  */
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { MAIN_SCENE_ID, sceneSurface, watchPath, type SceneMeta } from "@photonsurge/shared/control";
+import { MAIN_SCENE_ID, sceneSurface, outputPath, type SceneMeta } from "@photonsurge/shared/control";
 import { listScenes } from "../lib/scenes";
 import { useDirector } from "../lib/director";
 import { usePublicLiveRuns, type PublicRunLite } from "../lib/stream";
@@ -119,7 +119,7 @@ function ChannelCard({ scene, run }: { scene: SceneMeta; run: PublicRunLite | nu
         <Link href={consoleHref(scene)} style={{ color: "#6b93e0", textDecoration: "none" }}>
           {crossword ? "Desk" : "Control"}
         </Link>
-        <Link href={watchPath(scene)} target="_blank" rel="noreferrer" style={{ color: "#6b93e0", textDecoration: "none" }}>
+        <Link href={outputPath(scene)} target="_blank" rel="noreferrer" style={{ color: "#6b93e0", textDecoration: "none" }}>
           Watch ↗
         </Link>
         <Link href={settingsHref(scene.id)} style={{ color: "#6b93e0", textDecoration: "none" }}>

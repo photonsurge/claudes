@@ -218,7 +218,7 @@ describe("ChannelSettingsPage", () => {
         "href",
         "/admin/crosswords/desk/word-up",
       );
-      expect(screen.getByRole("link", { name: "Watch ↗" })).toHaveAttribute("href", "/watch/crossword/word-up");
+      expect(screen.getByRole("link", { name: "Watch ↗" })).toHaveAttribute("href", "/crossword/word-up");
     });
   });
 });

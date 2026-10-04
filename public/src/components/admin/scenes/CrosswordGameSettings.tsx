@@ -61,7 +61,7 @@ function GameField({
 }
 
 /** A yes/no from the config. */
-function GameSwitch({ field, label }: { field: "enabled" | "playOffAir" | "autoApprove"; label: string }) {
+function GameSwitch({ field, label }: { field: "enabled" | "playOffAir" | "familyFriendlyOnly"; label: string }) {
   const { crossword, stageCrossword } = useSceneDraft();
   return (
     <FormControlLabel
@@ -87,7 +87,7 @@ function GameList({
   label,
   helperText,
 }: {
-  field: "themes" | "blocklist";
+  field: "blocklist";
   label: string;
   helperText: string;
 }) {
@@ -167,13 +167,11 @@ export function CrosswordDifficultySettings() {
   return (
     <SettingsCard
       id="crossword-difficulty"
-      blurb="How common a word must be to be picked (a Zipf frequency: 3 is uncommon, 5 is everyday), and the themes a special puzzle draws from."
+      blurb="How common a word must be to be picked (a Zipf frequency: 3 is uncommon, 5 is everyday)."
     >
       <Box sx={row}>
         <GameField field="minZipf" label="Word frequency floor" integer={false} />
-        <GameField field="themeEvery" label="Themed puzzle every" unit="puzzles" />
       </Box>
-      <GameList field="themes" label="Themes" helperText="One per line, e.g. weather, space. Every N-th puzzle uses the next one; 0 above = never." />
     </SettingsCard>
   );
 }
@@ -187,7 +185,7 @@ export function CrosswordPuzzleSettings() {
     >
       <Box sx={row}>
         <GameField field="stockTarget" label="Stock target" unit="puzzles" />
-        <GameSwitch field="autoApprove" label="Auto-approve new puzzles" />
+        <GameSwitch field="familyFriendlyOnly" label="Family friendly only" />
       </Box>
       <Box sx={row}>
         <GameField field="minWords" label="Fewest words" />

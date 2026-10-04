@@ -20,7 +20,6 @@ import { font } from "../../../../theme/tokens";
 import { fmtTime, type PuzzleRow } from "./api";
 
 export const STATUS_COLOR: Record<CrosswordPuzzleStatus, "default" | "success" | "error"> = {
-  draft: "default",
   ready: "success",
   rejected: "error",
 };

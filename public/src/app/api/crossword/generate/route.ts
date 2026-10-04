@@ -40,7 +40,8 @@ async function POST__impl(req: Request) {
   if (!(await db.crosswordScenes()).includes(sceneId)) {
     return NextResponse.json({ error: "no such crossword channel" }, { status: 404, headers: NO_CACHE });
   }
-  const data: CrosswordGenerateRequest = theme ? { sceneId, theme } : { sceneId };
+  // WP6 rework: puzzles have no theme now (§4.1); a theme in the body is checked and ignored.
+  const data: CrosswordGenerateRequest = { sceneId };
   await sendToBack(CROSSWORD_JOB_DOMAIN, CROSSWORD_JOB_TYPE, "generate", data);
   return NextResponse.json({ queued: true }, { status: 202, headers: NO_CACHE });
 }
