@@ -6,6 +6,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DEFAULT_CONTROL_STATE, type ControlState } from "@photonsurge/shared/control";
 import { DEFAULT_DIRECTOR_CONFIG } from "@photonsurge/shared/director";
+import { defaultShortFormat } from "@photonsurge/shared/short-format";
 import SceneDraftProvider, { useSceneDraft } from "./SceneDraft";
 
 const fetchState = jest.fn();
@@ -26,6 +27,13 @@ jest.mock("../../../lib/director", () => ({
   fetchDirectorConfig: (...a: unknown[]) => fetchConfig(...a),
   patchDirectorConfig: (...a: unknown[]) => patchDirector(...(a as [])),
   mergeConfig: (prev: object, patch: object) => ({ ...prev, ...patch }),
+}));
+
+const getFormat = jest.fn();
+const saveFormat = jest.fn();
+jest.mock("../../../lib/short-formats", () => ({
+  getShortFormat: (...a: unknown[]) => getFormat(...a),
+  saveShortFormat: (...a: unknown[]) => saveFormat(...a),
 }));
 
 /** A socket whose SCENE_STATE handler the test can fire by hand. */
@@ -199,5 +207,107 @@ describe("SceneDraftProvider", () => {
     expect(screen.getByTestId("pace")).toHaveTextContent("9");
     // …while an untouched field adopts the desk's value.
     expect(screen.getByTestId("hold")).toHaveTextContent("5000");
+  });
+});
+
+/** A format editor's card: the same draft, plus the third document. */
+function FormatCard() {
+  const { ready, format, stage, stageDirector, stageFormat, save, dirty, saveError, loadError } = useSceneDraft();
+  if (loadError) return <span data-testid="load-error">{loadError}</span>;
+  if (!ready || !format) return <span>loading</span>;
+  return (
+    <div>
+      <span data-testid="name">{format.name}</span>
+      <span data-testid="budget">{format.template.budgetMs}</span>
+      <span data-testid="dirty">{String(dirty)}</span>
+      {saveError && <span data-testid="error">{saveError}</span>}
+      <button onClick={() => stage({ readPaceCps: 9 })}>set pace</button>
+      <button onClick={() => stageDirector({ minQuakeMag: 6 })}>set quake</button>
+      <button onClick={() => stageFormat({ name: "Europe", template: { ...format.template, budgetMs: 90_000 } })}>
+        set template
+      </button>
+      <button onClick={save}>Save</button>
+    </div>
+  );
+}
+
+describe("SceneDraftProvider with a short format (the third document)", () => {
+  const renderFormat = () =>
+    render(
+      <SceneDraftProvider sceneId="short-eu" formatId="short-eu">
+        <FormatCard />
+      </SceneDraftProvider>,
+    );
+
+  beforeEach(() => {
+    getFormat.mockReset();
+    saveFormat.mockReset();
+    getFormat.mockResolvedValue({ ok: true, data: defaultShortFormat("short-eu", "Round-up") });
+    saveFormat.mockImplementation(async (id: string, patch: object) => ({ ...defaultShortFormat(id, "Round-up"), ...patch }));
+  });
+
+  it("loads the short settings with the look and director config, once each", async () => {
+    renderFormat();
+    expect(await screen.findByTestId("name")).toHaveTextContent("Round-up");
+    expect(getFormat).toHaveBeenCalledTimes(1);
+    expect(getFormat).toHaveBeenCalledWith("short-eu");
+    expect(fetchState).toHaveBeenCalledWith("short-eu");
+    expect(fetchConfig).toHaveBeenCalledWith("short-eu");
+  });
+
+  it("one Save writes all three documents, once each", async () => {
+    renderFormat();
+    await screen.findByTestId("name");
+
+    fireEvent.click(screen.getByRole("button", { name: "set pace" }));
+    fireEvent.click(screen.getByRole("button", { name: "set quake" }));
+    fireEvent.click(screen.getByRole("button", { name: "set template" }));
+    expect(screen.getByTestId("budget")).toHaveTextContent("90000");
+    expect(saveFormat).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByTestId("dirty")).toHaveTextContent("false"));
+
+    expect(patchSceneMock).toHaveBeenCalledTimes(1);
+    expect(patchSceneMock.mock.calls[0][1]).toEqual({ readPaceCps: 9 });
+    expect(patchDirector).toHaveBeenCalledWith("short-eu", { minQuakeMag: 6 });
+    expect(saveFormat).toHaveBeenCalledTimes(1);
+    expect(saveFormat.mock.calls[0][0]).toBe("short-eu");
+    expect(saveFormat.mock.calls[0][1]).toMatchObject({ name: "Europe", template: { budgetMs: 90_000 } });
+    // The saved copy is the new base.
+    expect(screen.getByTestId("name")).toHaveTextContent("Europe");
+  });
+
+  it("sends only the short settings when only they were staged", async () => {
+    renderFormat();
+    await screen.findByTestId("name");
+    fireEvent.click(screen.getByRole("button", { name: "set template" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveFormat).toHaveBeenCalledTimes(1));
+    expect(patchSceneMock).not.toHaveBeenCalled();
+    expect(patchDirector).not.toHaveBeenCalled();
+  });
+
+  it("keeps the draft when the short settings fail to save", async () => {
+    saveFormat.mockRejectedValue(new Error("no such format"));
+    renderFormat();
+    await screen.findByTestId("name");
+    fireEvent.click(screen.getByRole("button", { name: "set template" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByTestId("error")).toHaveTextContent("no such format");
+    expect(screen.getByTestId("dirty")).toHaveTextContent("true");
+    expect(screen.getByTestId("name")).toHaveTextContent("Europe");
+  });
+
+  it("says when the short settings can't be read", async () => {
+    getFormat.mockResolvedValue({ ok: false, error: "no such format" });
+    renderFormat();
+    expect(await screen.findByTestId("load-error")).toHaveTextContent("no such format");
+  });
+
+  it("a channel page never reads a format", async () => {
+    renderProvider();
+    await screen.findByTestId("pace");
+    expect(getFormat).not.toHaveBeenCalled();
   });
 });

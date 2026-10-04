@@ -11,7 +11,7 @@
  * the iframe renders at that size and is scaled down to the pane's width —
  * a small viewport would reflow the chrome into something that never airs.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -28,6 +28,13 @@ interface Props {
   onPlay: () => void;
   onStop: () => void;
   busy?: boolean;
+  /** The Play button's label ("Play sample" on a format's editor). */
+  playLabel?: string;
+  /** Overrides when Play is enabled (default: a script with clips is selected) —
+   *  the format editor's Play sample can generate a script when there is none. */
+  canPlay?: boolean;
+  /** Replaces the line under the header (what Play will do). */
+  note?: ReactNode;
 }
 
 /** The broadcast canvas the on-air chrome is designed for. */
@@ -50,7 +57,7 @@ function useWidth(el: HTMLElement | null): number {
   return width;
 }
 
-export default function PreviewPane({ preview, script, onPlay, onStop, busy }: Props) {
+export default function PreviewPane({ preview, script, onPlay, onStop, busy, playLabel = "Play", canPlay, note }: Props) {
   const playing = preview.mode === "script";
   const [frame, setFrame] = useState<HTMLDivElement | null>(null);
   const scale = useWidth(frame) / CANVAS_W;
@@ -61,8 +68,8 @@ export default function PreviewPane({ preview, script, onPlay, onStop, busy }: P
         <Typography variant="overline" color="text.secondary" sx={{ flex: 1 }}>
           Preview · <Box component="code" sx={{ fontFamily: font.mono }}>/watch/{preview.sceneId}</Box>
         </Typography>
-        <Button variant="contained" onClick={onPlay} disabled={busy || !preview.exists || !script || !script.clipCount}>
-          Play
+        <Button variant="contained" onClick={onPlay} disabled={busy || !preview.exists || !(canPlay ?? (!!script && !!script.clipCount))}>
+          {playLabel}
         </Button>
         <Button variant="outlined" onClick={onStop} disabled={busy || !preview.exists || !playing}>
           Stop
@@ -80,9 +87,10 @@ export default function PreviewPane({ preview, script, onPlay, onStop, busy }: P
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
             {playing
               ? `Director: playing a script${script && preview.scriptId === script.id ? " — this one" : ""}.`
-              : script
-                ? `Play runs “${script.title}” from the first clip. Previews never reach the as-run log.`
-                : "Select a script to preview it."}
+              : note ??
+                (script
+                  ? `Play runs “${script.title}” from the first clip. Previews never reach the as-run log.`
+                  : "Select a script to preview it.")}
           </Typography>
           <Box
             ref={setFrame}

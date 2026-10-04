@@ -16,6 +16,8 @@ import {
   type ControlState,
 } from "@photonsurge/shared/control";
 import { DEFAULT_DIRECTOR_CONFIG, type DirectorConfig } from "@photonsurge/shared/director";
+import type { ShortFormat } from "@photonsurge/shared/short-format";
+import type { ShortFormatPatch } from "../../../lib/short-formats";
 import { mergeConfig } from "../../../lib/director";
 import { SceneDraftContext, type SceneDraftValue } from "./SceneDraft";
 
@@ -24,9 +26,12 @@ export type DraftHarness = RenderResult & {
   staged: Partial<ControlState>[];
   /** Every DirectorConfig delta staged, in order. */
   stagedDirector: Partial<DirectorConfig>[];
+  /** Every short-settings delta staged, in order (format editor cards). */
+  stagedFormat: ShortFormatPatch[];
   /** The most recent delta of each kind — what a test usually asserts on. */
   last: () => Partial<ControlState>;
   lastDirector: () => Partial<DirectorConfig>;
+  lastFormat: () => ShortFormatPatch;
 };
 
 export function renderInDraft(
@@ -35,10 +40,13 @@ export function renderInDraft(
     sceneId?: string;
     state?: Partial<ControlState>;
     config?: Partial<DirectorConfig>;
+    /** A format editor card's short settings (absent = a channel page). */
+    format?: ShortFormat;
   } = {},
 ): DraftHarness {
   const staged: Partial<ControlState>[] = [];
   const stagedDirector: Partial<DirectorConfig>[] = [];
+  const stagedFormat: ShortFormatPatch[] = [];
 
   const result = render(
     <TestDraftProvider
@@ -47,6 +55,8 @@ export function renderInDraft(
       initialConfig={mergeConfig(DEFAULT_DIRECTOR_CONFIG, opts.config ?? {})}
       onStage={(over) => staged.push(over)}
       onStageDirector={(over) => stagedDirector.push(over)}
+      initialFormat={opts.format ?? null}
+      onStageFormat={(over) => stagedFormat.push(over)}
     >
       {ui}
     </TestDraftProvider>,
@@ -56,8 +66,10 @@ export function renderInDraft(
     ...result,
     staged,
     stagedDirector,
+    stagedFormat,
     last: () => staged[staged.length - 1],
     lastDirector: () => stagedDirector[stagedDirector.length - 1],
+    lastFormat: () => stagedFormat[stagedFormat.length - 1],
   };
 }
 
@@ -72,6 +84,8 @@ function TestDraftProvider({
   initialConfig,
   onStage,
   onStageDirector,
+  initialFormat,
+  onStageFormat,
   children,
 }: {
   sceneId: string;
@@ -79,10 +93,13 @@ function TestDraftProvider({
   initialConfig: DirectorConfig;
   onStage: (over: Partial<ControlState>) => void;
   onStageDirector: (over: Partial<DirectorConfig>) => void;
+  initialFormat: ShortFormat | null;
+  onStageFormat: (over: ShortFormatPatch) => void;
   children: ReactNode;
 }) {
   const [pending, setPending] = useState<Partial<ControlState>>({});
   const [pendingDirector, setPendingDirector] = useState<Partial<DirectorConfig>>({});
+  const [pendingFormat, setPendingFormat] = useState<ShortFormatPatch>({});
 
   const value = useMemo<SceneDraftValue>(
     () => ({
@@ -98,9 +115,18 @@ function TestDraftProvider({
         onStageDirector(over);
         setPendingDirector((prev) => ({ ...prev, ...over }));
       },
+      format: initialFormat ? ({ ...initialFormat, ...pendingFormat } as ShortFormat) : null,
+      stageFormat: (over) => {
+        onStageFormat(over);
+        setPendingFormat((prev) => ({ ...prev, ...over }));
+      },
       pending,
       pendingDirector,
-      dirty: Object.keys(pending).length > 0 || Object.keys(pendingDirector).length > 0,
+      pendingFormat,
+      dirty:
+        Object.keys(pending).length > 0 ||
+        Object.keys(pendingDirector).length > 0 ||
+        Object.keys(pendingFormat).length > 0,
       conflictKeys: [],
       saving: false,
       saveError: null,
@@ -108,9 +134,21 @@ function TestDraftProvider({
       discard: () => {
         setPending({});
         setPendingDirector({});
+        setPendingFormat({});
       },
     }),
-    [sceneId, initialState, initialConfig, pending, pendingDirector, onStage, onStageDirector],
+    [
+      sceneId,
+      initialState,
+      initialConfig,
+      initialFormat,
+      pending,
+      pendingDirector,
+      pendingFormat,
+      onStage,
+      onStageDirector,
+      onStageFormat,
+    ],
   );
 
   return <SceneDraftContext.Provider value={value}>{children}</SceneDraftContext.Provider>;

@@ -67,7 +67,8 @@ export type ShortFormatItem = ShortFormat & { scriptCount: number };
 export interface GenerateShortRequest {
   /** Absent = the default format. */
   formatId?: string;
-  scope: ShortScope;
+  /** Absent = the format's template scope (Generate fails when it has none). */
+  scope?: ShortScope;
   include?: Partial<ShortInclude>;
   budgetMs?: number;
   title?: string;

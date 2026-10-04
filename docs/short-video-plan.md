@@ -7,6 +7,9 @@
 > work package at a time (§11).
 > WP5 (formats, shared and worker) is built: `db.shortFormats`, scene `kind`, duplicate and
 > copy-look helpers, `/api/shorts/formats`, generate by `formatId`, round-up depth.
+> WP6 (formats, public) is built: the Formats section on `/admin/shorts` and the editor at
+> `/admin/shorts/formats/:id` — its own card list, one Save for look, director and short
+> settings, the YouTube video card with the token picker and preview, Play sample, Copy look from.
 > Shares two refactors with [director-break-in-plan.md](./done/director-break-in-plan.md) and
 > [director-commands-plan.md](./done/director-commands-plan.md); both are done (§3).
 

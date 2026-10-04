@@ -16,20 +16,22 @@ import Button from "@mui/material/Button";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { cardsForStagedKeys } from "./catalog";
+import { cardsForStagedKeys, stagedKeyLists } from "./catalog";
+import { useSettingsCatalog } from "./catalog-context";
 import { useSceneDraft } from "./SceneDraft";
 
 /** Above this many changed cards, Discard asks first. */
 const CONFIRM_DISCARD_OVER = 2;
 
 export default function SceneSaveBar() {
-  const { pending, pendingDirector, dirty, conflictKeys, saving, saveError, save, discard } =
-    useSceneDraft();
+  const draft = useSceneDraft();
+  const { dirty, conflictKeys, saving, saveError, save, discard } = draft;
+  const { cards } = useSettingsCatalog();
   const [confirming, setConfirming] = useState(false);
 
   if (!dirty) return null;
 
-  const changed = cardsForStagedKeys(Object.keys(pending), Object.keys(pendingDirector));
+  const changed = cardsForStagedKeys(...stagedKeyLists(draft), cards);
   const names = changed.map((c) => c.title).join(", ");
   const count = changed.length;
 

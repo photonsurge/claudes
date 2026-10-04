@@ -4,8 +4,10 @@
  * /admin/shorts — scripted short videos (docs/short-video-plan.md): generate a
  * round-up script in a format, list the saved scripts, inspect one's clips,
  * and preview it playing on its FORMAT's own scene (§5.3 — the scene a render
- * uses, so the preview is what renders). No format editor, timeline editing,
- * render or scheduling yet — those join this page as their own sections.
+ * uses, so the preview is what renders), and the Formats section (list, new,
+ * duplicate, delete; each format's editor is /admin/shorts/formats/:id). No
+ * timeline editing, render or scheduling yet — those join this page as their
+ * own sections.
  *
  * The list polls while a preview plays (see `useShortsList`), and the selected
  * script's detail reloads whenever its preview play record changes, so skipped
@@ -20,6 +22,7 @@ import Typography from "@mui/material/Typography";
 import { playFor, sceneIdForScript, type ShortScript } from "@photonsurge/shared/short-script";
 import AdminPageShell from "../AdminPageShell";
 import ClipList from "./ClipList";
+import FormatsSection from "./formats/FormatsSection";
 import GenerateForm from "./GenerateForm";
 import PreviewPane from "./PreviewPane";
 import ScriptsTable from "./ScriptsTable";
@@ -148,6 +151,8 @@ export default function ShortsPage() {
             </Box>
           </>
         )}
+
+        <FormatsSection onChanged={refresh} />
       </Stack>
     </AdminPageShell>
   );
