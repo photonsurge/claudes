@@ -1,189 +1,163 @@
 # Scripted short videos — plan
 
-> **Status: IN PROGRESS** (2026-10-04). WP1-4 built and green (round-ups generate and
-> preview on `/admin/shorts`); not yet run against real data. Next: WP5 render. Planned on Fable, executed
-> by Opus sub-agents: the work packages in §10 are handed over one at a time.
-> Phase 1 is landscape video through a live run. Phase 2 is Shorts (§9).
+> **Status: IN PROGRESS** (2026-10-04). WP1-4 are built and green: round-up scripts
+> generate and preview on `/admin/shorts`, and it has run against local data. Two
+> tracks follow: **formats** (§5, WP5-6, a cloud agent) and **getting a video onto
+> YouTube on a schedule** (§6 and §8, WP7 and WP9). Planned on Fable, built by Opus sub-agents, one
+> work package at a time (§11).
 > Shares two refactors with [director-break-in-plan.md](./director-break-in-plan.md) and
-> [director-commands-plan.md](./director-commands-plan.md) (see §3). Whichever lands
-> first does them; the other reuses them.
+> [director-commands-plan.md](./director-commands-plan.md); both are done (§3).
 
 A routine makes a short, finite video. It opens on a place (a country, an area or the
 whole globe) with its lineup and round-up, then cuts through what is active there:
 alerts, earthquakes and volcanoes. Then it ends.
 
-**Round-ups first.** The first thing shipped is the round-up video on its own: the
-world round-up, an area round-up or a country round-up, with no event clips. The event
-switches are built but default to off, and they and the timeline editor come after
-render and scheduling (§10). An operator can open the script
-in a timeline editor, test it offline, and render it now or on a schedule. YouTube
-Shorts (portrait) are phase 2 and need a new on-air UI.
+**Round-ups first.** The first release is the round-up video on its own: the world
+round-up, an area round-up or a country round-up, with no event clips. The event
+switches are built but default to off.
 
-## 1. What exists and what doesn't
+**Formats.** A short gets its own full set of settings, the same sort of thing a
+channel has. It does not borrow a channel's. A format starts as a duplicate of a
+channel and is independent from then on (§5).
 
-- The director (`worker/src/director/loop.ts`) is an endless picker. Its only outside
-  input is `skipNonce`. A short needs a fixed sequence that ends.
-- The country kind only covers the `COUNTRY_SHOTS` catalog (about 30 countries), so
-  that is v1's subject list. A country without a computed tour airs as one framed shot.
-- Output is RTMP to YouTube through OBS. Nothing records to a file, and there is no
-  ffmpeg anywhere.
+**The three videos milestone 1 must produce**, each on a daily schedule, each a
+normal landscape YouTube video:
+
+| Video | Scope | Rough length |
+|---|---|---|
+| Europe round-up | area `europe` | 1-2 min |
+| UK round-up | country `uk` | 1-2 min |
+| Main areas round-up | `europe`, `usa`, `asia`, `australia`, `africa`, `south_america`, one after another | 5-8 min |
+
+YouTube Shorts (portrait) are phase 2 and need a new on-air UI (§10).
+
+## 1. What exists
+
+Constraints found in the code before any of this was built:
+- The director was an endless picker with one outside input, `skipNonce`.
+- The country kind only covers `COUNTRY_SHOTS` (about 30 countries) and the area kind
+  `REGION_SHOTS`, so those are the subject lists.
+- Output is RTMP to YouTube through OBS. Nothing records to a file; there is no ffmpeg.
 - `/watch` has no portrait layout.
-- Every scene in `/api/scenes` shows on the public home page.
 - An encoder's browser source shows the encoder's own bound scene, whatever scene the
   run names.
 - The one-run-per-encoder guard only counts runs that publish to YouTube.
 - A run's `scheduled` status means "go-live is queued now". Nothing can be booked for
   a later time.
 
+Built so far (WP1-4):
+
+| Where | What |
+|---|---|
+| `shared/src/short-script.ts` | script and clip types, helpers, sanitisers |
+| `shared/src/db/short-script-{model,repo}.ts` | `db.shortScripts` |
+| `shared/src/short-scenes.ts` | the two seeded scene ids and their seed look |
+| `shared/src/director.ts` | `DirectorMode` `script`, `DirectorConfig.script`, `Segment.leadSlide`, `Segment.tourDwellMs` |
+| `worker/src/director/cut.ts`, `upnext.ts`, `builders.ts` | `performCut` and the one-subject builders |
+| `worker/src/director/script-{resolve,runner,scope,template,generate}.ts` | the runner and the lineup template |
+| `worker/src/jobs/short-video.ts` | `generate`, `seedScenes` |
+| `public/src/app/api/shorts/**`, `/admin/shorts` | generate, list, clip list, preview |
+| `/admin/jobs`, group "Short videos" | seed the scenes; generate a world round-up |
+
+CLIs in `worker`: `yarn short:generate`, `yarn short:play`, `yarn seed:short-scenes`.
+
 ## 2. The script is a saved list of references
 
-A script stores what to show and for how long. It does not store built `Segment`s.
-The worker builds the segments when the script plays, from live data.
+A script stores what to show and for how long. It does not store built `Segment`s. The
+worker builds the segments when the script plays, from live data.
 
 ```ts
 // shared/src/short-script.ts
 export interface ShortClip {
   id: string;
-  /** A director segment id: "country:japan", "storm:<source>:<identifier>",
-   *  "quake:<id>", "volcano:<id>". Same form as the commands plan's
-   *  CommandTarget { type: "segment" }. */
+  /** A director segment id: "country:japan", "region:europe",
+   *  "storm:<source>:<identifier>", "quake:<id>", "volcano:<id>",
+   *  or "global:roundup" / "global:spin". */
   target: string;
   durationMs: number;
   /** Look override for this clip, same shape as DirectorConfig.kindLooks. */
   look?: KindLook;
-  /** Country and region clips: fly only the first N tour stops. */
+  /** Tour clips: fly only the first N stops. 0 = one framed shot. */
   maxStops?: number;
-  /** Country and region clips: open the deck on the place round-up, not the
-   *  nation card. Same field the commands and break-in plans add to Segment. */
+  /** Tour clips: how long the camera parks on each stop. */
+  tourDwellMs?: number;
+  /** Open the deck on the place round-up. */
   leadSlide?: "roundup";
-  /** Cached for the editor only; refreshed on every resolve. */
+  /** Cached for the UI; it is what will air. */
   label: { title: string; subtitle?: string; icon?: string };
 }
 
-/** Where a video looks. */
-export type ShortScope =
+export type ShortPlace =
   | { type: "country"; id: string }   // a COUNTRY_SHOTS id
-  | { type: "area"; id: string }      // a REGION_SHOTS id
-  | { type: "globe" };
+  | { type: "area"; id: string };     // a REGION_SHOTS id
 
-/** Which kinds of active event the template pulls in. */
+export type ShortScope =
+  | ShortPlace
+  | { type: "globe" }
+  /** Several places in one video, in this order (§4). To add in WP10. */
+  | { type: "places"; places: ShortPlace[] };
+
 export interface ShortInclude { alerts: boolean; quakes: boolean; volcanoes: boolean }
 
 export interface ShortScript {
   id: string;
+  /** The format this video is made in (§5). To add in WP5. */
+  formatId: string;
   template: "lineup";
   scope: ShortScope;
   include: ShortInclude;
   title: string;
   clips: ShortClip[];
   status: "draft" | "ready";
-  /** The latest play per scene, so a preview can't overwrite a render's record. */
-  plays?: {
-    sceneId: string;
-    playNonce: number;
-    startedAt: number;
-    endedAt?: number;
-    stopped?: boolean;
-    runId?: string;
-    clips: { id: string; startMs: number; durationMs: number }[];
-    skipped: { id: string; reason: string }[];
-  }[];
+  /** The latest play per scene. Written by the runner only. */
+  plays?: ShortScriptPlay[];
 }
 ```
 
 Why references:
 - A saved alert can expire before the render. Resolving at play time skips it, so a
   dead warning never airs.
-- The editor never needs the worker to add a clip. It reads countries, alerts, quakes
-  and volcanoes from Mongo as the rest of admin does, and writes a target string.
-- The document stays small and the Mongoose schema stays simple.
+- The UI never needs the worker to add a clip. It writes a target string.
+- The look is not baked in. A script plays in its format's current look.
 
-Clip start times are derived from order and duration, never stored. Pure helpers in
-the same file: `clipStarts`, `scriptDurationMs`, `clipAt(clips, elapsedMs)`.
-
-Persistence: `shared/src/db/short-script-{model,repo}.ts`, exposed as `db.shortScripts`.
-
-`plays` belongs to the runner. The API sanitiser never accepts it, and saving an edited
-script leaves the stored value alone. Read one with `playFor(script, sceneId)`.
-
-A clip can also carry `tourDwellMs`. The live channel parks 40 s on each tour stop;
-a scripted tour spreads its stops evenly across the clip (at least 8 s a stop).
+Clip start times are derived from order and duration, never stored (`clipStarts`,
+`scriptDurationMs`, `clipAt`). A play record (`playFor(script, sceneId)`) holds the
+schedule that really played, the clips skipped and why, and whether it finished or was
+stopped. The API sanitiser never accepts play records.
 
 ## 3. Script mode in the director
 
-`DirectorMode` becomes `"off" | "auto" | "script"`. `DirectorConfig` gains:
+`DirectorMode` is `"off" | "auto" | "script"`. A scene plays a script when its director
+config has `mode: "script"` and
 
 ```ts
-script?: { scriptId: string; fromClip: number; playNonce: number; record: boolean };
+script: { scriptId: string; fromClip: number; playNonce: number; record: boolean };
 ```
 
-Setting mode to `script` and bumping `playNonce` starts a play. This is the same
-Mongo-polled pattern as `skipNonce`, so the editor (public) and the render job
-(worker) start a play the same way. Both new fields must go in
-`director-config-model.ts` (the enum on line 23 and the new sub-document), or strict
-Mongoose drops them.
+A new `playNonce` starts a play; `mode: "off"` stops it. This is the same Mongo-polled
+pattern as `skipNonce`, so the admin UI and the worker's render job start a play the
+same way.
 
-**A separate runner, not a branch in `tick()`.** New file
-`worker/src/director/script-runner.ts` with its own 250 ms interval:
-- The auto loop's tick is 1 s and is held up whenever a candidate pool build is slow.
-  A script must not wait behind another scene's pool build.
-- Cuts follow an absolute schedule: clip *i* starts at `t0 + sum of earlier durations`.
-  Lateness never accumulates, so the total length is exact to one tick.
-- On start it resolves every clip up front (`resolveClip`), drops the ones whose
-  subject is gone, and records them in the play record's `skipped`.
-- `upNext` is the next few real clips, so `/watch` pre-warms their focus bundles.
-- It heartbeats every 2.5 s like the auto loop.
-- At the end it emits inactive, sets the scene's mode back to `off`, and stamps
-  the play record.
-- `record: false` (editor previews) skips the as-run log. Otherwise every preview
-  would add an `AirRun` to `/admin/runs`.
-- **Stopping.** Setting the scene's mode to `off` stops a play. The runner sees the
-  scene leave script mode, emits inactive, and stamps the play record's `endedAt` with
-  `stopped: true` so the render job can tell a stop from a finish. The leftover
-  `script` object on the config is inert; `mode` alone decides whether a script plays.
-- **Switching from auto.** The auto loop emits inactive when a scene leaves auto. If the
-  new mode is `script` it must skip that emit, or it can land after the script's first
-  cut. The two seeded scenes are never in auto, so this only guards operator error.
+The runner (`worker/src/director/script-runner.ts`):
+- runs on its own 250 ms timer, so a script never waits behind the auto loop's pool
+  builds;
+- resolves every clip up front, drops the ones whose subject is gone, and records why;
+- cuts on an absolute schedule, so lateness never accumulates;
+- cuts through `performCut`, the same path the live director uses;
+- ends by standing the scene down, setting the mode back to `off` and stamping the
+  play record;
+- writes no as-run log when `record` is false, so previews don't fill `/admin/runs`;
+- does not replay after a worker restart: the stored play record holds the nonce.
 
-**Shared refactors** (pure, no behaviour change, existing tests stay green):
-- Extract the cut bookkeeping in `loop.ts` (lines 330-401: `spinEpoch`,
-  `cutTransitionMs`, seq, `endsAt`, emit, `airLogCut`) into `performCut(r, next, pool,
-  meta)`. That is the signature the break-in plan specifies.
-- Factor single-item builders out of `candidates.ts`: one per kind the template
-  uses, named as the break-in plan names them (`countryCandidate`, `regionCandidate`,
-  `stormCandidate`, `quakeCandidate`, `volcanoCandidate`, `summaryCandidate`), each
-  called by the existing loop it came from. **Done:** they live in
-  `worker/src/director/builders.ts`; `performCut` lives in `cut.ts`.
-- `performCut` writes `spinEpoch` and `cutTransitionMs` onto the segment it is given,
-  so `resolveClip` must return a fresh segment for every airing.
-- `resolveClip(db, cfg, clip)` in `worker/src/director/script-resolve.ts` splits the
-  target with `focusSubjectOf`, loads the one document, calls the builder, then applies
-  `durationMs`, `look` and `maxStops`.
-
-**Fixed scenes, not one per script.** Two seeded scenes, `shorts` (render) and
-`shorts-preview` (editor), modelled on `seedSimpleScenes.ts`. Their ControlState and
-DirectorConfig carry the shorts' brand, look, widgets and transition pace, all editable
-on `/admin/scenes/:id`. They need a flag that keeps them off the public home page and
-the channel launcher.
-
-The on-air client needs no change. It reacts to `director:state` for its scene id. The
-operator surfaces do, because they all treat any mode but `auto` as off:
-- `DirectorPanel.tsx` lines 82, 101 and 111: script mode shows as off, and the toggle
-  would switch a playing script to auto.
-- `admin/scenes/DirectorSettings.tsx` lines 52-53: the chip shows a grey "Off".
-- `app/control/page.tsx` line 86: the settings form opens as if the director were off.
-- `app/api/scenes/route.ts` line 81: cloning a scene copies the source's `script`
-  object. Strip it.
-Each should show "playing a script" with a Stop button.
+Operator screens (`/control`, the director panel, the scene settings chip) show
+"Playing a script" with a Stop.
 
 ## 4. The lineup template
 
-One template, `buildLineup(db, cfg, scope, include, budgetMs)` in
-`worker/src/director/script-template.ts`. The scope and the include switches give
-every variant: a country's alerts, an area's quakes and volcanoes, a global round-up
-of everything.
+One template, `buildLineup` in `worker/src/director/script-template.ts`. A scope and
+three include switches give every variant.
 
-**1. The opener, by scope.**
+**The opener, by scope.**
 
 | Scope | Opening clip | What it carries |
 |---|---|---|
@@ -191,95 +165,177 @@ of everything.
 | area | `region:<id>` | a tour of the area's top countries and the region deck |
 | globe | `global:roundup` | the world round-up spin: the narrative and its hotspot stops |
 
-- A tour's natural length is `stops x (transition + dwell)`, which can pass a minute on
-  its own. `maxStops` is set so the opener takes about 40% of the budget.
+- A scripted tour spreads its stops evenly across the clip, at least 8 s a stop. The
+  live channel parks 40 s on each.
 - A one-country area (the UK, a US band) has no tour. It airs as one framed shot.
-- `global:roundup` is a new target that resolves to the freshest world round-up. With
-  none fresh, it is a plain world spin.
 
-**2. The events, by scope and by the include switches.**
+**Round-up only** (no include switch on) is the default and the first release:
+- The video is the opener, leading with the round-up, then a short closing wide shot.
+- The opener runs as long as the round-up takes to read at the format's reading pace.
+  The budget never cuts a round-up short.
+- A place with no round-up, or a globe with no fresh world round-up, is an error with
+  a reason, not a video.
+
+**With events** (switches on):
 
 | Kind | What counts as active | In a country | In an area | Globe |
 |---|---|---|---|---|
-| alerts | active, at or above the scene's `minAlertSeverity`, with a polygon | `alertCountryCode` matches | matches a member country | all |
+| alerts | active, at or above `minAlertSeverity`, with a polygon | `alertCountryCode` matches | matches a member country | all |
 | quakes | inside the 48 hour live window, at or above `minQuakeMag` | inside the country polygon, or offshore inside its bbox and in no other country | inside the region bbox | all |
 | volcanoes | erupting or in unrest | same test as quakes | inside the region bbox | all |
 
-- Thresholds come from the `shorts` scene's director config, so they are tuned where
-  the live channels' are.
-- Country polygons are on the Country docs and `shared/src/geo/pointInPolygon.ts`
-  exists. Filter by bbox first so only a few points reach the polygon test.
+- The opener takes about 40% of the budget, events fill the rest, and any budget left
+  goes back to the opener.
+- Events are ranked by the director's own scores. The best of each included kind goes
+  in first, then the rest, one per hazard type before a second of the same type.
+- Area and globe videos take at most three alerts per country.
+- The budget is the only limit on how many.
 - Regions are bbox-only, so an area's quakes and volcanoes can include a neighbour's
-  near the edge. Alerts don't have this problem.
+  near the edge.
 
-**3. Picking and ordering.** Events are ranked by the director's own scores (quake
-`40 + mag x 10`, alert and volcano `50 + severity x 12`):
-- the best event of each included kind goes in first, so a kind with anything active
-  always appears;
-- then the rest by score, taking one per hazard type before a second of the same type;
-- area and globe videos take at most three events per country, the cap the live pool
-  uses, so one busy met service can't fill the video;
-- the budget is the only limit on how many. The editor lists everything left out.
+**Several places in one video** (`places` scope, the main areas round-up):
+- One clip per place, in the order given. Each is that place's opener: its tour, with
+  its round-up leading, as long as the round-up takes to read.
+- The list mixes countries and areas. "USA" and "Australia" are countries; "Europe",
+  "Asia", "Africa" and "South America" are areas.
+- A place with no round-up is left out and named in the result. With none left, it is
+  an error.
+- It closes on a world spin.
+- It is round-up only. The event switches don't apply to it yet.
+- The as-run chapters give the video one YouTube chapter per place, with no extra work.
+- Each place writes its round-up at its own local hours, so some are hours older than
+  others when the video is made. The schedule's freshness rule covers this (§8).
 
-**4. The close.** A wide shot of the scope: the country or area framed with
-`maxStops: 0`, or a world spin.
+Default budget is 75 s. No narration yet: the music bed plays, and the presenter comes
+later ([presenter-plan.md](./presenter-plan.md)).
 
-**Round-ups.** A country or region shot already shows its place round-up as the deck's
-second slide, when that place has `roundupEnabled` and a round-up exists. The world
-round-up already rides the global spin. So every scope airs its round-up today with no
-new on-air work. Two additions make it a proper round-up video:
-- `leadSlide: "roundup"` on a country or area opener, set by the template when a
-  round-up exists, so the prose leads. The clip's floor then includes its read time.
-- Place round-ups regenerate on a 12 hour cycle, so a scheduled video can show one
-  that is hours old. A schedule can ask for a fresh one first (§8).
+## 5. Formats: a short's own settings
 
-**Round-up only** (no include switch on) is the default and the first release:
-- The video is the opener, leading with the round-up, then the close.
-- The opener runs its natural length: the longer of its tour and the round-up's read
-  time (`shared/src/reading-pace.ts`). The budget never cuts a round-up short. It only
-  limits how many event clips are added.
-- A country or area with no round-up, or a globe with no fresh world round-up, is an
-  error with a reason, not a video. Place round-ups are switched on per place at
-  `/admin/place-roundups`.
+Today every short plays on one seeded scene, `shorts`, and previews on a second,
+`shorts-preview`. That gives one look for every video, two scenes to keep in step, and
+nowhere to put settings that only a short has.
 
-**A quiet scope.** With switches on but nothing active, the video is the opener and
-the close, and the opener gets the unused budget back. A schedule can choose to skip
-those days (§8).
+### 5.1 Duplicated, not bound
 
-Default budget is 75 s (`DEFAULT_SHORT_BUDGET_MS`). It is a parameter of the generate
-job and, later, a field on the schedule; it is not a scene setting. No narration in v1. The audio
-bed plays, and the presenter LLM comes later (presenter-llm-plan).
+A **format** is a named kind of short video: "Country round-up", "World round-up",
+later "Portrait alert". It owns everything that decides how its videos look and what
+goes in them. A script or a schedule picks one.
 
-## 5. Timeline editor: `/admin/shorts` and `/admin/shorts/:id`
+- A format is made by **duplicating** a channel or another format. The copy is
+  complete, and there is no link back. Changing the channel later changes nothing in
+  the format.
+- **Copy look from…** re-copies on demand, after a confirm. It is the only way a
+  channel's later changes reach a format.
+- Binding a short to a channel was the alternative. It was rejected because shorts will
+  go their own way: portrait layout, different chrome, different pacing. A shared
+  setting would have to be right for both.
 
-One track of clips in v1.
-- **Track:** blocks with width proportional to duration. Drag to reorder, drag the
-  right edge to resize, duplicate, delete. Total length and budget shown above.
-- **Add clip:** a picker by kind. Countries come from `COUNTRY_SHOTS`. Alerts, quakes
-  and volcanoes come from the existing Mongo-backed routes, filtered to the script's
-  scope by default.
-- **Inspector:** duration, look override and `maxStops` for the selected clip.
-- **Preview:** `/watch/shorts-preview` in an iframe. "Play from here" patches the
-  preview scene's director config (`fromClip`, bumped `playNonce`, `record: false`).
-  The playhead follows `director:state` (`seq` and `startedAt`).
-- **Minimum duration:** a country clip's floor is its tour length for the chosen
-  `maxStops`. Other kinds use the deck's read time when it can be estimated. A clip
-  under its floor shows a warning, not a block. This is the open shot-budget problem
-  from deck-scroll-pacing-plan.
-- **Stale clips:** a clip whose subject is no longer in Mongo is flagged in place.
-- **Regenerate:** rebuild from the template, after a confirm.
-- **Save:** staged edits and one Save, like the scene settings Save bar.
-- **Render:** opens the render form (§6.1) for an offline test or a live run, now or
-  at a set time.
+### 5.2 What a format owns
 
-No free scrubbing. The director only runs forward, so "play from clip N" is the honest
-preview.
+**Its own scene.** A hidden scene document and director config, created by the
+duplicate. That is the on-air look, and every channel setting that applies to a short
+works on it unchanged:
 
-Conventions: MUI v9 with `src/theme/` tokens; track, clip block, inspector, picker and
-preview each in their own file; routes wrapped in `withApiLog` and admin-gated.
+| Applies as it is | Not used by a short |
+|---|---|
+| on-air widgets, report content, deck slides, crawl | director kinds, weights and favourites (the script picks the content) |
+| theme, camera idle motion, music bed, reading pace | stream slots and chat |
+| about card, YouTube description and thumbnail | |
+| look per shot type, transition time, alert and quake thresholds | |
 
-Later tracks, added only when a template needs them: captions, audio mood, narration,
-sponsor slot.
+**Its short settings.** A new document, keyed by the same id:
+
+```ts
+// shared/src/short-format.ts
+export interface ShortFormat {
+  /** Also the id of the scene this format owns. */
+  id: string;
+  name: string;
+  /** What Generate starts from. A request can override any of it. */
+  template: { scope?: ShortScope; include: ShortInclude; budgetMs: number };
+  opener: {
+    /** Open the deck on the round-up. */
+    leadWithRoundup: boolean;
+    /** Fly the tour, or hold one framed shot. */
+    tour: boolean;
+    minTourDwellMs: number;
+  };
+  close: { enabled: boolean; ms: number };
+  /** "{place} round-up · {date}". Resolved at generate into the script's title,
+   *  which becomes the video's title. */
+  titlePattern: string;
+  /** What the render form and schedules start from. */
+  render: { encoderId?: string; accountId?: string; privacy: YoutubePrivacy };
+  /** "portrait" arrives with phase 2. */
+  layout: "landscape";
+}
+```
+
+This is where shorts diverge. Later additions land here without touching channels:
+intro and outro cards, captions, a narration voice, a sponsor slot.
+
+**A scene marker.** `SceneMeta.kind: "channel" | "short"`, persisted on the scene
+document. Format scenes are `short` and hidden. `/admin/scenes`, the stream form and
+the slot form list channels only. `/admin/shorts` lists formats.
+
+### 5.3 Where a short plays
+
+On its format's own scene, for both preview and render. So the preview is exactly what
+renders, and `shorts-preview` is retired.
+
+- One play per format at a time.
+- A render owns its format while it runs. Preview Play is refused, with the reason.
+- A scheduled render that fires during a preview takes over. The preview pane then
+  shows the render.
+
+### 5.4 How the rest uses a format
+
+- **Generate** takes `formatId`. Scope, switches and budget default from the format's
+  template. Thresholds, holds and reading pace come from its scene. `opener`, `close`
+  and `titlePattern` shape the script.
+- **Scripts** store `formatId`. A script with none uses the default format.
+- **Render** (§6) runs on the format's scene and starts from its render defaults.
+- **Schedules** (§8) carry `formatId`.
+- A script is not a snapshot of the look. Change a format and its existing scripts
+  play in the new look next time.
+
+### 5.5 The format editor
+
+`/admin/shorts/formats/:id`, plus a Formats section on `/admin/shorts` (list, New
+format, Duplicate, Delete).
+
+- **New format:** a name and "duplicate from" (any channel or format). From a channel
+  the short settings start at defaults. From a format they are copied too.
+- **One Save.** The scene settings draft already owns two documents (look and
+  director). It gains a third, the short settings, and still saves once.
+- **Its own card list**, separate from the channel page's, so the two can diverge. The
+  card components are shared. A card that needs to differ for shorts is forked at that
+  point, not before.
+
+| Group | Cards |
+|---|---|
+| Video | Template · Opener and close · Title · Render defaults |
+| Layout | On-air widgets · Report · Deck slides · Crawl |
+| Presentation | Theme · Camera · Music bed · Reading pace · Looks and thresholds |
+| Identity | About card · YouTube |
+
+- **Looks and thresholds** is new on a settings page: transition time, look per shot
+  type, minimum alert severity and quake magnitude. Those live on `/control` for
+  channels. Reuse that panel's sections.
+- **Docked preview.** The format's `/watch` page beside the cards, with Play sample:
+  it plays the format's most recent script, or generates one. It shows saved settings;
+  staged edits appear after Save.
+- **Delete** refuses while scripts or schedules use the format, and says how many. The
+  default format can't be deleted.
+
+### 5.6 Moving what's built
+
+- The seed creates the default format on scene `shorts` and stops creating
+  `shorts-preview`. An existing `shorts-preview` is left alone, to delete from
+  `/admin/scenes`.
+- `generate`'s `sceneId` becomes `formatId`.
+- `/api/shorts/:id/play` and `/api/shorts/stop` act on the script's format scene.
+- The `/admin/jobs` button becomes "Seed default short format".
 
 ## 6. Render
 
@@ -287,22 +343,24 @@ Three ways to get a video out:
 
 | Option | What it is | Cost |
 |---|---|---|
-| C. Bounded live run | Go live on a chosen encoder with the `shorts` scene, play the script, end the run. The YouTube VOD is the video. | Small. Reuses `goLive`, `finishRun`, the thumbnail, chapters and the as-run pages. |
+| C. Bounded live run | Go live on a chosen encoder with the format's scene, play the script, end the run. The YouTube VOD is the video. | Small. Reuses `goLive`, `finishRun`, the thumbnail, chapters and the as-run pages. |
 | A. OBS record | `StartRecord` on an encoder, no broadcast, then upload the file. | New OBS calls, a way to get the file off gds1, an upload step. |
-| B. Playwright | Headless Chrome records `/watch/shorts`. | webm needs ffmpeg; headless WebGL may render in software. |
+| B. Playwright | Headless Chrome records the format's `/watch` page. | webm needs ffmpeg; headless WebGL may render in software. |
 
 **Phase 1 is C.** It needs no new infrastructure. A VOD has a few seconds of slop at
 the head and tail that the API can't trim, and a live VOD is not a Short. **Phase 2 is
-A**, because Shorts need an uploaded portrait file (§9). B is dropped.
+A**, because Shorts need an uploaded portrait file (§10). B is dropped.
 
 ### 6.1 The render form
 
-One dialog, opened from the editor's Render button and from a schedule (§8):
+One dialog, opened from a script's Render button and from a schedule (§8). It starts
+from the format's render defaults.
 
 - **Encoder:** the operator picks it. The picker shows what each one is doing (§6.2).
 - **YouTube channel:** the same connected-account select the streams form uses. Shorts
   go on the same channel as the live streams unless another is picked.
-- **Privacy:** public, unlisted or private. Default unlisted.
+- **Publish as:** public, unlisted or private. Default unlisted. It is applied when the
+  run ends (§6.3).
 - **Mode:** *Offline test* (§7) or *Live*.
 - **When:** *Now*, or *At* a date and time. Repeating runs live on schedules (§8).
 
@@ -310,8 +368,7 @@ One dialog, opened from the editor's Render button and from a schedule (§8):
 
 Today the form's encoder select is a bare list and the busy check only fires on submit.
 Add a pure helper `encoderOccupancy(encoders, runs, slots, schedules, now)` in `shared`,
-returned per encoder by the `/api/streams` snapshot (it already loads all four inputs
-but schedules):
+returned per encoder by the `/api/streams` snapshot:
 
 | State | Shown as |
 |---|---|
@@ -325,34 +382,71 @@ A new `EncoderSelect` component renders it and replaces the bare select on
 `/admin/streams` too. For *Now*, a live or held encoder can't be chosen. For *At*, it
 can, with a warning. The form is advisory: the render job checks again when it fires.
 
-### 6.3 Changes the run pipeline needs
+### 6.3 What YouTube sees
 
-- **`Run.script?: { scriptId: string; scheduleId?: string; offline: boolean }`**, added
-  to the run model.
+- **The video is the VOD of a short live broadcast.** It carries a "Streamed live" label,
+  and YouTube files it with the channel's past live streams, not its uploads. A true
+  upload needs a recorded file (phase 2).
+- **Going live in public pings subscribers** with "is live now" for a stream that ends
+  two minutes later. So a render always streams **unlisted**, and the chosen privacy is
+  applied when it ends. A public video then appears finished, with no live blip.
+- **The VOD starts when the broadcast goes live.** The script starts 3 s after that and
+  the run ends 5 s after the script does, so nothing is clipped. Those few seconds show
+  the format's idle globe.
+- **Title:** the script's title. **Description and thumbnail:** the format's YouTube
+  card, the same one a channel has.
+- **Chapters:** the existing as-run chapter job writes them when the run ends. YouTube
+  shows chapters only with three or more, so they appear on the main areas video and
+  not on a single-place one.
+- **Quota:** about 400 units a video (create, bind, two transitions, thumbnail,
+  description, privacy), of 10,000 a day.
+- Chat is off and nothing is announced.
+
+### 6.4 Changes the run pipeline needs
+
+- **`Run.script?: { scriptId; scheduleId?; offline; publishAs; playNonce? }`**, added
+  to the run model. `publishAs` is the privacy to apply at the end.
 - **The encoder shows its own scene, not the run's.** `provisionEncoderScene(encoderId)`
-  resolves the scene from the encoder's binding. Give it a `sceneId` override, pass
-  `shorts` for script runs, and re-provision the encoder's own scene when the run
-  finishes.
+  resolves the scene from the encoder's binding. Give it a `sceneId` override, pass the
+  script's scene for script runs, and re-provision the encoder's own scene when the run
+  finishes or fails.
 - **The busy guard only counts YouTube runs.** `activeRunForEncoder` and
-  `encoderBusyWith` must also count runs with `script` set, so an offline test holds
-  its encoder.
-- Script runs go out with chat off and announce off.
-- An offline run must not appear as live on the public home page.
+  `encoderBusyWith` must also count runs with `script` set.
+- **Unreachable OBS is a failure here.** For a live channel it is a manual handoff: the
+  run waits for an operator to paste the key. Nobody is watching a scheduled render, so
+  a script run that isn't live within 2 minutes fails.
+- **A failed render leaves nothing behind.** It stops OBS, deletes the broadcast that
+  never went live (`deleteBroadcast` exists) so the channel has no phantom "upcoming"
+  event, and restores the encoder's scene.
+- **Which scene a script plays on** comes from one helper, `sceneIdForScript(script)`:
+  the script's format when formats are in, `shorts` until then. Render never names a
+  scene itself, so it can be built on either side of the formats merge.
 
-### 6.4 The render job
+### 6.5 The choreography
 
-`worker/src/jobs/short-video.ts`, `render({ scriptId, encoderId, accountId, privacy, offline, scheduleId })`:
-1. Refuse if the encoder is busy or the script resolves to no clips. The reason is
-   recorded and shown, never silent.
-2. Create the `Run` on scene `shorts`: title from the script, `durationMs` as a safety
-   cap (script length plus two minutes).
-3. `goLive(runId)`, then wait for the run to report live.
-4. Start the script with `record: true`.
-5. When `playFor(script, "shorts")` for this play's nonce has `endedAt`, call
-   `finishRun(runId, "auto")`. A play marked `stopped` fails the render.
+No job sits waiting for the video to finish. The steps are chained by small hooks, with
+the state in Mongo, so a worker restart can't strand a render. They live in one new
+file, `worker/src/stream/script-run.ts`.
 
-The job polls Mongo while it waits, so it holds no CPU. It goes in the `mid` tier.
-`/admin/streams/:id` already shows the result, joined by scene and time window.
+1. **`short-video.render`** (a short job). Refuse, with a reason, if the encoder is busy,
+   the script's scene is already rendering, or the script resolves to no clips.
+   Otherwise create the `Run` (title from the script, privacy unlisted, `durationMs` as
+   a safety cap of script length plus two minutes) and call `goLive`. The job ends here.
+2. **On live.** `transitionToLive` calls `onScriptRunLive(run)`, which starts the script
+   on its scene after the 3 s lead-in, with `record: true`, and stores the nonce on the
+   run.
+3. **On script end.** The runner calls `onScriptPlayEnded(sceneId, play)`. It finds the
+   run by scene and nonce. A finished play ends the run after the 5 s lead-out
+   (`finishRun(runId, "auto")`), then applies `publishAs`. A stopped play fails it.
+4. **Deadline.** The run's monitor tick fails a script run still waiting for ingest
+   after 2 minutes.
+5. **Restart.** `rearmLiveRuns` already restores monitors at boot. For a live script run
+   whose play was cut short by the restart, it ends the run and marks it failed. The
+   safety cap ends anything else.
+
+`/admin/streams/:id` already shows the result, joined by scene and time window. The
+script's row on `/admin/shorts` lists its renders: status, reason if failed, and the
+YouTube link.
 
 ## 7. Offline test
 
@@ -361,25 +455,24 @@ so a pass means something.
 
 1. **Preflight report**, no side effects:
    - clips resolved and clips skipped, each with its reason;
-   - total length against the budget, and clips under their floor;
+   - total length against the budget;
    - encoder reachable (`probe`);
    - the chosen YouTube account usable (no stamped `authError`, quota not blocked).
      Read from what the worker already records, with no API call.
 2. **Rehearsal.** A `Run` with `script.offline: true`. In `goLive` that branch points
-   the encoder's browser source at `/watch/shorts` and marks the run live. It creates no
-   broadcast, sets no stream key and never calls `StartStream`.
+   the encoder's browser source at the format's `/watch` page and marks the run live.
+   It creates no broadcast, sets no stream key and never calls `StartStream`.
 3. **Evidence.** One screenshot per clip, taken from OBS itself (`GetSourceScreenshot`,
-   a new call in `obs/client.ts`) at the clip's midpoint. They show on the timeline
-   blocks and the run page. This is what a browser preview can't prove: OBS has had
-   missing fonts, software rendering and blur problems before.
+   a new call in `obs/client.ts`) at the clip's midpoint. They show against the clips
+   and on the run page. This is what a browser preview can't prove: OBS has had missing
+   fonts, software rendering and blur problems before.
 4. **Finish.** The encoder goes back to its own scene.
 
-The operator can watch a rehearsal live in the editor, because every browser on
-`/watch/shorts` sees the same cuts OBS does.
+The operator can watch a rehearsal live in the preview pane, because every browser on
+the format's `/watch` page sees the same cuts OBS does.
 
-The runner's play record (`playFor(script, "shorts")`) holds the real schedule, which
-is what the job screenshots against. Screenshots go in a new blob namespace (add it to `BLOB_NAMESPACES`), keeping
-only the latest test per script.
+Screenshots go in a new blob namespace (add it to `BLOB_NAMESPACES`), keeping only the
+latest test per script.
 
 A test that also exercises YouTube is *Live* mode with privacy set to private.
 
@@ -391,16 +484,18 @@ export interface ShortSchedule {
   id: string;
   name: string;
   enabled: boolean;
+  formatId: string;
   what:
     | { type: "script"; scriptId: string }
     | {
         type: "template";
         /** A fixed scope, or "auto": pick the country or area with the most going on. */
         scope: ShortScope | { type: "auto"; of: "country" | "area" };
-        include: ShortInclude;
+        /** Absent = the format's switches. */
+        include?: ShortInclude;
       };
-  /** Regenerate the scope's place round-up before rendering (one LLM call). */
-  refreshRoundup?: boolean;
+  /** How fresh the round-up must be, and what to do when it isn't. */
+  roundup: { maxAgeHours: number; ifStale: "refresh" | "skip" };
   /** Make no video when nothing is active in the scope. */
   skipIfQuiet?: boolean;
   when:
@@ -421,16 +516,20 @@ export interface ShortSchedule {
 ```
 
 - **A fixed script runs once. A template repeats.** A repeating schedule generates a
-  fresh script each time, because yesterday's alerts are gone. "Every morning, the
-  globe, alerts plus quakes plus volcanoes" is one repeating schedule.
+  fresh script each time, because yesterday's round-up and alerts are gone. "Every
+  morning, the world round-up" is one repeating schedule.
 - **`auto` scope:** the country or area with the highest summed event score, skipping
   any made in the last few runs.
 - **`skipIfQuiet`:** with no active event in scope, the run is recorded as `skipped`
-  and nothing renders.
-- **`refreshRoundup`:** the render job first runs the place round-up for that one
-  country or area, then renders. The `placeRoundups` job needs a single-place entry
-  point for this. If the place has round-ups switched off, or the scope is the globe,
-  the flag does nothing.
+  and nothing renders. It only applies with an include switch on.
+- **Freshness.** Round-ups are written on their own schedule, at each place's local
+  hours (the Schedule card on the round-up pages). A video made from a stale one is
+  yesterday's news. So each schedule says how old a round-up may be (default 12 h) and
+  what to do otherwise: `refresh` writes a new one for that place first (one LLM call),
+  `skip` records the run as skipped. The place round-up job needs a single-place entry
+  point for `refresh`. For a `places` scope the rule applies per place.
+- The schedule form shows when each place's round-up is next written, so the operator
+  can put the video after it.
 - **One ticker, state in Mongo.** `short-video.tick` is a 60 s repeatable job, the same
   pattern as `stream.reconcile`. It fires every enabled schedule with `nextAt <= now` by
   enqueuing `render`, then sets the next `nextAt`. A once schedule disables itself.
@@ -444,18 +543,75 @@ export interface ShortSchedule {
   wait up to a minute.
 - `nextFireAt(when, afterMs)` is a pure helper in `shared`, timezone-aware, with tests
   across both DST changes.
+- **Fire order.** Check the encoder, check freshness (refresh or skip), generate a
+  script from the format's template, then enqueue `render`.
 - **UI:** a Schedules section on `/admin/shorts`. It lists next run, last outcome and
   an enable switch, and edits through the render form plus a repeat picker (days, time,
   timezone). Bookings feed the encoder picker's "booked" state.
 
-## 9. Phase 2: Shorts (portrait)
+### 8.1 Walkthrough: the Europe round-up, every day
 
-The 16:9 on-air chrome can't be squeezed into 9:16. Phase 2 builds a new on-air UI.
+Once, by an operator:
+1. Switch round-ups on for Europe at `/admin/place-roundups`, written at 06:00.
+2. Have a format for it (the default one will do).
+3. Add a schedule: area Europe, every day at 07:00 London time, an encoder that is
+   free at that hour, publish as public, round-up no older than 12 h, refresh if stale.
+4. Press Render now once, as unlisted, and watch the result.
 
-- **A new portrait surface.** `WatchSurfacePortrait`, chosen by a scene setting
-  (`ControlState.layout: "landscape" | "portrait"`, which must also go in
-  `broadcast-state-model.ts`). The URL stays `/watch/:scene`, so OBS provisioning and
-  the editor preview don't change. Designed at 1080x1920:
+Every day at 07:00:
+1. The ticker finds the schedule due and the encoder free.
+2. Europe's round-up is an hour old, so it is used as it is.
+3. A script is generated: the Europe tour with the round-up leading, then a wide shot.
+4. The run goes live unlisted. The script plays. The run ends.
+5. The video is set public. The schedule records the run and its link.
+
+What can go wrong, and what the schedule records:
+
+| Problem | Outcome |
+|---|---|
+| Worker down at 07:00, back by 07:10 | runs late |
+| Worker down past 07:10 | `missed` |
+| Encoder busy past 07:10 | `missed: encoder busy` |
+| No round-up and the refresh fails | `failed`, with the generator's reason |
+| OBS unreachable, or no ingest in 2 minutes | `failed`; broadcast deleted |
+| YouTube quota spent or sign-in expired | `refused`, before anything is created |
+
+The UK video is the same schedule with country `uk`. The main areas video is the same
+with the six places.
+
+## 9. Timeline editor (milestone 2)
+
+`/admin/shorts/:id`. A round-up video is two clips, so the timeline waits until event
+clips are switched on in the UI.
+
+One track of clips:
+- **Track:** blocks with width proportional to duration. Drag to reorder, drag the
+  right edge to resize, duplicate, delete. Total length and budget shown above.
+- **Add clip:** a picker by kind, filtered to the script's scope by default.
+- **Inspector:** duration, look override, `maxStops` and tour dwell for the selected
+  clip.
+- **Preview:** the format's `/watch` page. "Play from here" starts the script at the
+  selected clip. The playhead follows `director:state`.
+- **Minimum duration:** a clip under the time its deck needs shows a warning, not a
+  block. This is the open shot-budget problem from deck-scroll-pacing-plan.
+- **Stale clips:** a clip whose subject is no longer in Mongo is flagged in place.
+- **Regenerate:** rebuild from the template, after a confirm.
+- **Save:** staged edits and one Save.
+
+No free scrubbing. The director only runs forward, so "play from clip N" is the honest
+preview.
+
+Later tracks, added only when a template needs them: captions, audio mood, narration,
+sponsor slot.
+
+## 10. Phase 2: Shorts (portrait)
+
+The 16:9 on-air chrome can't be squeezed into 9:16. Phase 2 builds a new on-air UI,
+and a portrait short is a **format** with `layout: "portrait"`.
+
+- **A new portrait surface.** `WatchSurfacePortrait`, chosen by the format's layout.
+  The URL stays `/watch/:scene`, so OBS provisioning and the preview don't change.
+  Designed at 1080x1920:
   - the globe fills the frame;
   - a title plate at the top;
   - one stacked deck in the lower part, reusing the existing slide components;
@@ -473,50 +629,78 @@ The 16:9 on-air chrome can't be squeezed into 9:16. Phase 2 builds a new on-air 
 - **Upload.** `videos.insert` through `apiCall`. It costs 1,600 quota units of the
   default 10,000 a day, so a handful of Shorts a day is the ceiling next to the live
   streams.
-- **Editor.** The preview takes its aspect from the scene. Templates get a shorter
-  default budget.
+- **Length.** The world round-up runs about 130 s, inside the three minute Shorts
+  limit. Portrait formats get a shorter default budget.
 
-Phase 2 gets its own plan when phase 1 is in. Recorded files also remove the head and
-tail slop from landscape videos, so the live-run render can then be retired.
+Phase 2 gets its own plan when milestone 1 is in. Recorded files also remove the head
+and tail slop from landscape videos, so the live-run render can then be retired.
 
-## 10. Work packages
+## 11. Work packages
 
-Each is one Opus sub-agent (or two in parallel where the files don't overlap). After
+Each is one Opus sub-agent, or two in parallel where the files don't overlap. When two
+run together, `shared/` is frozen for both and neither runs `./update-shared`. After
 any `shared/src` edit run `./update-shared`. Every package ends with `./test` green.
-The worker needs a restart by the user after WP3, WP5, WP6 and WP7.
+The worker needs a restart by the user after WP5, WP7 and WP9.
 
-**Milestone 1: round-up videos, rendered and scheduled.**
+**Milestone 1: the three round-up videos, on YouTube, on a schedule.**
 
 | WP | Scope | Depends on | Done when |
 |---|---|---|---|
-| 1 (done) | Shared contract: `short-script.ts` and helpers, model, repo, `db.shortScripts`, `DirectorMode` `script`, `DirectorConfig.script`, config model fields, schema parity test | none | helpers unit-tested; a script round-trips through Mongo with no dropped fields |
-| 2 (done) | Worker refactors: `performCut` and the six single-item builders (§3). No behaviour change | none | existing candidates tests pass untouched |
-| 3 (done) | Worker only. 3a: `script-resolve.ts`, `script-runner.ts`. 3b: `script-scope.ts`, `script-template.ts` (round-up only by default; event switches built but off), `generate` job. One-shot CLIs to generate and play a script | 1, 2 | fake-timer tests cover the schedule, a skipped dead subject, `fromClip`, end of script, and no as-run when `record` is false |
-| 4 (done) | Round-ups on a preview scene: the two seeded scenes and the hide-from-public flag; the deck honours `leadSlide`; `script` mode on the operator surfaces (§3); `/api/shorts`; a plain `/admin/shorts` page (generate a round-up for the globe, an area or a country; preview; delete) | 3 | an operator generates a round-up and watches it play on `/watch/shorts-preview`, round-up leading |
-| 5 | Render: `Run.script`, provision override and restore, busy guard, `render` job, render form, `encoderOccupancy` and `EncoderSelect` (§6) | 4 | a round-up goes live on a chosen encoder and ends itself; a busy encoder shows as busy and is refused with a reason |
-| 6 | Offline test: offline branch in `goLive`, preflight report, OBS screenshots (§7) | 5 | a test holds the encoder, never contacts YouTube, and leaves a screenshot per clip |
-| 7 | Scheduling: `ShortSchedule`, `nextFireAt`, `tick` job, Schedules UI, "booked" in occupancy (§8) | 5 | a once schedule fires within a minute of its time; an overdue one is marked missed |
+| 1-4 (done) | Shared contract, director refactors, runner and template, on-air and operator screens, `/admin/shorts`, admin jobs | | round-ups generate and preview |
+| 5 (cloud agent) | Formats, shared and worker (§5.2-5.4, §5.6) | 4 | a second format made from a channel generates and plays in its own look |
+| 6 (cloud agent) | Formats, public: the format editor (§5.5) | 5 | an operator duplicates a channel into a format, changes it, saves once and sees the preview change |
+| 7a | Render core, shared and worker: `Run.script`, `sceneIdForScript`, provision override and restore, busy guard, `script-run.ts` hooks, deadline, failure clean-up, publish at end, `render` job, `encoderOccupancy` (§6.3-6.5) | 4 | tests cover live, script end, a stopped play, the deadline, a restart and every clean-up path |
+| 7b | Render UI: Render button and form, `EncoderSelect`, a script's renders with status and link (§6.1-6.2) | 7a | **a round-up is on YouTube**, made from `/admin/shorts` |
+| 9a | Scheduling core, shared and worker: `ShortSchedule`, `nextFireAt`, `tick` job, the freshness rule and single-place round-up refresh, fire order (§8) | 7a | tests cover due, late, missed, busy, stale and skipped |
+| 9b | Schedules UI on `/admin/shorts` | 9a, 7b | **the Europe and UK round-ups publish daily** |
+| 10 | Several places in one video: the `places` scope through sanitiser, template, titles, generate form (§4) | 6 | **the main areas round-up publishes daily**, with a chapter per place |
+| 8 | Offline test: offline branch in `goLive`, preflight report, OBS screenshots (§7) | 7a | a test holds the encoder, never contacts YouTube, and leaves a screenshot per clip |
+
+How this runs beside the cloud agent:
+- WP7 and WP9 mostly touch `worker/src/stream/`, the run model and new files. Formats
+  touch the script model, the template, the generate job and the `/admin/shorts`
+  components. The overlap is `/admin/shorts` and `jobs/short-video.ts`, where both add.
+- WP7a can start now. WP7b and WP9b add sections to a page the format work is
+  restructuring, so they go in after the formats branch merges, or expect a merge.
+- WP10 edits the same template and form files as formats. It waits for the merge.
 
 **Milestone 2: event clips and the timeline editor.**
 
 | WP | Scope | Depends on | Done when |
 |---|---|---|---|
-| 8 | The alert, quake and volcano switches in the UI; `/admin/shorts/:id` read-only timeline with "play from here" (§5) | 4 | a lineup with events plays from any clip |
-| 9 | Editing: reorder, resize, add, delete, inspector, floors, stale flags, Save | 8 | edits persist and the next play uses them |
+| 11 | The alert, quake and volcano switches in the UI; the read-only timeline with "play from here" (§9) | 6 | a lineup with events plays from any clip |
+| 12 | Editing: reorder, resize, add, delete, inspector, floors, stale flags, Save | 11 | edits persist and the next play uses them |
 
-**Phase 2: Shorts (§9).** Its own plan once milestone 1 is in.
+**Phase 2: Shorts (§10).** Its own plan once milestone 1 is in.
 
-WP6 and WP7 can run in parallel after WP5. Milestone 2 can run beside WP5-7.
-
-## 11. Decisions
+## 12. Decisions
 
 Taken (change here if wrong):
+- A short has its own settings, duplicated from a channel, never bound to one.
+- A format is the unit of customisation. A script has no look of its own beyond a
+  per-clip look override.
+- Preview and render play on the format's own scene.
 - The operator picks the encoder. Nothing is pre-empted.
 - Same YouTube channel as the live streams, through the existing account picker.
 - "Offline test" means a full rehearsal on the chosen encoder with no YouTube.
 - Missed schedules are skipped after 10 minutes, not caught up.
 - Default budget 75 s, default privacy unlisted.
 - Round-up videos ship first. Event clips and the timeline editor follow scheduling.
+- In a scripted round-up the round-up slide leads the deck, ahead of the lede card.
+- A render streams unlisted and takes its real privacy when it ends.
+- A render that can't go live in 2 minutes fails and deletes its broadcast.
+- Render is chained by hooks with state in Mongo, not by a job that waits.
+- A schedule refuses a stale round-up: refresh it or skip the day.
 
 Open:
+- Which encoder renders scheduled videos? It must be free at that hour, and the
+  always-on slots hold theirs. This needs a spare OBS instance on gds1.
+- What time, and public or unlisted, for the daily Europe, UK and main areas videos?
+- Main areas: are USA and Australia the countries, or North America and Oceania the
+  areas? Does the world round-up open the video?
+- Main areas: the full round-up for each place (5-8 minutes in all) or the summary
+  only (about 2)?
+- Which settings matter first on the Video cards, beyond the list in §5.2?
+- Should a channel's later look changes ever flow to a format automatically? The plan
+  says no: only Copy look from.
 - Phase 2: how does a file recorded by OBS on gds1 reach the worker?
