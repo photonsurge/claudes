@@ -16,6 +16,7 @@ import Typography from "@mui/material/Typography";
 import {
   SPEED_MAX,
   SPEED_MIN,
+  pricePerHour,
   pricePerMillionChars,
   type Presenter,
   type PresenterVoice,
@@ -49,7 +50,8 @@ export default function PresenterEditor({ initial, models, isNew, disabled, onSa
   const [saving, setSaving] = useState(false);
 
   const model = models.find((m) => m.id === draft.voice.model);
-  const price = pricePerMillionChars(model?.pricing);
+  const perM = pricePerMillionChars(model?.pricing);
+  const perHour = pricePerHour(model?.pricing);
   const modelIds = useMemo(() => models.map((m) => m.id), [models]);
 
   const setVoice = (patch: Partial<PresenterVoice>) => setDraft((d) => ({ ...d, voice: { ...d.voice, ...patch } }));
@@ -117,7 +119,13 @@ export default function PresenterEditor({ initial, models, isNew, disabled, onSa
             label="Speech model"
             helperText={
               models.length
-                ? `${model?.voices.length ?? 0} voices · ${price != null ? `$${price} per million characters` : "price per second or unknown"}`
+                ? [
+                    `${model?.voices.length ?? 0} voices`,
+                    perHour != null ? `about $${perHour} per hour of speech` : "price unknown or free",
+                    perM != null ? `$${perM} per million characters` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
                 : "No model list yet — press “Refresh voices”. You can still type a model id."
             }
           />

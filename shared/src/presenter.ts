@@ -177,13 +177,23 @@ export function parseSpeechModels(json: unknown): SpeechModel[] {
   return out.sort((a, b) => a.id.localeCompare(b.id));
 }
 
+/** Gemini-style speech: about 25 audio tokens per second of output, about 4 input characters per token. */
+const AUDIO_TOKENS_PER_SECOND = 25;
+const CHARS_PER_TOKEN = 4;
+/** A `completion` price at or above this is per second of audio, below it per audio token. */
+const PER_SECOND_FLOOR = 0.0005;
+
 /**
  * Best-effort USD estimate for speaking `chars` characters lasting `durationMs`.
- * OpenRouter does not document the unit per key for speech, so: a per-second
- * key (`audio_output_second` / `second` / `per_second`) uses the duration; else
- * `prompt` (or `input`) is taken as per input character. null when neither
- * exists or the price is not a number. The real bill is on OpenRouter's
- * activity page under the generation id.
+ * OpenRouter's speech pricing (checked 2026-10-04) comes in three shapes:
+ *
+ *  - `prompt` only (most models): USD per input character.
+ *  - `prompt` 0 and a large `completion` (ByteDance, 0.0025): USD per second of audio.
+ *  - small `prompt` and `completion` (Gemini TTS): per input token and per audio
+ *    token, estimated at 4 characters a token and 25 audio tokens a second.
+ *
+ * null when nothing applies (or a duration is needed and unknown). The real bill
+ * is on OpenRouter's activity page under the generation id.
  */
 export function estimateSpeechCostUsd(
   pricing: Record<string, string> | undefined,
@@ -195,16 +205,29 @@ export function estimateSpeechCostUsd(
     const n = Number(pricing[k]);
     return pricing[k] != null && Number.isFinite(n) && n > 0 ? n : null;
   };
-  const perSecond = num("audio_output_second") ?? num("second") ?? num("per_second");
-  if (perSecond != null && durationMs != null && durationMs > 0) return perSecond * (durationMs / 1000);
-  const perChar = num("prompt") ?? num("input");
-  if (perChar != null) return perChar * chars;
-  return null;
+  const prompt = num("prompt") ?? num("input");
+  const completion = num("completion");
+  const seconds = durationMs != null && durationMs > 0 ? durationMs / 1000 : null;
+
+  if (completion == null) return prompt != null ? prompt * chars : null;
+  if (completion >= PER_SECOND_FLOOR) {
+    return seconds == null ? null : completion * seconds + (prompt ?? 0) * chars;
+  }
+  // Token-billed.
+  if (seconds == null) return null;
+  return (prompt ?? 0) * (chars / CHARS_PER_TOKEN) + completion * seconds * AUDIO_TOKENS_PER_SECOND;
 }
 
-/** USD per million characters, for the voice list. null when the price is not per character. */
+/** USD per million characters, for the voice list. null when the model is not billed per character. */
 export function pricePerMillionChars(pricing: Record<string, string> | undefined): number | null {
+  if (!pricing || Number(pricing.completion) > 0) return null;
   const est = estimateSpeechCostUsd(pricing, 1_000_000, null);
+  return est == null ? null : Math.round(est * 100) / 100;
+}
+
+/** USD per hour of speech (at 15 characters a second for per-character models), for comparing voices. */
+export function pricePerHour(pricing: Record<string, string> | undefined): number | null {
+  const est = estimateSpeechCostUsd(pricing, 15 * 3600, 3_600_000);
   return est == null ? null : Math.round(est * 100) / 100;
 }
 

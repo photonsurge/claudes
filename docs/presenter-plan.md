@@ -45,9 +45,11 @@
 >   key and voice with no Mongo or queue; `yarn speak --models` lists the models.
 > - Shared: `speakable()`, `mp3DurationMs()`.
 > - Not built: the prompt registry and round-up previews (WP1–3), anything on air
->   (WP8–9), written lines (WP10–12). OpenRouter's speech reply and model-list shapes
->   were taken from §1 and parsed tolerantly; they had not been checked against a live
->   call when this was written.
+>   (WP8–9), written lines (WP10–12). Checked live on 2026-10-04: the model list
+>   parses (24 models), and a Kokoro call returned an mp3 that measured correctly, with
+>   a generation id. Pricing comes in three shapes: `prompt` per character (most),
+>   `completion` per second (ByteDance), and per-token `prompt` + `completion` (Gemini
+>   TTS). The page shows an estimated cost per hour of speech for all three.
 
 Give the stream a voice. A presenter is a named persona with a voice. It turns what is
 on air (a warning, an earthquake, a country check, a round-up) into a short spoken

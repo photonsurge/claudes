@@ -2,6 +2,7 @@ import {
   DEFAULT_VOICE,
   estimateSpeechCostUsd,
   parseSpeechModels,
+  pricePerHour,
   pricePerMillionChars,
   sanitizePresenter,
   sanitizePresenterSettings,
@@ -72,17 +73,27 @@ describe("parseSpeechModels", () => {
   });
 });
 
-describe("estimateSpeechCostUsd", () => {
-  it("per character from prompt", () => {
-    expect(estimateSpeechCostUsd({ prompt: "0.000015" }, 1000)).toBeCloseTo(0.015);
-    expect(pricePerMillionChars({ prompt: "0.000015" })).toBe(15);
+describe("estimateSpeechCostUsd (shapes from the live list, 2026-10-04)", () => {
+  it("per character from prompt (kokoro, deepgram, mai, …)", () => {
+    expect(estimateSpeechCostUsd({ prompt: "0.000015", completion: "0" }, 1000)).toBeCloseTo(0.015);
+    expect(pricePerMillionChars({ prompt: "0.00000062", completion: "0" })).toBe(0.62);
   });
-  it("per second when the model bills by duration", () => {
-    expect(estimateSpeechCostUsd({ audio_output_second: "0.0025" }, 1000, 10_000)).toBeCloseTo(0.025);
+  it("per second when prompt is 0 and completion is large (bytedance)", () => {
+    expect(estimateSpeechCostUsd({ prompt: "0", completion: "0.0025" }, 1000, 10_000)).toBeCloseTo(0.025);
+    expect(estimateSpeechCostUsd({ prompt: "0", completion: "0.0025" }, 1000, null)).toBeNull();
+    expect(pricePerMillionChars({ prompt: "0", completion: "0.0025" })).toBeNull();
+    expect(pricePerHour({ prompt: "0", completion: "0.0025" })).toBe(9);
   });
-  it("null when unknown", () => {
+  it("per token for Gemini TTS", () => {
+    // 400 chars = 100 tokens in; 10 s = 250 audio tokens out.
+    expect(estimateSpeechCostUsd({ prompt: "0.0000005", completion: "0.000009" }, 400, 10_000)).toBeCloseTo(
+      100 * 0.0000005 + 250 * 0.000009,
+    );
+    expect(pricePerMillionChars({ prompt: "0.0000005", completion: "0.000009" })).toBeNull();
+  });
+  it("free and unknown", () => {
+    expect(estimateSpeechCostUsd({ prompt: "0", completion: "0" }, 1000)).toBeNull();
     expect(estimateSpeechCostUsd({}, 1000)).toBeNull();
-    expect(estimateSpeechCostUsd({ prompt: "0" }, 1000)).toBeNull();
     expect(estimateSpeechCostUsd(undefined, 1000)).toBeNull();
   });
 });

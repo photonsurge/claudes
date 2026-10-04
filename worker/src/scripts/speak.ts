@@ -10,7 +10,7 @@ loadWorkerEnv();
 import { writeFileSync } from "node:fs";
 import { speakable } from "@photonsurge/shared/speakable";
 import { mp3DurationMs } from "@photonsurge/shared/mp3-duration";
-import { DEFAULT_VOICE } from "@photonsurge/shared/presenter";
+import { DEFAULT_VOICE, pricePerHour } from "@photonsurge/shared/presenter";
 import { listSpeechModels, speak } from "../lib/openrouter-speech";
 
 const args = process.argv.slice(2);
@@ -22,7 +22,7 @@ const flag = (name: string) => {
 (async () => {
   if (args.includes("--models")) {
     for (const m of await listSpeechModels()) {
-      console.log(`${m.id}  voices=${m.voices.length}  pricing=${JSON.stringify(m.pricing)}`);
+      console.log(`${m.id}  voices=${m.voices.length}  ~$${pricePerHour(m.pricing) ?? "?"}/hour  pricing=${JSON.stringify(m.pricing)}`);
       if (m.voices.length) console.log(`    ${m.voices.slice(0, 12).join(", ")}${m.voices.length > 12 ? ", …" : ""}`);
     }
     return;

@@ -21,7 +21,7 @@ import Typography from "@mui/material/Typography";
 import {
   DEFAULT_VOICE,
   TEST_TEXT_MAX,
-  pricePerMillionChars,
+  pricePerHour,
   type Presenter,
   type PresenterVoice,
   type VoiceTest,
@@ -247,7 +247,7 @@ export default function PresentersPage() {
         )}
 
         {data?.presenters.map((p) => {
-          const price = pricePerMillionChars(models.find((m) => m.id === p.voice.model)?.pricing);
+          const price = pricePerHour(models.find((m) => m.id === p.voice.model)?.pricing);
           return (
             <Paper key={p.id} sx={{ p: 1.75 }}>
               <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }} useFlexGap>
@@ -263,7 +263,7 @@ export default function PresentersPage() {
                   <Typography variant="caption" color="text.secondary" sx={{ fontFamily: font.mono }}>
                     {voiceSummary(p.voice)}
                     {p.voice.style ? ` · “${p.voice.style}”` : ""}
-                    {price != null ? ` · $${price}/M chars` : ""}
+                    {price != null ? ` · ~$${price}/hour of speech` : ""}
                   </Typography>
                 </Stack>
                 <Button
