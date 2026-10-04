@@ -24,6 +24,7 @@ import { runIsActive } from "@photonsurge/shared/runs";
 import { fmtOffset, vodOffsetMs } from "@photonsurge/shared/vod";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 import RunStats from "../../../../components/admin/streams/RunStats";
+import RunShots from "../../../../components/admin/shorts/RunShots";
 import VodPlayer, { type VodPlayerApi } from "../../../../components/admin/streams/VodPlayer";
 import VodTimeline, { type VodChatLine } from "../../../../components/admin/streams/VodTimeline";
 import { fmtDuration, kindColor } from "../../../../lib/airlog";
@@ -243,6 +244,16 @@ export default function StreamAsRunPage() {
       )}
 
       {run && <Box sx={{ mb: 2.25 }}><RunStats run={run} youtubeStats={stats[run.id]} statsError={statsError} /></Box>}
+
+      {run?.shots?.length ? (
+        // A video render's OBS screenshots, one per clip (short-video plan §7).
+        <Box sx={{ mb: 2.25 }}>
+          <Typography variant="subtitle2" sx={{ mb: 0.75 }}>
+            {run.script?.offline ? "Offline test" : "Render"} · as OBS drew each clip
+          </Typography>
+          <RunShots shots={run.shots} height={90} />
+        </Box>
+      ) : null}
 
       {bundle && Object.keys(bundle.kindCounts).length > 0 && (
         // Kind colours are lib/airlog's shared categorical scale, matched to the

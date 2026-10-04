@@ -14,6 +14,7 @@ import {
   isSceneSurface,
   type ControlState,
   type SceneSurface,
+  type SceneKind,
 } from "@photonsurge/shared/control";
 
 export const runtime = "nodejs";
@@ -22,15 +23,21 @@ export const dynamic = "force-dynamic";
 const NO_CACHE = { "Cache-Control": "no-store" };
 
 /**
- * GET /api/scenes — every broadcast scene as `{ id, name, updatedAt }`. Called
- * unauthenticated by /watch/:id (to resolve a display name), so `watchToken`
- * and `youtubeAccountId` are only included for an admin session — never leaked to anonymous callers.
+ * GET /api/scenes[?kind=channel|short] — every broadcast scene as
+ * `{ id, name, updatedAt, hidden, kind, surface }`, or only one kind: the
+ * channel lists (/admin/scenes, the stream and slot forms) ask for `channel`,
+ * so a short format's scene never shows there. Called unauthenticated by
+ * /watch/:id (to resolve a display name), so `watchToken` and
+ * `youtubeAccountId` are only included for an admin session — never leaked to
+ * anonymous callers.
  */
-async function GET__impl() {
+async function GET__impl(req?: Request) {
   const db = await getAppDb();
   // Ensure the main scene exists so the list is never empty on a fresh db.
   await db.getOrInitBroadcastState();
-  const scenes = await db.listScenes();
+  const kindParam = req ? new URL(req.url).searchParams.get("kind") : null;
+  const kind: SceneKind | undefined = kindParam === "channel" || kindParam === "short" ? kindParam : undefined;
+  const scenes = await db.listScenes({ kind });
 
   const sessionToken = (await cookies()).get(SESSION_COOKIE)?.value;
   const session = sessionToken ? readSession(sessionToken) : null;

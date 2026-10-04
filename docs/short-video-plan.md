@@ -5,6 +5,13 @@
 > tracks follow: **formats** (§5, WP5-6, a cloud agent) and **getting a video onto
 > YouTube on a schedule** (§6 and §8, WP7 and WP9). Planned on Fable, built by Opus sub-agents, one
 > work package at a time (§11).
+> WP5 (formats, shared and worker) is built: `db.shortFormats`, scene `kind`, duplicate and
+> copy-look helpers, `/api/shorts/formats`, generate by `formatId`, round-up depth.
+> WP6 (formats, public) is built: the Formats section on `/admin/shorts` and the editor at
+> `/admin/shorts/formats/:id` — its own card list, one Save for look, director and short
+> settings, the YouTube video card with the token picker and preview, Play sample, Copy look from.
+> WP10 (several places) is built: the `places` scope through sanitiser, template, values, render-queue
+> freshness and chapters, with the ordered place list (and "Main areas" quick-fill) on Generate and the format's Template card.
 > Shares two refactors with [director-break-in-plan.md](./done/director-break-in-plan.md) and
 > [director-commands-plan.md](./done/director-commands-plan.md); both are done (§3).
 
@@ -27,7 +34,11 @@ normal landscape YouTube video:
 |---|---|---|
 | Europe round-up | area `europe` | 1-2 min |
 | UK round-up | country `uk` | 1-2 min |
-| Main areas round-up | `europe`, `usa`, `asia`, `australia`, `africa`, `south_america`, one after another | 5-8 min |
+| Main areas round-up | area `europe`, country `usa`, area `asia`, country `australia`, area `africa`, area `south_america`, one after another | 5-8 min |
+
+`usa` and `australia` are countries, not areas: there is no `usa` or `australia` in
+`REGION_SHOTS` (the US is split into bands, Australia sits in `oceania`). `uk` is both a
+country and an area; the UK video uses the country, whose round-up is keyed `gb`.
 
 YouTube Shorts (portrait) are phase 2 and need a new on-air UI (§10).
 
@@ -83,6 +94,8 @@ export interface ShortClip {
   tourDwellMs?: number;
   /** Open the deck on the place round-up. */
   leadSlide?: "roundup";
+  /** How much of the round-up the panel shows (§4). To add in WP5. */
+  roundupDepth?: "summary" | "full";
   /** Cached for the UI; it is what will air. */
   label: { title: string; subtitle?: string; icon?: string };
 }
@@ -94,7 +107,8 @@ export type ShortPlace =
 export type ShortScope =
   | ShortPlace
   | { type: "globe" }
-  /** Several places in one video, in this order (§4). To add in WP10. */
+  /** Several places in one video, in this order (§4). Built in WP10: the
+   *  sanitiser keeps catalog ids only, deduped, at most MAX_SHORT_PLACES (12). */
   | { type: "places"; places: ShortPlace[] };
 
 export interface ShortInclude { alerts: boolean; quakes: boolean; volcanoes: boolean }
@@ -178,10 +192,16 @@ three include switches give every variant.
   The budget never cuts a round-up short.
 - A place with no round-up, or a globe with no fresh world round-up, is an error with
   a reason, not a video.
-- **Depth.** `summary` shows and times only the round-up's summary. `full` shows all of
-  it: summary, state of play, city outlooks and advice. The clip carries the depth to
-  the on-air panel (`ShortClip.roundupDepth`, `Segment.roundupDepth`), and the opener's
-  length follows from what is shown.
+- **Depth (not built yet, WP5).** `summary` shows and times only the round-up's summary.
+  `full` shows all of it: summary, state of play, city outlooks and advice. The clip
+  carries the depth to the on-air panel (`ShortClip.roundupDepth`,
+  `Segment.roundupDepth`), and the opener's length follows from what is shown. Today
+  there is no depth: `roundupText` in `script-template.ts` times the whole round-up,
+  which is `full`.
+- **Freshness is not checked at generate.** The place opener takes
+  `latestForPlace(...)` whatever its age. Only the schedule's rule (§8) guards against
+  a stale round-up, so a manual Generate or Render now can air an old one. The
+  generate form should show the round-up's age and warn past the format's limit.
 
 **With events** (switches on):
 
@@ -211,8 +231,17 @@ three include switches give every variant.
 - A place with no round-up is left out and named in the result. With none left, it is
   an error.
 - It closes on a world spin.
-- It is round-up only. The event switches don't apply to it yet.
-- The as-run chapters give the video one YouTube chapter per place, with no extra work.
+- It is round-up only. The event switches don't apply to it yet (they are ignored).
+- The as-run chapters give the video one YouTube chapter per place. A video render's
+  chapter labels drop the shot's caption, so each reads as the place ("🇺🇸 United
+  States"); the closing spin is under YouTube's 10 s floor and drops out.
+- Built (WP10): generate returns the places it left out (`skipped`), and the Generate
+  form names them. Title codes: `%{place}` is the names joined with ", ",
+  `%{placeId}` the scope's place ids joined with `-` (stable when a place is left
+  out), `%{places}` the count, `%{flag}` and `%{headline}` empty, `%{asOf}` the
+  oldest round-up's time in London. The render queue's freshness rule checks every
+  place: under `refresh` each stale place is rewritten; under `skip` a stale place is
+  left out and named, and the video is skipped only when no place is left.
 - Each place writes its round-up at its own local hours, so some are hours older than
   others when the video is made. The schedule's freshness rule covers this (§8).
 
@@ -277,6 +306,8 @@ export interface ShortFormat {
     /** Fly the tour, or hold one framed shot. */
     tour: boolean;
     minTourDwellMs: number;
+    /** With events on: the opener's share of the budget (0.4). */
+    budgetShare: number;
   };
   close: { enabled: boolean; ms: number };
   /** Everything YouTube is told about the video (§6.8). Templates take the date
@@ -440,7 +471,16 @@ the video reaches the front.
   the main areas video and not on a single-place one.
 - **Quota:** about 400 units a video (create, bind, two transitions, thumbnail,
   description, privacy), of 10,000 a day.
-- Chat is off and nothing is announced.
+- **No chat.** A video is not a live show, even though it is made through a broadcast.
+  This reuses the chat switch live runs already have (`Run.chat`, the Chat toggle on
+  the streams form and slots): the queue creates every render's run with
+  `chat: { enabled: false, promoteToTicker: false }`, and the Render form doesn't offer
+  the toggle. So the worker never polls or posts to chat, and chat commands can't steer
+  the director. Nothing is announced (`announce` off, no
+  hydra post). That switch only covers our side. It doesn't turn off YouTube's own chat
+  on the broadcast, so a video may still show a chat replay. Turn that off on the
+  broadcast if the API allows it, otherwise in YouTube Studio's live defaults for the
+  account. Check this on the first render.
 
 ### 6.4 Changes the run pipeline needs
 
@@ -469,11 +509,12 @@ the state in Mongo, so a worker restart can't strand a render. They live in one 
 file, `worker/src/stream/script-run.ts`.
 
 1. **Start.** When a video reaches the front of its encoder's queue (§6.6), the queue
-   creates the `Run` (title from the script, privacy unlisted, `durationMs` as a safety
+   creates the `Run` (title and description resolved from the format, §6.8; privacy unlisted, `durationMs` as a safety
    cap of script length plus two minutes) and calls `goLive`.
 2. **On live.** `transitionToLive` calls `onScriptRunLive(run)`, which starts the script
    on its scene after the 3 s lead-in, with `record: true`, and stores the nonce on the
-   run.
+   run. An offline run (§7) never reaches `transitionToLive`: `goLive`'s no-YouTube
+   branch sets it live directly, so that branch must call `onScriptRunLive` too.
 3. **On script end.** The runner calls `onScriptPlayEnded(sceneId, play)`. It finds the
    run by scene and nonce. A finished play ends the run after the 5 s lead-out
    (`finishRun(runId, "auto")`), then applies `publishAs`. A stopped play fails it.
@@ -517,14 +558,27 @@ export interface ShortRender {
   id: string;
   /** A named encoder, or "any" for the first idle video encoder. */
   encoderId: string | "any";
-  /** A saved script, or a request to generate one when this reaches the front. */
+  /** A saved script, or a request to generate one when this reaches the front.
+   *  `auto` scope is resolved at the front too, like the rest of generate (§8). */
   what:
     | { type: "script"; scriptId: string }
-    | { type: "generate"; formatId: string; scope: ShortScope; include?: ShortInclude };
+    | {
+        type: "generate";
+        formatId: string;
+        scope: ShortScope | { type: "auto"; of: "country" | "area" };
+        include?: ShortInclude;
+      };
   publishAs: YoutubePrivacy;
   offline: boolean;
+  /** The YouTube account; absent = the format's render default. */
+  accountId?: string;
+  /** This video's overrides of the format's YouTube settings: the Render form's
+   *  title, or a schedule's `ScheduledVideo.video`. */
+  video?: Partial<ShortFormat["video"]>;
   /** How fresh the round-up must be (§8). Checked at the front of the queue. */
   roundup?: { maxAgeHours: number; ifStale: "refresh" | "skip" };
+  /** Carried from the schedule; checked at the front with the rest. */
+  skipIfQuiet?: boolean;
   scheduleId?: string;
   /** Set when a schedule queued several videos together. */
   batchId?: string;
@@ -653,7 +707,7 @@ given here as its default. Where each lives:
 | look, widgets, deck, crawl, theme, music, reading pace | time, days, timezone | go-live deadline (2 min) |
 | template: scope (the places and their order), switches, budget, world round-up first | encoder, YouTube channel | safety cap on a run (script length + 2 min) |
 | opener: round-up leads, round-up depth, tour, minimum dwell (8 s), opener share (40%) | the videos and their order | ticker interval (60 s) |
-| close: on or off, length (6 s) | round-up freshness (12 h), refresh or skip | missed-schedule window (10 min) |
+| close: on or off, length (6 s) | round-up freshness (14 h), refresh or skip | missed-schedule window (10 min) |
 | YouTube video card (above) | start-by window (1 h) | |
 | timing: lead-in (3 s), lead-out (5 s) | per-video overrides | |
 | render defaults: encoder, YouTube channel | offline test or live | |
@@ -724,7 +778,11 @@ export interface ShortSchedule {
   encoderId: string | "any";
   accountId?: string;
   offline: boolean;
+  /** Skip a video not started this long after the schedule's time. Default 1 h. */
+  startByMs: number;
   videos: ScheduledVideo[];
+  /** Fires so far; the value of `%{n}`. */
+  fireCount: number;
   nextAt: number | null;
   lastFire?: { at: number; batchId?: string; outcome: "queued" | "missed"; note?: string };
 }
@@ -739,10 +797,12 @@ export interface ShortSchedule {
   and nothing renders. It only applies with an include switch on.
 - **Freshness.** Round-ups are written on their own schedule, at each place's local
   hours (the Schedule card on the round-up pages). A video made from a stale one is
-  yesterday's news. So each schedule says how old a round-up may be (default 12 h) and
+  yesterday's news. So each schedule says how old a round-up may be (default 14 h, §13) and
   what to do otherwise: `refresh` writes a new one for that place first (one LLM call),
-  `skip` records the run as skipped. The place round-up job needs a single-place entry
-  point for `refresh`. For a `places` scope the rule applies per place.
+  `skip` records the run as skipped. The single-place entry point for `refresh` is
+  `refreshPlaceRoundup` in `worker/src/placeRoundups/refresh.ts`. The world round-up
+  has no such entry, so a stale globe video with `refresh` fails with a note saying so.
+  For a `places` scope the rule applies per place.
 - The schedule form shows when each place's round-up is next written, so the operator
   can put the video after it.
 - **A schedule is a batch.** It queues its videos, in order, on its encoder (§6.6). The
@@ -771,14 +831,16 @@ export interface ShortSchedule {
 
 Once, by an operator:
 1. Assign an OBS instance to videos on `/admin/streams`.
-2. Switch round-ups on for Europe, the UK and the main-area places at
-   `/admin/place-roundups`, written at 06:00 local.
+2. Switch country and region round-ups on at `/admin/place-roundups` (the switch is
+   per kind, not per place; default slots are 06:00 and 18:00 local).
 3. Have a format for each video (the default one will do to start).
 4. Add a schedule "Morning batch": every day at 07:00 London time, on the video
    encoder, with three videos in order: Europe, UK, main areas. Each has a round-up no
-   older than 12 h, refreshed if stale. Titles, descriptions and public or unlisted come
+   older than 14 h, refreshed if stale. Titles, descriptions and public or unlisted come
    from each video's format.
-5. Press Run batch now once with everything unlisted, and watch the results.
+5. Press Run batch now once with everything unlisted, and watch the results. That needs
+   a "publish as" override on Run batch now; a schedule otherwise takes privacy from
+   each video's format.
 
 Every day at 07:00:
 1. The ticker queues the three videos on the video encoder.
@@ -934,3 +996,77 @@ Open:
 - Should a channel's later look changes ever flow to a format automatically? The plan
   says no: only Copy look from.
 - Phase 2: how does a file recorded by OBS on gds1 reach the worker?
+- When does the morning batch run, given the quota day resets at 08:00 London (§13)?
+- What does an idle video encoder show between videos (§13)?
+
+## 13. Review notes (2026-10-04)
+
+The plan was checked against the code on `singleVideos`. The clear errors are fixed
+in place above. This section lists what each work package has to handle and what the
+first real render should check.
+
+**YouTube quota at 07:00 London (affects WP9, §8.1).** The quota day resets at
+midnight Pacific, which is 08:00 London. A 07:00 batch runs in the last hour of the
+quota day, after the always-on live channels' chat polling has spent most of it (the
+videos themselves poll no chat, §6.3). The meter keeps
+`YOUTUBE_QUOTA_RESERVE` (1,500) for go-live and end, and that reserve is shared with
+the live channels' own recycles. Three videos at about 400 units each take 1,200 of it.
+Options: schedule the batch after 08:00 London, raise the reserve, or have the queue
+check the meter before creating the broadcast. That check is §8.1's "quota spent"
+row, made explicit. `playlistItems.insert` is also missing from `BASE_COST` in
+`youtube/quota.ts` and needs adding.
+
+**Round-up freshness default (WP9a).** With the default slots of 06:00 and 18:00 local,
+a round-up can be about 12 h old just before its next slot, plus up to an hour of
+ticker lag. At 07:00 London, Australia's latest round-up is close to that limit, so
+a 12 h `maxAgeHours` turns into a daily refresh and an extra LLM call. 14 h covers
+every place for the 07:00 batch. Refresh can reuse `runForPlace` in
+`jobs/placeRoundups.ts`, which only needs exporting.
+
+**Run pipeline facts the plan relies on (WP7a).**
+- `goLive` calls `encoderBusyWith` only when the run has YouTube. Changing
+  `activeRunForEncoder` is not enough for offline runs: the guard has to run on the
+  no-YouTube branch too.
+- `resolveEncoderScene` falls back to the main channel when an encoder has no
+  `sceneId`. An encoder assigned to videos is unbound, so "re-provision the encoder's
+  own scene" would point it at the main channel's `/watch` page, which keeps a third
+  globe drawing on gds1. Give video encoders an idle state (a blank page, or no browser
+  source) instead.
+- The thumbnail job (`stream/thumbnail.ts`) reads the channel's YouTube settings. The
+  format's thumbnail (§6.8) needs a change there, and no work package lists it. A frame
+  thumbnail needs `GetSourceScreenshot`, which is WP8. Either move that call into WP7a,
+  or ship image thumbnails first and add frames with WP8.
+- Chapters are switched on or off for the whole deployment (`YOUTUBE_CHAPTERS`), not per
+  format. The chapter job's opening label is the scene name, so the format's hidden
+  scene needs a name fit for a video description.
+- The chapters job reads the video's snippet and writes it back 30 s after the finish,
+  with retries. The end-of-run `videos.update` for tags and category also rewrites the
+  snippet. Run them in one place, in order (tags, category and privacy first, then
+  chapters), or one can overwrite the other.
+- §6.7's Stop goes through `finishRun(id, "manual")`, which records `stopped`, not
+  `failed`. Decide which status the Renders list shows for it.
+
+**Timing at the head and tail (first unlisted render).** `run.startAt` is stamped when
+the worker's transition call returns. YouTube's own `actualStartTime` can be later,
+because the broadcast passes through `liveStarting`. If that gap is more than the 3 s
+lead-in, the opener is clipped. `stampVideoTimes` already records both values, so
+compare them on the first render. The same applies to the end: `VOD_LEAD_MS` is
+untuned (0), and the 5 s lead-out must exceed the real pipeline delay.
+
+**Queue semantics to pin down (WP7a).**
+- **Any video encoder.** Each encoder has its own queue, but a video for "any" needs a
+  shared pool that idle encoders take from. Videos run in parallel then, so a batch's
+  order holds only on a named encoder.
+- **Blocked first video.** If the next video on an encoder is in a format that is
+  rendering elsewhere, decide whether the encoder waits or takes the next video in the
+  queue. Waiting is simpler; taking the next one keeps the batch moving.
+- **Booked state.** `encoderOccupancy`'s "booked" state has no single encoder to show a
+  schedule set to "any".
+
+**Title codes (WP7-pre).** `%{place}` is a display name ("United Kingdom"), so the
+thumbnail example `/thumbs/%{place}.png` gives a path with spaces. Add `%{placeId}`.
+`%{asOf}` has no single value for a several-places video. Define it as the oldest
+round-up's time, or leave it blank there.
+
+**Status header.** It names WP5-6, WP7 and WP9. WP7-pre, WP8 and WP10 are also still to
+do for milestone 1. (WP10 is now built; see the status header.)

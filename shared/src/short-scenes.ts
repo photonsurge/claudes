@@ -1,52 +1,36 @@
 /**
- * The two dedicated scenes scripted short videos play on
- * (docs/short-video-plan.md §3 "Fixed scenes, not one per script"):
+ * The default short format's scene (docs/short-video-plan.md §5.6).
  *
- *  • `shorts`         — the render scene. A render run's encoder captures
- *                       /watch/shorts while the script plays, and its director
- *                       config carries the thresholds and holds the lineup
- *                       template reads (worker/src/director/script-generate.ts).
- *  • `shorts-preview` — the editor's preview (/watch/shorts-preview in an
- *                       iframe), so trying a script never touches a render.
+ * Every short plays on its FORMAT's own scene — preview and render alike — and a
+ * format's id is its scene's id (shared/src/short-format.ts). The default format
+ * lives on `shorts`, the scene the first release played everything on; the
+ * seed (worker/src/director/short-format-seed.ts) creates it with this look.
+ * The old `shorts-preview` scene is retired: the seed no longer creates it, and
+ * an existing one is an ordinary scene to delete from /admin/scenes.
  *
- * Both are `hidden`: production surfaces, not channels, so they stay off the
- * public home page and the channel launcher.
- *
- * Pure catalog data, like simple-scenes.ts:
- * `worker/src/scripts/seedShortScenes.ts` creates them. Everything after the
- * seed (brand, look, widgets, pace) is edited on /admin/scenes/:id like any
- * other scene.
+ * Format scenes are `hidden` (off the public home page and the channel
+ * launcher) and `kind: "short"` (off /admin/scenes and the stream and slot
+ * forms — /admin/shorts lists them as formats).
  */
 import { DEFAULT_AUDIO_SETTINGS, type ControlState } from "./control";
 
-/** Scene id of the render scene (also the generate job's default config source). */
+/** Scene id of the default format's scene — and so the default format's id. */
 export const SHORTS_SCENE_ID = "shorts";
-/** Scene id of the editor's preview scene (the play CLI's default). */
-export const SHORTS_PREVIEW_SCENE_ID = "shorts-preview";
 
-export interface ShortScenePreset {
-  /** Scene id → /watch/<id>. */
-  id: string;
-  /** Scene name shown in admin pickers ("Shorts ·" prefix groups them). */
-  name: string;
-  /** Kept off viewer-facing scene lists (scene metadata, not ControlState). */
-  hidden: true;
-  seed: Partial<ControlState>;
-}
+/** The id of the format a script with none uses (= its scene id). */
+export const DEFAULT_SHORT_FORMAT_ID = SHORTS_SCENE_ID;
+
+/** Name of the default format (and its scene, which the chapter job's opening label reads). */
+export const DEFAULT_SHORT_FORMAT_NAME = "Round-up";
 
 /**
  * A clean round-up video: the main scene's on-air chrome (the ControlState
  * defaults — chrome, atmosphere, city labels) with the music bed on, since a
- * video has no presenter (§4 "No narration in v1. The audio bed plays").
+ * video has no presenter (§4 "No narration yet: the music bed plays").
  * No spin: the script's shots drive the camera. The director config is left at
  * its defaults — mode `off` (the runner sets `script` per play), default kinds
  * and holds.
  */
-const ROUNDUP_LOOK: Partial<ControlState> = {
+export const SHORT_SCENE_SEED: Partial<ControlState> = {
   audio: { ...DEFAULT_AUDIO_SETTINGS, enabled: true },
 };
-
-export const SHORT_SCENE_PRESETS: ShortScenePreset[] = [
-  { id: SHORTS_SCENE_ID, name: "Shorts · Render", hidden: true, seed: ROUNDUP_LOOK },
-  { id: SHORTS_PREVIEW_SCENE_ID, name: "Shorts · Preview", hidden: true, seed: ROUNDUP_LOOK },
-];

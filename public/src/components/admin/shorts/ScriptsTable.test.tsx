@@ -4,27 +4,32 @@
  */
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import ScriptsTable from "./ScriptsTable";
-import type { ShortListItem, ShortPreviewInfo } from "../../../lib/shorts";
+import type { ShortFormatRow, ShortListItem, ShortPreviewInfo } from "../../../lib/shorts";
 
-const preview: ShortPreviewInfo = { sceneId: "shorts-preview", exists: true, mode: "off" };
+const preview: ShortPreviewInfo = { sceneId: "shorts", exists: true, mode: "off" };
+const formats: ShortFormatRow[] = [
+  { id: "shorts", name: "Round-up", preview },
+  { id: "short-brief", name: "Brief", preview: { sceneId: "short-brief", exists: true, mode: "script", scriptId: "s2", playNonce: 3 } },
+];
 const rows: ShortListItem[] = [
   {
     id: "s1",
+    formatId: "shorts",
     title: "Japan round-up",
     scope: { type: "country", id: "japan" },
     status: "draft",
     clipCount: 2,
     durationMs: 95_000,
     created: "2026-10-04T10:00:00.000Z",
-    previewPlay: { sceneId: "shorts-preview", playNonce: 1, startedAt: 1, endedAt: 2, skipped: [{ id: "b", reason: "gone" }] },
+    previewPlay: { sceneId: "shorts", playNonce: 1, startedAt: 1, endedAt: 2, skipped: [{ id: "b", reason: "gone" }] },
   },
-  { id: "s2", title: "World", scope: { type: "globe" }, status: "draft", clipCount: 1, durationMs: 30_000 },
+  { id: "s2", formatId: "short-brief", title: "World", scope: { type: "globe" }, status: "draft", clipCount: 1, durationMs: 30_000 },
 ];
 
 const setup = (over: Partial<React.ComponentProps<typeof ScriptsTable>> = {}) => {
   const props = {
     scripts: rows,
-    preview,
+    formats,
     selectedId: null,
     onSelect: jest.fn(),
     onPreview: jest.fn(),
@@ -43,8 +48,11 @@ it("shows each script's scope, length, clips and last preview", () => {
   expect(within(japan).getByText("1:35")).toBeInTheDocument();
   expect(within(japan).getByText("ended")).toBeInTheDocument();
   expect(within(japan).getByText("1 skipped")).toBeInTheDocument();
+  expect(within(japan).getByText("Round-up")).toBeInTheDocument();
+  // Each row reads its own format's scene: s2 was just asked to play on "Brief".
   const world = screen.getByText("World").closest("tr")!;
-  expect(within(world).getByText("never played")).toBeInTheDocument();
+  expect(within(world).getByText("starting…")).toBeInTheDocument();
+  expect(within(world).getByText("Brief")).toBeInTheDocument();
   expect(within(world).getByText("Globe")).toBeInTheDocument();
 });
 
@@ -69,12 +77,21 @@ it("deletes only after the operator confirms", () => {
   expect(p.onDelete).toHaveBeenCalledWith("s2");
 });
 
-it("disables Preview when the preview scene doesn't exist", () => {
-  setup({ preview: { ...preview, exists: false } });
-  for (const b of screen.getAllByRole("button", { name: "Preview" })) expect(b).toBeDisabled();
+it("disables Preview when the script's format scene doesn't exist", () => {
+  setup({ formats: [{ ...formats[0], preview: { ...preview, exists: false } }, formats[1]] });
+  expect(within(screen.getByText("Japan round-up").closest("tr")!).getByRole("button", { name: "Preview" })).toBeDisabled();
+  expect(within(screen.getByText("World").closest("tr")!).getByRole("button", { name: "Preview" })).toBeEnabled();
 });
 
 it("says so when there are no scripts", () => {
   setup({ scripts: [] });
   expect(screen.getByText(/No scripts yet/)).toBeInTheDocument();
+});
+
+it("Render opens the Render form for that script (§6.1)", () => {
+  const onRender = jest.fn();
+  setup({ onRender });
+  const row = screen.getByText("Japan round-up").closest("tr")!;
+  fireEvent.click(within(row).getByRole("button", { name: "Render" }));
+  expect(onRender).toHaveBeenCalledWith("s1");
 });

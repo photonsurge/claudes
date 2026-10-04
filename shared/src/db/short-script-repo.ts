@@ -1,6 +1,7 @@
 import type { Model } from "mongoose";
 import type { KindLook } from "../director";
-import type { ShortClip, ShortScript, ShortScriptPlay } from "../short-script";
+import type { ShortClip, ShortPlace, ShortScope, ShortScript, ShortScriptPlay } from "../short-script";
+import { DEFAULT_SHORT_FORMAT_ID } from "../short-scenes";
 import type { iShortScriptModel } from "./short-script-model";
 
 /** Copy only the keys that hold a value — the wire shape omits unset optional
@@ -25,6 +26,7 @@ function toClip(c: ShortClip): ShortClip {
   if (typeof c.maxStops === "number") clip.maxStops = c.maxStops;
   if (typeof c.tourDwellMs === "number") clip.tourDwellMs = c.tourDwellMs;
   if (c.leadSlide === "roundup") clip.leadSlide = "roundup";
+  if (c.roundupDepth === "summary" || c.roundupDepth === "full") clip.roundupDepth = c.roundupDepth;
   return clip;
 }
 
@@ -41,12 +43,25 @@ function toPlay(p: ShortScriptPlay): ShortScriptPlay {
   });
 }
 
+/** String values only — a title code never resolves to an object. */
+function toValues(v: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, x] of Object.entries(v)) if (typeof x === "string") out[k] = x;
+  return out;
+}
+
 /** Canonical wire shape from a lean doc — drops `_id`/`__v`/timestamps and any
  *  unset optional path. */
 function toShortScript(doc: iShortScriptModel): ShortScript {
-  const scope = doc.scope.type === "globe" ? { type: "globe" as const } : { type: doc.scope.type, id: doc.scope.id };
+  const scope: ShortScope =
+    doc.scope.type === "globe"
+      ? { type: "globe" }
+      : doc.scope.type === "places"
+        ? { type: "places", places: (doc.scope.places ?? []).map((p: ShortPlace) => ({ type: p.type, id: p.id })) }
+        : { type: doc.scope.type, id: doc.scope.id };
   const script: ShortScript = {
     id: doc.id,
+    formatId: doc.formatId || DEFAULT_SHORT_FORMAT_ID,
     template: doc.template,
     scope,
     include: { alerts: doc.include.alerts, quakes: doc.include.quakes, volcanoes: doc.include.volcanoes },
@@ -55,12 +70,14 @@ function toShortScript(doc: iShortScriptModel): ShortScript {
     status: doc.status,
   };
   if (doc.plays?.length) script.plays = doc.plays.map(toPlay);
+  if (doc.values && typeof doc.values === "object") script.values = toValues(doc.values);
   return script;
 }
 
 /** Fields an upsert writes. Never `plays`: those belong to the runner
  *  (`stampPlay`), so saving an edited script never wipes what it stamped. */
 const setDoc = (s: ShortScript) => ({
+  formatId: s.formatId || DEFAULT_SHORT_FORMAT_ID,
   template: s.template,
   scope: s.scope,
   include: s.include,
@@ -98,10 +115,32 @@ export function makeShortScriptRepo(model: Model<iShortScriptModel>) {
       return doc ? toShortScript(doc as iShortScriptModel) : script;
     },
 
+    /**
+     * How many scripts are made in `formatId` — the format delete guard. Scripts
+     * saved before formats carry no id and count for the default format.
+     */
+    async countByFormat(formatId: string): Promise<number> {
+      const q =
+        formatId === DEFAULT_SHORT_FORMAT_ID
+          ? { $or: [{ formatId }, { formatId: null }, { formatId: "" }] } // null matches a missing field too
+          : { formatId };
+      return model.countDocuments(q).exec();
+    },
+
     /** Delete a script by id. Returns true if one was removed. */
     async remove(id: string): Promise<boolean> {
       const res = await model.deleteOne({ id }).exec();
       return (res.deletedCount ?? 0) > 0;
+    },
+
+    /**
+     * Stamp the title-code values (short-video plan §6.8). Like `plays`, never
+     * part of `upsert`, so saving an edited script keeps them. Returns false for
+     * an unknown id.
+     */
+    async stampValues(id: string, values: Record<string, string>): Promise<boolean> {
+      const res = await model.updateOne({ id }, { $set: { values: toValues(values) } }).exec();
+      return (res.matchedCount ?? 0) > 0;
     },
 
     /**

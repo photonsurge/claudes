@@ -98,6 +98,22 @@ it("writes the as-run digest under the operator's text and stamps the run", asyn
   expect(getVideoStats).not.toHaveBeenCalled(); // times were already stamped
 });
 
+it("a video render's chapters name the place alone, without the shot's caption", async () => {
+  runs.set("r1", finished({ script: { scriptId: "s1", offline: false, publishAs: "public" } }));
+  listEntriesInWindow.mockResolvedValue([
+    entry("eu", 104, 160, { kind: "region", segmentId: "region:europe", title: "Europe", subtitle: "Area tour · Regional weather" }),
+    entry("us", 160, 220, { kind: "country", segmentId: "country:usa", title: "United States", icon: "🇺🇸", subtitle: "Country tour · National weather" }),
+    entry("spin", 220, 226, { kind: "global", segmentId: "global:world", title: "Global Weather" }),
+  ]);
+  let description = "";
+  setVideoDescription.mockImplementation(async (_ctx, _id, compose: (s: string) => string) => {
+    description = compose("");
+    return { changed: true, description };
+  });
+  await publishChapters("r1");
+  expect(description.split("\n").slice(1)).toEqual(["0:00 Europe", "0:57 🇺🇸 United States"]);
+});
+
 it("fetches and stamps YouTube's instants first when the run lacks them", async () => {
   runs.set("r1", finished({ platforms: { youtube: { broadcastId: "vid1", accountId: "acc" } } }));
   getVideoStats.mockResolvedValue([{ id: "vid1", liveStreamingDetails: { actualStartTime: new Date(T(103)).toISOString(), actualEndTime: new Date(T(703)).toISOString() } }]);

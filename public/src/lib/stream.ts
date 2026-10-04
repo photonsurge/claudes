@@ -21,6 +21,7 @@ import {
   type StreamEncoderInfo,
   type StreamSlot,
 } from "@photonsurge/shared/runs";
+import type { EncoderOccupancy } from "@photonsurge/shared/encoder-occupancy";
 import { useSocket } from "./socket-provider";
 
 export interface StreamAccount {
@@ -33,7 +34,8 @@ export interface StreamSnapshot {
   youtubeConfigured: boolean;
   obsConfigured: boolean;
   accounts: StreamAccount[];
-  encoders: StreamEncoderInfo[];
+  /** Each with what it is doing right now (short-video plan §6.2). */
+  encoders: (StreamEncoderInfo & { occupancy?: EncoderOccupancy })[];
   slots: StreamSlot[];
   runs: RunState[];
 }

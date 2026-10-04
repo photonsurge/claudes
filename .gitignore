@@ -8,7 +8,9 @@ dist/
 !.env.sample
 heapdump/
 *.heap*
-logs/
+# Log output only: a top-level logs/ folder and *.log files. A bare logs/ would
+# also hide code folders such as public/src/app/admin/logs/.
+/logs/
 *.log
 blobs/
 .DS_Store

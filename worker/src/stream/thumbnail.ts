@@ -138,7 +138,20 @@ export async function publishThumbnail(runId: string, opts: { force?: boolean } 
   if (runIsFinished(run.status) && !opts.force) return { ok: false, skipped: `run is ${run.status}` };
   if (run.thumbnail?.setAt && !opts.force) return { ok: true, skipped: "already set", source: run.thumbnail.source };
 
-  const { url, source } = thumbnailSourceFor((await channelYoutubeSettings(run.sceneId)).thumbnailUrl);
+  // A video render takes its FORMAT's thumbnail (§6.8), resolved by the render
+  // queue onto `run.script`: an image (`thumbnailUrl`, a URL or site path with
+  // templates filled; "" = the deployment default), or a frame of the render
+  // (`thumbnailFrameAtMs`) — taken from OBS during the play by
+  // script-shots.ts and uploaded through `uploadThumbnailImage` below.
+  // Neither means no custom thumbnail: YouTube's own auto-thumbnail stays.
+  if (run.script?.scriptId && run.script.thumbnailUrl === undefined) {
+    return run.script.thumbnailFrameAtMs != null
+      ? { ok: false, skipped: "a frame thumbnail is taken from OBS during the render" }
+      : { ok: false, skipped: "this video has no custom thumbnail" };
+  }
+  const { url, source } = thumbnailSourceFor(
+    run.script?.scriptId ? run.script.thumbnailUrl : (await channelYoutubeSettings(run.sceneId)).thumbnailUrl,
+  );
   const record = async (patch: Partial<NonNullable<Run["thumbnail"]>>) =>
     db
       .updateRun(runId, {
@@ -158,6 +171,27 @@ export async function publishThumbnail(runId: string, opts: { force?: boolean } 
     throw err;
   }
 
+  return uploadThumbnailImage(run, image, source);
+}
+
+/**
+ * Upload an already-normalised 1280×720 JPEG as the run's video thumbnail and
+ * record the outcome on the run. Shared by the image path above and a video
+ * render's frame thumbnail (script-shots.ts). THROWS on a transient failure
+ * (BullMQ retries); a refusal (unverified channel, rejected image) is recorded
+ * and returned, never retried.
+ */
+export async function uploadThumbnailImage(run: Run, image: Buffer, source: string): Promise<ThumbnailResult> {
+  const db = await getAppDb();
+  const runId = run.id;
+  const yt = run.platforms?.youtube;
+  if (!yt?.broadcastId) return { ok: false, skipped: "run has no YouTube video" };
+  const record = async (patch: Partial<NonNullable<Run["thumbnail"]>>) =>
+    db
+      .updateRun(runId, {
+        thumbnail: { setAt: run.thumbnail?.setAt ?? null, source, error: null, ...patch },
+      })
+      .catch(() => {});
   try {
     const ctx = await getYoutubeClient(yt.accountId);
     await setThumbnail(ctx, yt.broadcastId, { body: image, mimeType: "image/jpeg" });

@@ -87,6 +87,13 @@ export interface SceneMeta {
    */
   hidden?: boolean;
   /**
+   * A channel, or a short format's own scene (docs/short-video-plan.md §5.2).
+   * Format scenes are hidden too, and the channel lists (/admin/scenes, the
+   * stream and slot forms) leave them out; /admin/shorts lists them as formats.
+   * Absent on a scene saved before the field = a channel.
+   */
+  kind?: SceneKind;
+  /**
    * Which kind of channel this is (docs/crossword-mode-plan.md §3). Scene
    * metadata like `hidden`, not ControlState. Missing means "globe".
    */
@@ -96,6 +103,14 @@ export interface SceneMeta {
    * state, §10), when one is stored. Admin listings only.
    */
   youtubeAccountId?: string;
+}
+
+/** What a scene is for: a channel, or a short format's own scene. */
+export type SceneKind = "channel" | "short";
+
+/** A scene doc's kind — "short" only when it says so; anything else is a channel. */
+export function sceneKindOf(doc: { kind?: unknown } | null | undefined): SceneKind {
+  return doc?.kind === "short" ? "short" : "channel";
 }
 
 /** The kind of channel a scene is: the weather globe or the crossword game. */

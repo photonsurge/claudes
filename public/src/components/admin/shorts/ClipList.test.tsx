@@ -8,6 +8,7 @@ import ClipList from "./ClipList";
 
 const script: ShortScript = {
   id: "s1",
+  formatId: "shorts",
   template: "lineup",
   scope: { type: "country", id: "japan" },
   include: { alerts: false, quakes: false, volcanoes: false },
@@ -21,6 +22,7 @@ const script: ShortScript = {
       maxStops: 3,
       tourDwellMs: 8_000,
       leadSlide: "roundup",
+      roundupDepth: "summary",
       label: { title: "Japan", subtitle: "National tour", icon: "🇯🇵" },
     },
     { id: "b", target: "storm:jma:123", durationMs: 15_000, label: { title: "Heavy rain" } },
@@ -38,6 +40,7 @@ it("lists clips in order with their timing and tour settings", () => {
   expect(within(items[0]).getByText("max stops 3")).toBeInTheDocument();
   expect(within(items[0]).getByText("dwell 0:08/stop")).toBeInTheDocument();
   expect(within(items[0]).getByText("leads with roundup")).toBeInTheDocument();
+  expect(within(items[0]).getByText("round-up: summary")).toBeInTheDocument();
   expect(within(items[1]).getByText("0:15")).toBeInTheDocument();
   expect(within(items[1]).getByText("@ 0:45")).toBeInTheDocument();
   expect(within(items[1]).queryByText(/max stops/)).toBeNull();

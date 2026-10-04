@@ -27,6 +27,7 @@ const mockDeleteScene = jest.fn();
 const mockDeleteDirectorConfig = jest.fn();
 const mockUpsertByID = jest.fn();
 const mockDeleteCrossword = jest.fn();
+const mockGetFormat = jest.fn();
 jest.mock("@photonsurge/shared/db/index", () => ({
   getAppDb: async () => ({
     getOrInitBroadcastState: (...a: unknown[]) => mockGetOrInit(...a),
@@ -34,6 +35,7 @@ jest.mock("@photonsurge/shared/db/index", () => ({
     deleteScene: (...a: unknown[]) => mockDeleteScene(...a),
     deleteDirectorConfig: (...a: unknown[]) => mockDeleteDirectorConfig(...a),
     deleteCrosswordScene: (...a: unknown[]) => mockDeleteCrossword(...a),
+    shortFormats: { get: (...a: unknown[]) => mockGetFormat(...a) },
     broadcastState: { upsertByID: (...a: unknown[]) => mockUpsertByID(...a) },
   }),
 }));
@@ -56,6 +58,7 @@ beforeEach(() => {
   mockDeleteDirectorConfig.mockReset();
   mockUpsertByID.mockReset();
   mockDeleteCrossword.mockReset();
+  mockGetFormat.mockReset().mockResolvedValue(null);
 });
 
 describe("GET /api/scenes/:id", () => {
@@ -165,5 +168,13 @@ describe("DELETE /api/scenes/:id", () => {
     mockDeleteScene.mockResolvedValue(true);
     await deleteReq("atlantic-wind");
     expect(mockDeleteCrossword).not.toHaveBeenCalled();
+  });
+
+  it("409s a short format's scene — the format owns it", async () => {
+    mockGetFormat.mockResolvedValue({ id: "shorts", name: "Round-up" });
+    const res = await deleteReq("shorts");
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/\/admin\/shorts/);
+    expect(mockDeleteScene).not.toHaveBeenCalled();
   });
 });

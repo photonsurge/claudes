@@ -26,6 +26,7 @@ import {
   type ShortInclude,
 } from "@photonsurge/shared/short-script";
 import type { AppDb } from "@photonsurge/shared/db/index";
+import { sanitizeShortFormat } from "@photonsurge/shared/short-format";
 
 const NOW = Date.parse("2026-10-04T12:00:00Z");
 const TRANSITION_MS = 4_000;
@@ -252,6 +253,87 @@ describe("round-up only (the default)", () => {
   });
 });
 
+describe("several places in one video", () => {
+  const region = {
+    topCities: [
+      { name: "Paris", cc: "fr", country: "France", lng: 2, lat: 48, population: 9 },
+      { name: "Berlin", cc: "de", country: "Germany", lng: 13, lat: 52, population: 4 },
+    ],
+  };
+  const places = (...p: [string, string][]) => ({
+    type: "places" as const,
+    places: p.map(([type, id]) => ({ type: type as "country" | "area", id })),
+  });
+  const db = () =>
+    fakeDb({
+      countries: [JP],
+      region,
+      countryRoundups: { jp: roundupOf(450) }, // 30 s
+      regionRoundups: { europe: roundupOf(900), africa: roundupOf(600) }, // 60 s, 40 s
+      summaries: { hourly: worldSummary() },
+    });
+
+  it("one opener per place in the given order, each its round-up's read time, closing on a world spin", async () => {
+    const { title, clips, skipped } = await buildLineup(db(), cfg(), {
+      scope: places(["area", "africa"], ["country", "japan"], ["area", "europe"]),
+      now: NOW,
+    });
+    expect(ids(clips)).toEqual(["region:africa", "country:japan", "region:europe", TARGET_WORLD_SPIN]);
+    expect(clips.map((c) => c.durationMs)).toEqual([40_000, 30_000, 60_000, CLOSE_MS]);
+    expect(clips.slice(0, 3).every((c) => c.leadSlide === "roundup" && c.roundupDepth === "full")).toBe(true);
+    expect(clips[1]).toMatchObject({ maxStops: 2, label: { title: "Japan", icon: "🇯🇵" } }); // its tour, paced into 30 s
+    expect(clips[3].label.title).toBe("Global Weather");
+    expect(title).toBe("Africa, Japan and Europe round-up");
+    expect(skipped).toEqual([]);
+  });
+
+  it("leaves out a place with no round-up (or an unknown id) and names it", async () => {
+    const { clips, skipped, title } = await buildLineup(db(), cfg(), {
+      scope: places(["area", "asia"], ["country", "japan"], ["country", "atlantis"], ["area", "europe"]),
+      now: NOW,
+    });
+    expect(ids(clips)).toEqual(["country:japan", "region:europe", TARGET_WORLD_SPIN]);
+    expect(skipped).toEqual([
+      { place: "area:asia", name: "Asia", reason: "no usable round-up" },
+      { place: "country:atlantis", name: "atlantis", reason: expect.stringMatching(/unknown country id "atlantis"/) },
+    ]);
+    expect(title).toBe("Japan and Europe round-up");
+  });
+
+  it("is an error when no place has a round-up", async () => {
+    await expect(
+      buildLineup(db(), cfg(), { scope: places(["area", "asia"], ["area", "oceania"]), now: NOW }),
+    ).rejects.toThrow(/No usable round-up for any of the 2 places \(Asia: no usable round-up; Oceania: no usable round-up\)/);
+  });
+
+  it("opens on the world round-up when the format says so; skips it, named, when none is fresh", async () => {
+    const scope = places(["area", "europe"], ["country", "japan"]);
+    const { clips } = await buildLineup(db(), cfg(), { scope, openWithWorld: true, now: NOW });
+    expect(ids(clips)).toEqual([TARGET_WORLD_ROUNDUP, "region:europe", "country:japan", TARGET_WORLD_SPIN]);
+    expect(clips[0].label.title).toBe("Global Round-Up");
+    const stale = fakeDb({ countries: [JP], countryRoundups: { jp: roundupOf(450) } });
+    const out = await buildLineup(stale, cfg(), { scope: places(["country", "japan"]), openWithWorld: true, now: NOW });
+    expect(ids(out.clips)).toEqual(["country:japan", TARGET_WORLD_SPIN]);
+    expect(out.skipped).toEqual([{ place: "world", name: "World", reason: "no fresh world round-up" }]);
+  });
+
+  it("is round-up only: the include switches are ignored", async () => {
+    const alerts = [alertAt("JP", 135, 35)];
+    const withSwitches = fakeDb({ countries: [JP], countryRoundups: { jp: roundupOf(450) }, alerts });
+    const { clips } = await buildLineup(withSwitches, cfg(), { scope: places(["country", "japan"]), include: EVERYTHING, now: NOW });
+    expect(ids(clips)).toEqual(["country:japan", TARGET_WORLD_SPIN]);
+  });
+
+  it("follows the format: summary depth times the summaries, the close can be off", async () => {
+    const shape = sanitizeShortFormat({ id: "f", opener: { roundupDepth: "summary" }, close: { enabled: false } })!;
+    const sectioned = { placeId: "jp", summary: "s".repeat(300), stateOfPlay: "p".repeat(600), inputs: {} };
+    const d = fakeDb({ countries: [JP], countryRoundups: { jp: sectioned } });
+    const { clips } = await buildLineup(d, cfg(), { scope: places(["country", "japan"]), shape, now: NOW });
+    expect(clips).toHaveLength(1);
+    expect(clips[0]).toMatchObject({ durationMs: 20_000, roundupDepth: "summary" });
+  });
+});
+
 describe("with events", () => {
   const jpAlerts = (n: number) => Array.from({ length: n }, (_, i) => alertAt("JP", 133 + i * 0.5, 34 + i * 0.5));
 
@@ -416,6 +498,58 @@ describe("pickEvents", () => {
   });
 });
 
+describe("the format's shape", () => {
+  /** A format's opener/close with these overrides on the defaults. */
+  const shape = (o: Record<string, unknown>) => sanitizeShortFormat({ id: "f", ...o })!;
+  /** Summary 300 chars (20 s); with the rest and the joining spaces, 900 (60 s). */
+  const sectioned = { placeId: "jp", summary: "s".repeat(300), stateOfPlay: "p".repeat(299), advice: "a".repeat(299), inputs: {} };
+
+  it("summary depth times and tags only the summary; full times all of it", async () => {
+    const db = fakeDb({ countries: [JP], countryRoundups: { jp: sectioned } });
+    const brief = (await buildLineup(db, cfg(), { scope: japan, shape: shape({ opener: { roundupDepth: "summary" } }), now: NOW })).clips[0];
+    expect(brief).toMatchObject({ durationMs: 20_000, roundupDepth: "summary", leadSlide: "roundup" });
+    const full = (await buildLineup(db, cfg(), { scope: japan, now: NOW })).clips[0];
+    expect(full).toMatchObject({ durationMs: 60_000, roundupDepth: "full" });
+  });
+
+  it("tour off holds one framed shot; lead off leaves the deck's order alone", async () => {
+    const db = fakeDb({ countries: [JP], countryRoundups: { jp: roundupOf(900) } });
+    const [opener] = (await buildLineup(db, cfg(), { scope: japan, shape: shape({ opener: { tour: false, leadWithRoundup: false } }), now: NOW })).clips;
+    expect(opener).toMatchObject({ durationMs: 60_000, maxStops: 0 });
+    expect(opener.tourDwellMs).toBeUndefined();
+    expect(opener.leadSlide).toBeUndefined();
+    expect(opener.label.subtitle).toBe("Country spotlight · National weather");
+  });
+
+  it("a longer minimum dwell keeps fewer stops", async () => {
+    const db = fakeDb({ countries: [JP], countryRoundups: { jp: roundupOf(900) } }); // 60 s
+    const [opener] = (await buildLineup(db, cfg(), { scope: japan, shape: shape({ opener: { minTourDwellMs: 16_000 } }), now: NOW })).clips;
+    expect(opener).toMatchObject({ maxStops: 3, tourDwellMs: 16_000 }); // floor(60 / 20)
+  });
+
+  it("the close can be switched off or resized", async () => {
+    const db = fakeDb({ countries: [JP], countryRoundups: { jp: roundupOf(900) } });
+    const off = (await buildLineup(db, cfg(), { scope: japan, shape: shape({ close: { enabled: false } }), now: NOW })).clips;
+    expect(off).toHaveLength(1);
+    const short = (await buildLineup(db, cfg(), { scope: japan, shape: shape({ close: { ms: 3_000 } }), now: NOW })).clips;
+    expect(short[1].durationMs).toBe(3_000);
+    const globe = fakeDb({ summaries: { hourly: worldSummary() } });
+    expect((await buildLineup(globe, cfg(), { scope: { type: "globe" }, shape: shape({ close: { enabled: false } }), now: NOW })).clips).toHaveLength(1);
+  });
+
+  it("the opener's budget share comes from the format, and no close leaves more room", async () => {
+    const alerts = Array.from({ length: 5 }, (_, i) => alertAt("JP", 133 + i * 0.5, 34 + i * 0.5));
+    const db = fakeDb({ countries: [JP], countryRoundups: { jp: roundupOf(1500) }, alerts });
+    // Share 0.6 of 75 s = 45 s; room 69 s leaves 24 s = one 13 s alert, the 11 s left goes back.
+    const { clips } = await buildLineup(db, cfg(), { scope: japan, include: ALERTS, shape: shape({ opener: { budgetShare: 0.6 } }), now: NOW });
+    expect(clips.map((c) => c.durationMs)).toEqual([56_000, 13_000, 6_000]);
+    // No close: room is the whole 75 s; 30 s share leaves 45 s = three alerts.
+    const open = (await buildLineup(db, cfg(), { scope: japan, include: ALERTS, shape: shape({ close: { enabled: false } }), now: NOW })).clips;
+    expect(open.map((c) => c.durationMs)).toEqual([36_000, 13_000, 13_000, 13_000]);
+    expect(scriptDurationMs(open)).toBe(BUDGET);
+  });
+});
+
 describe("titles and round-up text", () => {
   const japanRs = { type: "country", shot: { name: "Japan" } } as any;
   it("names the place and what's in it", () => {
@@ -439,6 +573,14 @@ describe("titles and round-up text", () => {
     expect(roundupText({ narrative: " Old prose " } as any)).toBe("Old prose");
     expect(roundupText(null)).toBe("");
     expect(roundupReadMs({ summary: "x".repeat(150) } as any)).toBe(10_000);
+  });
+
+  it("at summary depth reads only the summary, else the narrative", () => {
+    const r: any = { summary: " Calm. ", stateOfPlay: "Dry.", cityOutlook: [{ name: "Tokyo", outlook: "Sunny" }], narrative: "ignored" };
+    expect(roundupText(r, "summary")).toBe("Calm.");
+    expect(roundupText({ narrative: " Old prose " } as any, "summary")).toBe("Old prose");
+    expect(roundupText({ stateOfPlay: "Dry." } as any, "summary")).toBe("");
+    expect(roundupReadMs({ summary: "x".repeat(150), advice: "y".repeat(150) } as any, 15, "summary")).toBe(10_000);
   });
 });
 

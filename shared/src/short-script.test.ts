@@ -1,3 +1,4 @@
+import { COUNTRY_SHOTS } from "./director-countries";
 import {
   clipAt,
   clipStarts,
@@ -7,7 +8,11 @@ import {
   playFor,
   sanitizeInclude,
   sanitizeScope,
+  shortPlaceName,
+  MAIN_AREAS_PLACES,
+  MAX_SHORT_PLACES,
   sanitizeShortScript,
+  sceneIdForScript,
   scriptDurationMs,
   TOUR_DWELL_MAX_MS,
   TOUR_DWELL_MIN_MS,
@@ -124,6 +129,19 @@ describe("sanitizeShortScript", () => {
     expect(sanitizeShortScript(body)).not.toHaveProperty("plays");
   });
 
+  it("keeps a round-up depth and drops an unknown one", () => {
+    const one = (roundupDepth: unknown) =>
+      sanitizeShortScript({ id: "s", scope: { type: "globe" }, clips: [{ target: "country:japan", roundupDepth }] })!.clips[0];
+    expect(one("summary").roundupDepth).toBe("summary");
+    expect(one("full").roundupDepth).toBe("full");
+    expect(one("half")).not.toHaveProperty("roundupDepth");
+  });
+
+  it("keeps the format id, defaulting to the default format", () => {
+    expect(sanitizeShortScript({ id: "s", scope: { type: "globe" }, formatId: " short-uk " })!.formatId).toBe("short-uk");
+    expect(sanitizeShortScript({ id: "s", scope: { type: "globe" } })!.formatId).toBe("shorts");
+  });
+
   it("defaults include switches off, status to draft and a blank title", () => {
     const s = sanitizeShortScript({ id: "s2", scope: { type: "globe", id: "ignored" } })!;
     expect(s.scope).toEqual({ type: "globe" });
@@ -149,6 +167,55 @@ describe("sanitizeScope / sanitizeInclude", () => {
     expect(sanitizeScope("globe")).toBeNull();
   });
 
+  it("keeps a places list in order: catalog ids only, deduped, at most MAX_SHORT_PLACES", () => {
+    expect(
+      sanitizeScope({
+        type: "places",
+        places: [
+          { type: "area", id: " europe " },
+          { type: "country", id: "usa" },
+          { type: "area", id: "atlantis" }, // not in REGION_SHOTS
+          { type: "country", id: "europe" }, // not in COUNTRY_SHOTS
+          { type: "area", id: "europe" }, // duplicate
+          { type: "country", id: "uk" },
+          { type: "area", id: "uk" }, // same id, other kind: a different place
+          { type: "globe" },
+          "asia",
+        ],
+      }),
+    ).toEqual({
+      type: "places",
+      places: [
+        { type: "area", id: "europe" },
+        { type: "country", id: "usa" },
+        { type: "country", id: "uk" },
+        { type: "area", id: "uk" },
+      ],
+    });
+    const many = COUNTRY_SHOTS.map((c) => ({ type: "country", id: c.id }));
+    const kept = sanitizeScope({ type: "places", places: many });
+    expect(kept?.type === "places" && kept.places).toHaveLength(MAX_SHORT_PLACES);
+    expect(kept?.type === "places" && kept.places[0]).toEqual(many[0]);
+  });
+
+  it("a places list with nothing valid left is no scope", () => {
+    expect(sanitizeScope({ type: "places", places: [] })).toBeNull();
+    expect(sanitizeScope({ type: "places", places: [{ type: "area", id: "nowhere" }] })).toBeNull();
+    expect(sanitizeScope({ type: "places" })).toBeNull();
+  });
+
+  it("the main areas quick-fill is six known places", () => {
+    expect(sanitizeScope({ type: "places", places: MAIN_AREAS_PLACES })).toEqual({ type: "places", places: MAIN_AREAS_PLACES });
+    expect(MAIN_AREAS_PLACES.map(shortPlaceName)).toEqual([
+      "Europe",
+      "United States",
+      "Asia",
+      "Australia",
+      "Africa",
+      "South America",
+    ]);
+  });
+
   it("turns a switch on only for a literal true", () => {
     expect(sanitizeInclude(undefined)).toEqual({ alerts: false, quakes: false, volcanoes: false });
     expect(sanitizeInclude({ alerts: true, quakes: "yes", volcanoes: 1 })).toEqual({ alerts: true, quakes: false, volcanoes: false });
@@ -167,5 +234,14 @@ describe("playFor", () => {
   it("is undefined for a scene that never played it, or no plays at all", () => {
     expect(playFor({ plays: [p("shorts", 1)] }, "main")).toBeUndefined();
     expect(playFor({}, "shorts")).toBeUndefined();
+  });
+});
+
+describe("sceneIdForScript", () => {
+  it("is the format's scene (= its id), else the default format's", () => {
+    expect(sceneIdForScript({ formatId: "short-uk" })).toBe("short-uk");
+    expect(sceneIdForScript({ formatId: "  " })).toBe("shorts");
+    expect(sceneIdForScript({})).toBe("shorts");
+    expect(sceneIdForScript({ formatId: null })).toBe("shorts");
   });
 });

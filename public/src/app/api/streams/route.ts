@@ -5,6 +5,7 @@ import { sendToFore } from "@photonsurge/shared/bull/bull-queue";
 import { MAIN_SCENE_ID } from "@photonsurge/shared/control";
 import {
   ENV_ENCODER_ID,
+  encoderUse,
   sanitizeChatPollMs,
   toEncoderInfo,
   toRunState,
@@ -12,6 +13,7 @@ import {
   type Run,
   type YoutubePrivacy,
 } from "@photonsurge/shared/runs";
+import { encoderOccupancy } from "@photonsurge/shared/encoder-occupancy";
 import { requireAdmin } from "../../../lib/require-admin";
 
 export const runtime = "nodejs";
@@ -41,20 +43,31 @@ async function GET__impl() {
     return NextResponse.json({ error: "admin only" }, { status: 401, headers: NO_CACHE });
   }
   const db = await getAppDb();
-  const [runs, accounts, encoders, slots] = await Promise.all([
+  const [runs, accounts, encoders, slots, renders, schedules] = await Promise.all([
     db.listRuns(),
     db.listYoutubeAccounts(),
     db.listStreamEncoders(),
     db.listStreamSlots(),
+    // Advisory only — the snapshot never fails over the render queue or the schedules.
+    Promise.resolve()
+      .then(() => db.shortRenders.list({ status: ["queued", "preparing", "live"] }))
+      .catch(() => []),
+    Promise.resolve()
+      .then(() => db.shortSchedules.list())
+      .catch(() => []),
   ]);
   const status = platformStatus();
+  // What each encoder is doing, for the encoder picker (short-video plan §6.2).
+  // A schedule booked on a named encoder within 24 h shows it as "booked"; one
+  // set to "any" video encoder books none (§13).
+  const occupancy = encoderOccupancy(encoders, runs as Run[], slots, schedules, Date.now(), renders);
   return NextResponse.json(
     {
       ...status,
       // "Configured" now means EITHER the legacy env OBS or a registered encoder.
       obsConfigured: status.obsConfigured || encoders.some((e) => e.enabled),
       accounts: accounts.map((a) => ({ channelId: a.id, channelTitle: a.channelTitle, connectedAt: a.connectedAt })),
-      encoders: encoders.map(toEncoderInfo),
+      encoders: encoders.map((e) => ({ ...toEncoderInfo(e), occupancy: occupancy[e.id] })),
       slots,
       runs: runs.map((r) => toRunState(r as Run)),
     },
@@ -111,6 +124,18 @@ async function POST__impl(req: Request) {
     }
     if (!enc.enabled) {
       return NextResponse.json({ error: `encoder "${encoderId}" is disabled` }, { status: 400, headers: NO_CACHE });
+    }
+    // An encoder assigned to videos belongs to the render queue (short-video
+    // plan §6.6): a channel can't go live on it, whatever the picker showed.
+    if (encoderUse(enc) === "videos") {
+      return NextResponse.json(
+        {
+          error:
+            `encoder "${enc.name || encoderId}" is assigned to videos — a channel can't go live on it. ` +
+            `Pick a channel encoder, or switch this one back to channels on /admin/streams.`,
+        },
+        { status: 400, headers: NO_CACHE },
+      );
     }
   } else if (!encoderId) {
     encoderId = (await db.encoderForScene(sceneId))?.id;

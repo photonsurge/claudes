@@ -1,7 +1,7 @@
 # Presenter (spoken narration) — plan
 
-> **Status: PROPOSED** (2026-10-04, revised the same day to put round-ups first).
-> Nothing built. Replaces the memory-only "presenter LLM" sketch that
+> **Status: IN PROGRESS** (2026-10-04, revised the same day to put round-ups first).
+> The round-up schedule and the voice bench are built (below). Replaces the memory-only "presenter LLM" sketch that
 > [short-video-plan.md](./short-video-plan.md),
 > [chat-interaction-plan.md](./done/chat-interaction-plan.md) and
 > [streaming-runs-plan.md](./streaming-runs-plan.md) point at.
@@ -20,6 +20,53 @@
 > may air is worked out from the slots when the director reads it (`roundupStaleAfterMs`)
 > instead of being stamped on the round-up as `airUntil`. Not built: the hourly's
 > coverage window (open decision 2), the prompt registry, previews, anything voice.
+>
+> **Built 2026-10-04: the voice bench** (WP4–WP6 trimmed to the audition, plus the
+> presenter catalog from WP7). On demand only: nothing runs in the background and
+> nothing airs.
+> - `/admin/presenters`: a master switch (`db.presenterSettings.enabled`, off by
+>   default) that gates every speech call, tests included. It replaces the
+>   `PRESENTER_ENABLED` env var in §10.1, so speech is switched on and off in the UI.
+> - Presenter catalog (`db.presenters`, `shared/src/presenter.ts`): name, persona and
+>   every voice property (model, voice, speed, style, options). Each presenter has a
+>   **Test** button that speaks the text box in its saved voice. The editor's
+>   **Test draft** speaks unsaved settings, and "Use this voice" copies a take into the
+>   editor. With nothing stored, a default "House voice" (Kokoro, the cheapest) is
+>   offered; saving it stores it.
+> - Takes (`db.voiceTests`, audio in the `presenter-audio` blob namespace) list the
+>   typed text, what was sent after `speakable()`, duration, latency, estimated cost,
+>   whether the style reached the model, and the OpenRouter generation id.
+> - "Read a round-up" picker: any recent world (global) round-up, or the latest round-up
+>   for any country or region, loaded into the text box exactly as the presenter would
+>   read it (`roundupSpeechText`). The take's label names the round-up.
+> - Long text: the worker splits speakable text into parts (`splitForSpeech`: at
+>   paragraph, then sentence, clause, word; 1,200 characters by default, per-model in
+>   voice-traits), speaks up to 3 at a time, and joins the MP3s (`joinMp3` drops each
+>   part's ID3 and Xing header, so players report the full length). A take shows
+>   "speaking 3/7" while it runs and "N parts joined" after. The text box holds up to
+>   20,000 characters. A failed part fails the take, naming the part. This is the same
+>   path round-ups will use on air.
+> - Sample text chips: the latest hourly and daily round-ups, and the latest place
+>   round-up's summary **and** state of play (decision 7 below).
+> - Worker: `lib/openrouter-speech.ts`, `presenter/voice-traits.ts`,
+>   `presenter/bench.ts`, `jobs/presenter.ts` (`test`, `refreshVoices`; foreground
+>   queue). "Refresh voices" on the page (also on `/admin/jobs`) fills
+>   `db.speechCatalog`. `yarn speak "text" --model … --voice …` in `worker/` checks a
+>   key and voice with no Mongo or queue; `yarn speak --models` lists the models.
+> - Cached takes: each take stores a hash of exactly what is sent to the speech model.
+>   An identical request reuses the earlier take's audio at no charge (marked "reused ·
+>   free"), unless "Make a fresh take" is ticked (`--fresh` on the CLI). `yarn speak`
+>   saves its runs as takes (marked CLI), with the audio written to the shared blob
+>   folder on the host (`${BLOB_DIR:-./blobs}` from the repo root, the folder compose
+>   mounts at /app/blobs; Mongo if that folder is missing or not writable), and the page refreshes the list every 10 s, so
+>   they show up there. The header totals takes, reuse, and estimated spend and savings.
+> - Shared: `speakable()`, `mp3DurationMs()`.
+> - Not built: the prompt registry and round-up previews (WP1–3), anything on air
+>   (WP8–9), written lines (WP10–12). Checked live on 2026-10-04: the model list
+>   parses (24 models), and a Kokoro call returned an mp3 that measured correctly, with
+>   a generation id. Pricing comes in three shapes: `prompt` per character (most),
+>   `completion` per second (ByteDance), and per-token `prompt` + `completion` (Gemini
+>   TTS). The page shows an estimated cost per hour of speech for all three.
 
 Give the stream a voice. A presenter is a named persona with a voice. It turns what is
 on air (a warning, an earthquake, a country check, a round-up) into a short spoken
@@ -420,8 +467,8 @@ properties are edited and sent.
 - **Read or write.** Each kind is either written from facts or read from stored prose:
   - `storm`, `quake`, `volcano`, `intro`: written.
   - `global`: reads the stored round-up narrative.
-  - `country`, `region`: reads the place round-up `summary` when one exists, otherwise
-    written from the area-weather facts.
+  - `country`, `region`: reads the place round-up `summary` and `stateOfPlay` when
+    they exist (decided 2026-10-04), otherwise written from the area-weather facts.
   Reading costs no script call and keeps the spoken words identical to the words on
   screen. What a read kind says is shaped in the round-up's own prompt (§2.5).
 - English only in v1.
@@ -536,8 +583,9 @@ later, because they have to be written and voiced close to the cut.
 
 Three switches, all of which must be on for a channel to speak:
 
-- `PRESENTER_ENABLED` in the worker's environment. Off means no audio is generated and
-  no cut carries a voice, on any channel.
+- The master switch on `/admin/presenters` (`db.presenterSettings.enabled`; built).
+  Off means no audio is generated and no cut carries a voice, on any channel. It is a
+  UI switch, not an env var, so it needs no restart.
 - The channel's Presenter card (§9): on, with a presenter chosen.
 - The kind is not in the channel's `kindsOff`.
 
@@ -697,23 +745,26 @@ Made here, say if any is wrong:
 14. No audio is generated unless a channel has the presenter switched on.
 15. A round-up's hold stretches to fit its audio.
 
+Decided by the operator on 2026-10-04:
+
+16. Whole hours are enough; no round-up needs a minute past the hour.
+17. A thinned hourly covers the whole gap since its previous slot.
+18. One set of local hours for all countries and one for all regions.
+19. A place round-up is read as its `summary` **and** `stateOfPlay`, not the summary
+    alone. Expect about three times the characters per place in §10.2.
+20. Every speech switch is in the UI: a master switch on `/admin/presenters` in place of
+    `PRESENTER_ENABLED`, then the channel card.
+21. Voices first: the bench (test any presenter by ear) comes before anything on air,
+    with no background generation until the voices are right.
+
 Open, for the operator:
 
-1. **Whole hours.** Is picking hours enough, or does any round-up need a minute past
-   the hour?
-2. **A thinned hourly.** With hourly slots unticked, the round-up is proposed to cover
-   the whole gap since its previous slot. The other option keeps it a one-hour
-   snapshot whatever the gap.
-3. **One set of local hours.** Proposed: one set for all countries and one for all
-   regions. The other option is hours per place.
 4. **Per-presenter brief overrides.** Proposed: allowed, stored as overrides only.
    The stricter option is shared briefs only, with persona the only per-presenter text.
 5. **Budget.** A daily spend per channel. It decides which rows of the §6 table are
    usable for an always-on channel.
 6. **Shot length for event lines.** May a written line extend the shot it is on, or
    must it always fit? Round-ups are settled: the hold stretches.
-7. **How much of a place round-up is read.** Proposed: the `summary` only, one or two
-   sentences. The longer option adds the state of play.
 8. **Captions.** Should the spoken text of an event line also appear on screen? A
    round-up's text is already on screen.
 9. **How many presenters at launch.** One house voice, or several (per channel, or

@@ -20,6 +20,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import type { ReactNode } from "react";
 import { getCard } from "./catalog";
+import { useSettingsCatalog } from "./catalog-context";
 import { useSceneDraft } from "./SceneDraft";
 
 export default function SettingsCard({
@@ -36,9 +37,10 @@ export default function SettingsCard({
   note?: ReactNode;
   children: ReactNode;
 }) {
-  const { pending, pendingDirector } = useSceneDraft();
-  const def = getCard(id);
-  const staged = def?.bucket === "director" ? pendingDirector : pending;
+  const { pending, pendingDirector, pendingFormat } = useSceneDraft();
+  const { cards } = useSettingsCatalog();
+  const def = getCard(id, cards);
+  const staged = def?.bucket === "director" ? pendingDirector : def?.bucket === "format" ? pendingFormat : pending;
   const dirty = !!def && def.fields.some((f) => f in staged);
 
   return (

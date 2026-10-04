@@ -48,6 +48,8 @@ export interface iBroadcastStateModel extends iBroadcastState {
   hidden?: boolean;
   /** Which kind of channel (SceneMeta.surface). Missing means "globe". Not part of ControlState. */
   surface?: SceneSurface;
+  /** A channel, or a short format's own scene (SceneMeta.kind). Not part of ControlState. */
+  kind?: "channel" | "short";
 }
 
 export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
@@ -61,6 +63,8 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     hidden: { type: Boolean, required: false, default: false },
     /** Channel kind (docs/crossword-mode-plan.md §3). No default: missing reads as "globe". */
     surface: { type: String, required: false, enum: ["globe", "crossword"] },
+    /** "short" = a short format's own scene (docs/short-video-plan.md §5.2): off the channel lists. */
+    kind: { type: String, required: false, enum: ["channel", "short"], default: "channel" },
     activeVariable: { type: String, required: false, default: "temp" },
     fhr: { type: Number, required: true, default: 0 },
     basemap: { type: String, required: true, default: "dark" },

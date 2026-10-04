@@ -10,12 +10,13 @@
  */
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { MAIN_SCENE_ID } from "@photonsurge/shared/control";
-import { ENV_ENCODER_ID, encoderKeyForRun, type Run } from "@photonsurge/shared/runs";
+import { ENV_ENCODER_ID, encoderKeyForRun, encoderUse, type Run } from "@photonsurge/shared/runs";
 import { decryptSecret } from "@photonsurge/shared/utill/secretbox";
 import { obsNamesFor } from "../obs/names";
 import {
   ObsUnavailableError,
   envEndpoint,
+  getSourceScreenshot,
   provisionBrowserScene,
   refreshBrowserSource,
   type ObsEndpoint,
@@ -71,8 +72,15 @@ export async function watchUrlForScene(sceneId: string): Promise<string> {
   return token ? `${url}?token=${token}` : url;
 }
 
-/** Resolve an encoder to its OBS endpoint + the channel it publishes + its scene/input names. */
-async function resolveEncoderScene(encoderId?: string): Promise<{
+/**
+ * Resolve an encoder to its OBS endpoint + the channel it publishes + its
+ * scene/input names. `sceneOverride` names the scene instead of the encoder's
+ * binding — a video render points the encoder at its script's scene (§6.4).
+ */
+async function resolveEncoderScene(
+  encoderId?: string,
+  sceneOverride?: string,
+): Promise<{
   ep: ObsEndpoint;
   sceneId: string;
   sceneName: string;
@@ -80,11 +88,15 @@ async function resolveEncoderScene(encoderId?: string): Promise<{
 }> {
   const db = await getAppDb();
   const key = encoderId && encoderId !== ENV_ENCODER_ID ? encoderId : undefined;
-  const enc = key ? await db.getStreamEncoder(key) : null;
-  const sceneId = enc?.sceneId || MAIN_SCENE_ID; // unbound / env encoder → main channel
+  const enc = key && !sceneOverride ? await db.getStreamEncoder(key) : null;
+  const sceneId = sceneOverride || enc?.sceneId || MAIN_SCENE_ID; // unbound / env encoder → main channel
   const ep = await endpointForEncoderId(encoderId);
   return { ep, sceneId, ...obsNamesFor(sceneId) };
 }
+
+/** OBS names for a video encoder's idle state: a blank page, no globe. */
+export const IDLE_SCENE_KEY = "idle";
+export const IDLE_URL = "about:blank";
 
 /**
  * Full auto-provision an encoder's OBS: build the channel's tokened /watch URL and
@@ -102,13 +114,44 @@ async function resolveEncoderScene(encoderId?: string): Promise<{
  */
 export async function provisionEncoderScene(
   encoderId?: string,
-  opts?: { hard?: boolean; prune?: boolean },
+  opts?: { hard?: boolean; prune?: boolean; sceneId?: string },
 ): Promise<ProvisionResult & { url: string; sceneId: string }> {
-  const { ep, sceneId, sceneName, inputName } = await resolveEncoderScene(encoderId);
+  const { ep, sceneId, sceneName, inputName } = await resolveEncoderScene(encoderId, opts?.sceneId);
   const url = await watchUrlForScene(sceneId);
   const hard = opts?.hard ?? process.env.OBS_HARD_PROVISION !== "off";
   const res = await provisionBrowserScene(ep, { url, sceneName, inputName, hard, prune: opts?.prune });
   return { ...res, url, sceneId };
+}
+
+/**
+ * Put an encoder in its idle state: a browser source on a blank page in our
+ * "idle" OBS scene, with the sweep ON, so the video's /watch source (another
+ * Chromium drawing a globe) is removed. Used for video encoders between
+ * videos (§13: an unbound encoder must NOT fall back to the main channel).
+ */
+export async function idleEncoderScene(encoderId?: string): Promise<ProvisionResult & { url: string }> {
+  const ep = await endpointForEncoderId(encoderId);
+  const { sceneName, inputName } = obsNamesFor(IDLE_SCENE_KEY);
+  const res = await provisionBrowserScene(ep, { url: IDLE_URL, sceneName, inputName, hard: false, prune: true });
+  return { ...res, url: IDLE_URL };
+}
+
+/**
+ * Hand an encoder back after a video render (§6.4): a channel encoder gets its
+ * own scene re-provisioned, as before the video; a video encoder (`use:
+ * "videos"`, bound to no channel) goes idle instead of falling back to the main
+ * channel. Throws ObsUnavailableError when OBS can't be reached (callers treat
+ * the restore as best-effort).
+ */
+export async function restoreEncoderScene(encoderId?: string): Promise<{ idle: boolean; url: string }> {
+  const key = encoderId && encoderId !== ENV_ENCODER_ID ? encoderId : undefined;
+  const enc = key ? await (await getAppDb()).getStreamEncoder(key) : null;
+  if (encoderUse(enc) === "videos") {
+    const res = await idleEncoderScene(encoderId);
+    return { idle: true, url: res.url };
+  }
+  const res = await provisionEncoderScene(encoderId);
+  return { idle: false, url: res.url };
 }
 
 /**
@@ -120,4 +163,20 @@ export async function refreshEncoderScene(encoderId?: string): Promise<{ sceneId
   const { ep, sceneId, sceneName, inputName } = await resolveEncoderScene(encoderId);
   const refreshed = await refreshBrowserSource(ep, inputName, sceneName);
   return { sceneId, inputName: refreshed };
+}
+
+/**
+ * A screenshot of what a run's encoder is drawing for its scene: the OBS scene
+ * provisioned for `run.sceneId` (the render's browser source, full canvas).
+ * The scene is named rather than the input because a fallback rebuild can
+ * leave the input as `<name> #n`; the scene name never moves. Throws
+ * ObsUnavailableError when OBS can't be reached or the scene isn't there.
+ */
+export async function screenshotRunScene(
+  run: Pick<Run, "encoderId" | "sceneId">,
+  opts: { imageFormat?: "jpg" | "png"; imageWidth?: number } = {},
+): Promise<{ mimeType: string; data: Buffer }> {
+  const ep = await endpointForRun(run);
+  const { sceneName } = obsNamesFor(run.sceneId);
+  return getSourceScreenshot(ep, { sourceName: sceneName, imageFormat: opts.imageFormat ?? "jpg", imageWidth: opts.imageWidth });
 }

@@ -1,13 +1,17 @@
 /**
  * Scripted short videos (docs/short-video-plan.md) — the worker jobs.
  *
- *  • generate — write a draft ShortScript from the lineup template for a scope
- *    (`{ scope, include?, budgetMs?, title?, sceneId? }`). With no include
- *    switch on (the default) it's a round-up video, and fails when the scope
- *    has no usable round-up. See director/script-generate.ts.
- *  • seedScenes — create the two hidden scenes the videos play on (`shorts`,
- *    `shorts-preview`). Skips a scene that already exists; `{ force: true }`
- *    re-applies the preset look. See director/short-scenes-seed.ts.
+ *  • generate — write a draft ShortScript from the lineup template in a format
+ *    (`{ formatId?, scope?, include?, budgetMs?, title? }`; absent fields come
+ *    from the format's template). With no include switch on it's a round-up
+ *    video, and fails when the scope has no usable round-up. See
+ *    director/script-generate.ts.
+ *  • seedFormat — create the default short format and its hidden scene
+ *    (`shorts`). Skips what already exists; `{ force: true }` re-applies the
+ *    seed look. See director/short-format-seed.ts.
+ *  • tick — the 60 s schedule ticker: fire due schedules' batches (§8).
+ *  • runBatch — "Run batch now" for one schedule (§8.1). Both live in
+ *    stream/short-schedules.ts.
  *
  * The job loader registers every export of this file as a handler, so it
  * exports handlers ONLY — helpers live in director/script-generate.ts.
@@ -16,8 +20,10 @@ import { UnrecoverableError, type Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { scriptDurationMs } from "@photonsurge/shared/short-script";
 import { log } from "@photonsurge/shared/utill/logger";
-import { generateShortScript, type GenerateRequest } from "../director/script-generate";
-import { seedShortScenes } from "../director/short-scenes-seed";
+import { generateShort, type GenerateRequest } from "../director/script-generate";
+import { seedShortFormat } from "../director/short-format-seed";
+import { runBatchNow, tickSchedules } from "../stream/short-schedules";
+import { sanitizePublishAs } from "@photonsurge/shared/short-schedule";
 import { blogInfo, blogErr } from "../blog";
 import { summarizeForLog } from "../utils";
 
@@ -28,14 +34,16 @@ export async function generate(job: Job) {
   const req = (job.data?.data ?? {}) as GenerateRequest;
   try {
     const db = await getAppDb();
-    const script = await generateShortScript(db, req);
+    const { script, skipped } = await generateShort(db, req);
     const durationMs = scriptDurationMs(script.clips);
-    const result = { id: script.id, title: script.title, clips: script.clips.length, durationMs };
+    // A several-places video names the places it left out (no round-up), so the
+    // operator sees them on the Generate form.
+    const result = { id: script.id, title: script.title, clips: script.clips.length, durationMs, ...(skipped.length ? { skipped } : {}) };
     log(TAG, "generate done", result);
     blogInfo(TAG, `short script generated: ${script.title} (${script.clips.length} clips)`, result, "short-video", script.id);
     return result;
   } catch (err) {
-    log(TAG, "generate failed", { err: summarizeForLog(err), scope: req.scope });
+    log(TAG, "generate failed", { err: summarizeForLog(err), formatId: req.formatId, scope: req.scope });
     blogErr(TAG, "short script generation failed", err, "short-video", "generate");
     // An operator is waiting on this job (/api/shorts/generate), and its
     // failures are things only they can fix — no round-up for the place, an
@@ -45,18 +53,40 @@ export async function generate(job: Job) {
   }
 }
 
-/** Job handler: `short-video.seedScenes` — the admin "Seed short video scenes" button. */
-export async function seedScenes(job: Job) {
+/** Job handler: `short-video.seedFormat` — the admin "Seed default short format" button. */
+export async function seedFormat(job: Job) {
   try {
     const db = await getAppDb();
-    const result = await seedShortScenes(db, { force: job.data?.data?.force === true });
-    log(TAG, "seedScenes done", result);
-    const summary = result.scenes.map((s) => `${s.id}: ${s.outcome}`).join(", ");
-    blogInfo(TAG, `short video scenes seeded (${summary})`, result, "short-video", "seedScenes");
+    const result = await seedShortFormat(db, { force: job.data?.data?.force === true });
+    log(TAG, "seedFormat done", result);
+    const summary = `scene ${result.id}: ${result.scene}, settings: ${result.settings}`;
+    blogInfo(TAG, `default short format seeded (${summary})`, result, "short-video", "seedFormat");
     return result;
   } catch (err) {
-    log(TAG, "seedScenes failed", { err: summarizeForLog(err) });
-    blogErr(TAG, "short video scene seed failed", err, "short-video", "seedScenes");
+    log(TAG, "seedFormat failed", { err: summarizeForLog(err) });
+    blogErr(TAG, "default short format seed failed", err, "short-video", "seedFormat");
     throw err;
   }
+}
+
+/**
+ * Job handler: `short-video.tick` — the 60 s schedule ticker (index.ts): fire
+ * every enabled schedule whose time has come by queuing its batch (§8). Cheap
+ * no-op when nothing is due.
+ */
+export async function tick(_job: Job) {
+  return tickSchedules();
+}
+
+/**
+ * Job handler: `short-video.runBatch` `{ scheduleId, publishAs? }` — "Run batch
+ * now": queue a schedule's videos immediately, without touching its next time;
+ * `publishAs` overrides every video's privacy for this batch (§8.1 step 5).
+ * Resolves `{ ok, ... }`; never rejects for an operator error.
+ */
+export async function runBatch(job: Job) {
+  const d = job.data?.data ?? {};
+  const scheduleId = typeof d.scheduleId === "string" ? d.scheduleId.trim() : "";
+  if (!scheduleId) return { ok: false, error: "scheduleId is required" };
+  return runBatchNow(scheduleId, sanitizePublishAs(d.publishAs));
 }

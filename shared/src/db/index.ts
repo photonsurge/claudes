@@ -68,6 +68,8 @@ import { getCountryRoundupModel, getRegionRoundupModel } from "./place-roundup-m
 import { makePlaceRoundupRepo } from "./place-roundup-repo";
 import { getRoundupSettingsModel } from "./roundup-settings-model";
 import { makeRoundupSettingsRepo } from "./roundup-settings-repo";
+import { getPresenterModel, getPresenterSettingsModel, getSpeechCatalogModel, getVoiceTestModel } from "./presenter-model";
+import { makePresenterRepo, makePresenterSettingsRepo, makeSpeechCatalogRepo, makeVoiceTestRepo } from "./presenter-repo";
 import { getCableModel } from "./cable-model";
 import { getCableLandingModel } from "./cable-landing-model";
 import { makeCableRepo } from "./cable-repo";
@@ -146,6 +148,12 @@ const rejectUsing = (puzzles: CrosswordPuzzleRepo, ref: BankRef) =>
   puzzles.updateContaining(ref, { status: "rejected" }, "ready");
 const untagUsing = (puzzles: CrosswordPuzzleRepo, ref: BankRef) =>
   puzzles.updateContaining(ref, { familyFriendly: false });
+import { getShortRenderModel, getShortRenderQueueModel } from "./short-render-model";
+import { makeShortRenderRepo } from "./short-render-repo";
+import { getShortScheduleModel } from "./short-schedule-model";
+import { makeShortScheduleRepo } from "./short-schedule-repo";
+import { getShortFormatModel } from "./short-format-model";
+import { makeShortFormatRepo } from "./short-format-repo";
 import { getAdModel } from "./ad-model";
 import { makeAdRepo } from "./ad-repo";
 import { getAdExposureModel } from "./ad-exposure-model";
@@ -174,7 +182,7 @@ import { makeViewerStateRepo } from "./viewer-state-repo";
 import { getStreamEncoderModel, iStreamEncoderModel } from "./stream-encoder-model";
 import { getStreamSlotModel, iStreamSlotModel } from "./stream-slot-model";
 import { getYoutubeAccountModel, iYoutubeAccountModel } from "./youtube-account-model";
-import { DEFAULT_CONTROL_STATE, MAIN_SCENE_ID, isSceneSurface, sceneSurface, type SceneSurface } from "../control";
+import { DEFAULT_CONTROL_STATE, MAIN_SCENE_ID, isSceneSurface, sceneSurface, sceneKindOf, type SceneKind, type SceneSurface } from "../control";
 import { DEFAULT_DIRECTOR_CONFIG, mergeDirectorConfig } from "../director";
 import { encoderKeyForRun, runIsActive, type Run, type StreamEncoder, type StreamSlot } from "../runs";
 
@@ -209,7 +217,9 @@ export const BLOB_NAMESPACES: Record<string, { label: string; desc: string }> = 
   "alert-snapshot": { label: "Alert snapshots", desc: "Satellite/compare/camera stills per alert: full cadence for the recent window, then one per alert + kind per UTC day, then only an aired alert's keepsake." },
   "event-snapshot": { label: "Event snapshots", desc: "Stills attached to unified watched events." },
   "volcano-media": { label: "Volcano media", desc: "Photos enriched onto the volcano catalog." },
+  "presenter-audio": { label: "Presenter audio", desc: "Spoken takes from the voice bench on /admin/presenters." },
   basemap: { label: "Basemap textures", desc: "Full-globe base images (Blue Marble / topo / night) refreshed from /admin/jobs." },
+  "short-tests": { label: "Video test shots", desc: "OBS screenshots taken at each clip's midpoint during a video render's offline test; only the latest test per script is kept." },
 };
 
 export function createDb(conn: Connection) {
@@ -245,6 +255,10 @@ export function createDb(conn: Connection) {
     alertSnapshot: makeInlineBlobStore("alert-snapshot", blobFs),
     eventSnapshot: makeInlineBlobStore("event-snapshot", blobFs),
     volcanoMedia: makeInlineBlobStore("volcano-media", blobFs),
+    // OBS screenshots of video renders (Run.shots, short-video plan §7). Disk
+    // only: with no BLOB_DIR the worker records the shot as not stored.
+    shortTest: makeInlineBlobStore("short-tests", blobFs),
+    presenterAudio: makeInlineBlobStore("presenter-audio", blobFs),
   };
 
   return {
@@ -308,6 +322,12 @@ export function createDb(conn: Connection) {
     countryRoundups: makePlaceRoundupRepo(getCountryRoundupModel(conn)),
     regionRoundups: makePlaceRoundupRepo(getRegionRoundupModel(conn)),
     roundupSettings: makeRoundupSettingsRepo(getRoundupSettingsModel(conn)),
+    // Presenter voice audition (docs/presenter-plan.md): catalog, master switch,
+    // cached OpenRouter speech models and the bench's spoken takes.
+    presenters: makePresenterRepo(getPresenterModel(conn)),
+    presenterSettings: makePresenterSettingsRepo(getPresenterSettingsModel(conn)),
+    speechCatalog: makeSpeechCatalogRepo(getSpeechCatalogModel(conn)),
+    voiceTests: makeVoiceTestRepo(getVoiceTestModel(conn), blobs.presenterAudio),
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
     faults: makeFaultRepo(getFaultModel(conn)),
     alertAreaGeom: makeAlertAreaGeomRepo(
@@ -341,6 +361,11 @@ export function createDb(conn: Connection) {
     crosswordSolves: makeCrosswordSolveRepo(getCrosswordSolveModel(conn)),
     crosswordPlayers: makeCrosswordPlayerRepo(getCrosswordPlayerModel(conn)),
     crosswordBank: makeCrosswordBankRepo(conn),
+    shortRenders: makeShortRenderRepo(getShortRenderModel(conn), getShortRenderQueueModel(conn)),
+    // Scheduled video batches (short-video plan §8); the worker's short-video.tick fires them.
+    shortSchedules: makeShortScheduleRepo(getShortScheduleModel(conn)),
+    // A short format's own settings; its look is the scene doc of the same id.
+    shortFormats: makeShortFormatRepo(getShortFormatModel(conn)),
     ads: makeAdRepo(getAdModel(conn), blobs.ad),
     adExposures: makeAdExposureRepo(getAdExposureModel(conn)),
     adminImages: makeAdminImageRepo(getAdminImageModel(conn), blobs.adminImage),
@@ -535,11 +560,13 @@ export function createDb(conn: Connection) {
 
     /**
      * All broadcast scenes (the "default" main scene + named ones), as SceneMeta
-     * `{ id, name, updatedAt, watchToken, hidden, surface }` sorted with main first then
-     * by name. Hidden scenes ARE listed (admin pickers need them); viewer-facing
-     * lists filter on `hidden`.
+     * `{ id, name, updatedAt, watchToken, hidden, kind, surface }` sorted with
+     * main first then by name. Hidden scenes ARE listed (admin pickers need
+     * them); viewer-facing lists filter on `hidden`. `opts.kind` keeps one kind
+     * only — `"channel"` for the channel lists (/admin/scenes, the stream and
+     * slot forms), which never show a short format's scene.
      */
-    async listScenes() {
+    async listScenes(opts: { kind?: SceneKind } = {}) {
       const res = await broadcastState.getAll({}, { sort: { name: 1 } });
       const docs = (res.success && res.data) || [];
       return docs
@@ -551,7 +578,9 @@ export function createDb(conn: Connection) {
           hidden: d.hidden === true,
           surface: sceneSurface(d),
           ...(d.youtube?.accountId ? { youtubeAccountId: String(d.youtube.accountId) } : {}),
+          kind: sceneKindOf(d),
         }))
+        .filter((s: { kind: SceneKind }) => !opts.kind || s.kind === opts.kind)
         .sort((a: { id: string; name: string }, b: { id: string; name: string }) =>
           a.id === MAIN_SCENE_ID ? -1 : b.id === MAIN_SCENE_ID ? 1 : a.name.localeCompare(b.name),
         );
@@ -576,14 +605,14 @@ export function createDb(conn: Connection) {
      * Create a named scene seeded from `seed` (defaults to the main scene's
      * current state, falling back to DEFAULT_CONTROL_STATE). No-op overwrite if
      * the id already exists is prevented by the caller checking getScene first.
-     * `opts.hidden` sets the scene metadata flag; left out, an existing scene
-     * keeps its flag and a new one is visible.
+     * `opts.hidden` / `opts.kind` set the scene metadata; left out, an existing
+     * scene keeps its own and a new one is a visible channel.
      */
     async createScene(
       id: string,
       name: string,
       seed?: Partial<typeof DEFAULT_CONTROL_STATE>,
-      opts: { hidden?: boolean; surface?: SceneSurface } = {},
+      opts: { hidden?: boolean; kind?: SceneKind; surface?: SceneSurface } = {},
     ) {
       const base = seed ?? DEFAULT_CONTROL_STATE;
       const created = await broadcastState.upsertByID(id, {
@@ -592,6 +621,7 @@ export function createDb(conn: Connection) {
         name,
         ...(typeof opts.hidden === "boolean" ? { hidden: opts.hidden } : {}),
         ...(isSceneSurface(opts.surface) ? { surface: opts.surface } : {}),
+        ...(opts.kind ? { kind: opts.kind } : {}),
       } as any);
       return created.data ?? null;
     },
@@ -603,6 +633,21 @@ export function createDb(conn: Connection) {
     async setSceneHidden(id: string, hidden: boolean): Promise<boolean> {
       if (!(await this.getScene(id))) return false;
       const res = await broadcastState.updateByID(id, { hidden } as any);
+      return !!res.success;
+    },
+
+    /**
+     * Set a scene's metadata — `hidden`, `kind`, `name` — without touching its
+     * look. Returns false for an unknown scene.
+     */
+    async setSceneMeta(id: string, meta: { hidden?: boolean; kind?: SceneKind; name?: string }): Promise<boolean> {
+      if (!(await this.getScene(id))) return false;
+      const patch: Record<string, unknown> = {};
+      if (typeof meta.hidden === "boolean") patch.hidden = meta.hidden;
+      if (meta.kind) patch.kind = meta.kind;
+      if (meta.name) patch.name = meta.name;
+      if (!Object.keys(patch).length) return true;
+      const res = await broadcastState.updateByID(id, patch as any);
       return !!res.success;
     },
 
@@ -652,6 +697,17 @@ export function createDb(conn: Connection) {
       return (res.success && res.data ? res.data : []) as Run[];
     },
 
+    /**
+     * Other runs of a script that still hold OBS screenshots (Run.shots) — the
+     * older tests a new one replaces (short-video plan §7: latest test only).
+     */
+    async runsWithShotsForScript(scriptId: string, excludeRunId?: string) {
+      const q: Record<string, unknown> = { "script.scriptId": scriptId, "shots.0": { $exists: true } };
+      if (excludeRunId) q.id = { $ne: excludeRunId };
+      const res = await streamRuns.getAll(q as any);
+      return (res.success && res.data ? res.data : []) as Run[];
+    },
+
     /** The run that currently OWNS a scene (still in a running status), or null. */
     async activeRunForScene(sceneId: string) {
       const rows = await this.listRuns({ sceneId });
@@ -668,7 +724,11 @@ export function createDb(conn: Connection) {
       return (
         rows.find(
           (r) =>
-            r.id !== excludeRunId && !!r.platforms?.youtube && encoderKeyForRun(r) === (encoderId || "env"),
+            r.id !== excludeRunId &&
+            // A video render occupies its encoder even offline (no YouTube): it
+            // points the encoder's browser source at its own scene (§6.4).
+            (!!r.platforms?.youtube || !!r.script?.scriptId) &&
+            encoderKeyForRun(r) === (encoderId || "env"),
         ) ?? null
       );
     },

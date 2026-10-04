@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
-import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { formatStreamTitle, STREAM_TITLE_TOKENS } from "@photonsurge/shared/stream-title";
+import TokenChips from "./TokenChips";
 
 export default function StreamTitleField({ value, onChange, recurring = false }: {
   value: string;
@@ -37,17 +36,11 @@ export default function StreamTitleField({ value, onChange, recurring = false }:
           Dates use Europe/London time (GMT/BST automatically). Codes are replaced when the YouTube broadcast is created.
           {recurring ? " Every restart gets a fresh date and time; the saved template stays unchanged." : " The published title stays fixed during the stream."}
         </Typography>
-        <Box component="details" open>
-          <Typography component="summary" variant="caption" sx={{ cursor: "pointer", fontWeight: 600 }}>
-            Date & time codes — click a code to add it
-          </Typography>
-          <Stack direction="row" useFlexGap spacing={0.75} sx={{ flexWrap: "wrap", mt: 1 }}>
-            {STREAM_TITLE_TOKENS.map(([code, label, example]) => (
-              <Chip key={code} size="small" variant="outlined" label={`${code} · ${label} (${example})`}
-                onClick={() => onChange(value + code)} />
-            ))}
-          </Stack>
-        </Box>
+        <TokenChips
+          title="Date & time codes — click a code to add it"
+          tokens={STREAM_TITLE_TOKENS}
+          onPick={(code) => onChange(value + code)}
+        />
         <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
           SOMETHING %D → SOMETHING TUESDAY. %D is the full uppercase weekday; %d is the day number.
         </Typography>

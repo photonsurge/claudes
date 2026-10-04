@@ -50,7 +50,7 @@ export default function ScenesPage() {
 
   const refresh = useCallback(async () => {
     // The scene list carries each channel's YouTube account (`youtubeAccountId`).
-    const [list, channels] = await Promise.all([listScenes(), fetchYoutubeChannels()]);
+    const [list, channels] = await Promise.all([listScenes({ kind: "channel" }), fetchYoutubeChannels()]);
     setScenes(list);
     setYoutube(channels);
   }, []);

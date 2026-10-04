@@ -16,10 +16,9 @@
  * and `#<card>` deep-links to one (the links from /control's director holds,
  * the stream panel and the streams slot card land that way).
  */
-import { useCallback, useEffect, useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import MuiLink from "@mui/material/Link";
 import Skeleton from "@mui/material/Skeleton";
@@ -29,15 +28,9 @@ import { MAIN_SCENE_ID, sceneSurface, type SceneMeta } from "@photonsurge/shared
 import { crosswordSettingsHref, replaceLocation } from "../../../../lib/channel-links";
 import { listScenes } from "../../../../lib/scenes";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
-import SceneDraftProvider, { useSceneDraft } from "../../../../components/admin/scenes/SceneDraft";
-import SceneSaveBar from "../../../../components/admin/scenes/SceneSaveBar";
-import SettingsGroupRail from "../../../../components/admin/scenes/SettingsGroupRail";
-import {
-  SETTINGS_GROUPS,
-  cardsInGroup,
-  groupOfCard,
-  type SettingsGroupId,
-} from "../../../../components/admin/scenes/catalog";
+import SceneDraftProvider from "../../../../components/admin/scenes/SceneDraft";
+import SettingsBody from "../../../../components/admin/scenes/SettingsBody";
+import type { SettingsGroupId } from "../../../../components/admin/scenes/catalog";
 import AboutCardSettings from "../../../../components/admin/scenes/AboutCardSettings";
 import AudioSettings from "../../../../components/admin/scenes/AudioSettings";
 import CameraSettings from "../../../../components/admin/scenes/CameraSettings";
@@ -78,8 +71,6 @@ const CARD_COMPONENTS: Record<string, ComponentType> = {
 };
 
 const DEFAULT_GROUP: SettingsGroupId = "layout";
-const isGroup = (v: string | null): v is SettingsGroupId =>
-  !!v && SETTINGS_GROUPS.some((g) => g.id === v);
 
 export default function ChannelSettingsPage() {
   const params = useParams<{ id: string }>();
@@ -127,77 +118,9 @@ export default function ChannelSettingsPage() {
         />
       ) : (
         <SceneDraftProvider sceneId={sceneId}>
-          <SettingsBody />
+          <SettingsBody components={CARD_COMPONENTS} defaultGroup={DEFAULT_GROUP} />
         </SceneDraftProvider>
       )}
     </AdminPageShell>
-  );
-}
-
-/** Inside the provider, so the rail can count what is staged in each group. */
-function SettingsBody() {
-  const { ready } = useSceneDraft();
-  const [group, setGroup] = useState<SettingsGroupId>(DEFAULT_GROUP);
-  const [anchor, setAnchor] = useState<string | null>(null);
-
-  // Adopt the URL once: `#card` wins over `?s=group`, since a deep link names a
-  // card and the group it lives in is implied.
-  useEffect(() => {
-    const hash = window.location.hash.replace(/^#/, "");
-    const fromHash = hash ? groupOfCard(hash) : undefined;
-    const fromQuery = new URLSearchParams(window.location.search).get("s");
-    if (fromHash) {
-      setGroup(fromHash);
-      setAnchor(hash);
-    } else if (isGroup(fromQuery)) {
-      setGroup(fromQuery);
-    }
-  }, []);
-
-  // Scroll a deep-linked card into view once its group has actually rendered.
-  useEffect(() => {
-    if (!anchor || !ready) return;
-    document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setAnchor(null);
-  }, [anchor, ready, group]);
-
-  // replaceState, not the router: switching group is a view change, not a
-  // navigation, and a history entry per click would make Back useless.
-  const select = useCallback((id: SettingsGroupId) => {
-    setGroup(id);
-    const url = new URL(window.location.href);
-    url.searchParams.set("s", id);
-    url.hash = "";
-    window.history.replaceState(null, "", url);
-  }, []);
-
-  const def = SETTINGS_GROUPS.find((g) => g.id === group) ?? SETTINGS_GROUPS[0];
-
-  return (
-    <Stack direction={{ xs: "column", md: "row" }} spacing={2.5} sx={{ alignItems: "flex-start" }}>
-      <SettingsGroupRail active={group} onSelect={select} />
-
-      <Box sx={{ flex: 1, minWidth: 0, maxWidth: 760 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          {def.blurb}
-        </Typography>
-
-        {!ready ? (
-          <Stack spacing={2} aria-label="Loading channel">
-            <Skeleton variant="rounded" height={180} />
-            <Skeleton variant="rounded" height={140} />
-          </Stack>
-        ) : (
-          <Stack spacing={2}>
-            {cardsInGroup(group).map((card) => {
-              const Card = CARD_COMPONENTS[card.id];
-              return Card ? <Card key={card.id} /> : null;
-            })}
-          </Stack>
-        )}
-
-        <SceneSaveBar />
-      </Box>
-    </Stack>
   );
 }
