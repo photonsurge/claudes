@@ -2,7 +2,7 @@
  * SlotsCard — persistent-stream rows: status derivation from the backing run,
  * the enable switch as the on/off control, and the add form.
  */
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import SlotsCard from "./SlotsCard";
 import type { RunState, StreamEncoderInfo, StreamSlot } from "@photonsurge/shared/runs";
 import type { SceneMeta } from "@photonsurge/shared/control";
@@ -87,47 +87,49 @@ describe("SlotsCard", () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: "s1", enabled: false }));
   });
 
-  it("adds a slot switched OFF — the switch is the go-live control", () => {
+  const openAdd = () => {
+    fireEvent.click(screen.getByRole("button", { name: "Add stream" }));
+    return screen.getByRole("dialog");
+  };
+  const pick = (dialog: HTMLElement, label: string, option: string) => {
+    fireEvent.mouseDown(within(dialog).getByLabelText(label));
+    fireEvent.click(screen.getByRole("option", { name: option }));
+  };
+
+  it("adds a slot switched OFF, chat on and polling every 2 min", async () => {
     const onSave = jest.fn(async () => ({}));
     render(<SlotsCard slots={[]} scenes={SCENES} encoders={ENCODERS} runs={[]} onSave={onSave} onDelete={jest.fn()} />);
 
-    const form = screen.getByRole("button", { name: "Add stream" }).closest("div") as HTMLElement;
-    fireEvent.mouseDown(within(form).getByLabelText("channel"));
-    fireEvent.click(screen.getByRole("option", { name: "Wind" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add stream" }));
+    const dialog = openAdd();
+    pick(dialog, "channel", "Wind");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add stream" }));
 
     expect(onSave).toHaveBeenCalledWith(
       // Chat defaults ON — the chat log only records while a run's poller runs.
-      expect.objectContaining({ sceneId: "wind", enabled: false, chat: { enabled: true, promoteToTicker: false } }),
+      expect.objectContaining({
+        sceneId: "wind",
+        enabled: false,
+        chat: { enabled: true, promoteToTicker: false, pollEveryMs: 120_000 },
+      }),
     );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
-  it("submits the chosen channel, monitor and chat→ticker", () => {
+  it("submits the chosen channel, restart, monitor, notify and chat→ticker", () => {
     const onSave = jest.fn(async () => ({}));
     render(
-      <SlotsCard
-        slots={[]}
-        scenes={SCENES}
-        encoders={ENCODERS}
-        accounts={ACCOUNTS}
-        runs={[]}
-        onSave={onSave}
-        onDelete={jest.fn()}
-      />,
+      <SlotsCard slots={[]} scenes={SCENES} encoders={ENCODERS} accounts={ACCOUNTS} runs={[]} onSave={onSave} onDelete={jest.fn()} />,
     );
 
-    const form = screen.getByRole("button", { name: "Add stream" }).closest("div") as HTMLElement;
-    fireEvent.mouseDown(within(form).getByLabelText("channel"));
-    fireEvent.click(screen.getByRole("option", { name: "Wind" }));
-    fireEvent.mouseDown(within(form).getByLabelText("YouTube"));
-    fireEvent.click(screen.getByRole("option", { name: "Weather HD" }));
-    fireEvent.mouseDown(within(form).getByLabelText("restart"));
-    fireEvent.click(screen.getByRole("option", { name: "24h" }));
-    fireEvent.click(within(form).getByRole("checkbox", { name: "monitor" }));
-    fireEvent.click(within(form).getByRole("checkbox", { name: "📣 notify" }));
-    // chat is already checked by default; only opt into ticker promotion
-    fireEvent.click(within(form).getByRole("checkbox", { name: "→ ticker" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add stream" }));
+    const dialog = openAdd();
+    pick(dialog, "channel", "Wind");
+    pick(dialog, "YouTube", "Weather HD");
+    pick(dialog, "restart", "24h");
+    expect(within(dialog).getByText(/No VOD/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "monitor stream (YouTube preview)" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "📣 notify" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "→ ticker" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add stream" }));
 
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -135,7 +137,7 @@ describe("SlotsCard", () => {
         accountId: "chan-1",
         restartEveryMs: 24 * 3_600_000,
         monitorStream: true,
-        chat: { enabled: true, promoteToTicker: true },
+        chat: { enabled: true, promoteToTicker: true, pollEveryMs: 120_000 },
         announce: true,
         enabled: false,
       }),
@@ -156,71 +158,72 @@ describe("SlotsCard", () => {
     expect(screen.getAllByText("no VOD")).toHaveLength(2);
   });
 
-  it("changing a row's restart interval saves restartEveryMs on the slot", () => {
+  it("Edit opens the slot's saved settings and saves every change, keeping it on", () => {
     const onSave = jest.fn(async () => ({}));
     render(
       <SlotsCard
-        slots={[slot({ runId: "r1" })]}
+        slots={[slot({ runId: "r1", restartEveryMs: 6 * 3_600_000, title: "Wind %H:%M", chat: { enabled: true, promoteToTicker: false } })]}
         scenes={SCENES}
         encoders={ENCODERS}
+        accounts={ACCOUNTS}
         runs={[liveRun()]}
         onSave={onSave}
         onDelete={jest.fn()}
       />,
     );
 
-    // First "restart" select is the row's (the add form renders after the rows).
-    fireEvent.mouseDown(screen.getAllByLabelText("restart")[0]);
-    fireEvent.click(screen.getByRole("option", { name: "12h" }));
+    fireEvent.click(screen.getByRole("button", { name: "edit Wind 24/7" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/This stream is live/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("YouTube title (optional)")).toHaveValue("Wind %H:%M");
+    // An existing slot without a setting stays on auto until the operator picks one.
+    expect(within(dialog).getByLabelText("chat poll")).toHaveTextContent("auto");
 
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: "s1", restartEveryMs: 12 * 3_600_000 }));
+    pick(dialog, "restart", "11h");
+    pick(dialog, "encoder", "Wind rig");
+    pick(dialog, "chat poll", "every 5 min · ~1.4k units/day");
+    fireEvent.change(within(dialog).getByLabelText("name"), { target: { value: "Wind HD" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "s1",
+        name: "Wind HD",
+        enabled: true,
+        encoderId: "obs-1",
+        restartEveryMs: 11 * 3_600_000,
+        title: "Wind %H:%M",
+        chat: { enabled: true, promoteToTicker: false, pollEveryMs: 300_000 },
+      }),
+    );
   });
 
-  it("offers an 11h cadence — the longest one YouTube still archives", () => {
-    const onSave = jest.fn(async () => ({}));
+  it("removing from the edit dialog asks first", async () => {
+    const onDelete = jest.fn(async () => ({}));
     render(
-      <SlotsCard
-        slots={[
-          slot({ id: "s1", runId: "r1", restartEveryMs: 6 * 3_600_000 }),
-          slot({ id: "s2", restartEveryMs: 11 * 3_600_000 }),
-        ]}
-        scenes={SCENES}
-        encoders={ENCODERS}
-        runs={[liveRun()]}
-        onSave={onSave}
-        onDelete={jest.fn()}
-      />,
+      <SlotsCard slots={[slot({ runId: "r1" })]} scenes={SCENES} encoders={ENCODERS} runs={[liveRun()]} onSave={jest.fn()} onDelete={onDelete} />,
     );
 
-    // 11h sits under the 12h archive cut-off, so that row keeps its VOD.
-    expect(screen.queryByText("no VOD")).not.toBeInTheDocument();
-
-    // A row select, then the add form's — both read the same cadence list.
-    fireEvent.mouseDown(screen.getAllByLabelText("restart")[0]);
-    fireEvent.click(screen.getByRole("option", { name: "11h" }));
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: "s1", restartEveryMs: 11 * 3_600_000 }));
-
-    fireEvent.mouseDown(screen.getAllByLabelText("restart")[2]);
-    expect(screen.getByRole("option", { name: "11h" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "edit Wind 24/7" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(screen.getByText("This ends the live stream too.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm remove" }));
+    expect(onDelete).toHaveBeenCalledWith("s1");
   });
 
-  it("toggling a row's 📣 saves the announce flag on the slot", () => {
-    const onSave = jest.fn(async () => ({}));
+  it("shows the chat poll interval in the row summary", () => {
     render(
       <SlotsCard
-        slots={[slot({ runId: "r1" })]}
+        slots={[slot({ chat: { enabled: true, promoteToTicker: false, pollEveryMs: 120_000 } })]}
         scenes={SCENES}
         encoders={ENCODERS}
-        runs={[liveRun()]}
-        onSave={onSave}
+        runs={[]}
+        onSave={jest.fn()}
         onDelete={jest.fn()}
       />,
     );
-
-    // Exact-name match: the row checkbox is "📣", the add form's is "📣 notify".
-    fireEvent.click(screen.getByRole("checkbox", { name: "📣" }));
-
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: "s1", announce: true }));
+    expect(screen.getByText(/chat 2 min/)).toBeInTheDocument();
   });
 
   it("shows a slot's chosen channel title in its summary", () => {

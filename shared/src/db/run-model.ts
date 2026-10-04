@@ -87,6 +87,8 @@ const RunSchema = new mongoose.Schema<iRunModel>(
     chat: {
       enabled: { type: Boolean, required: false, default: false },
       promoteToTicker: { type: Boolean, required: false, default: false },
+      // Chat poll interval (ms); null = auto / quota-paced. See RunChatSettings.
+      pollEveryMs: { type: Number, required: false, default: null },
     },
     announce: { type: Boolean, required: false, default: false },
     announcedAt: { type: Number, required: false, default: null },

@@ -4,14 +4,19 @@
  * Persistent ("constant") streams card for /admin/streams. Each slot is a
  * standing order: while enabled, the worker reconciler keeps an unbounded run
  * live on that scene/encoder, restarting it with backoff if it dies. The enable
- * switch is the on/off control for the whole constant stream.
+ * switch is the on/off control for the whole constant stream; every other
+ * setting lives in one edit dialog (SlotDialog) shared by "add" and "edit".
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import MuiLink from "@mui/material/Link";
 import MenuItem from "@mui/material/MenuItem";
@@ -21,9 +26,18 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import type { SceneMeta } from "@photonsurge/shared/control";
-import { runIsActive, type RunState, type StreamEncoderInfo, type StreamSlot } from "@photonsurge/shared/runs";
+import {
+  DEFAULT_CHAT_POLL_MS,
+  fmtChatPoll,
+  runIsActive,
+  type RunState,
+  type StreamEncoderInfo,
+  type StreamSlot,
+  type YoutubePrivacy,
+} from "@photonsurge/shared/runs";
 import { vodArchiveAtRisk } from "@photonsurge/shared/vod";
 import StreamTitleField from "../../StreamTitleField";
+import ChatPollSelect from "./ChatPollSelect";
 
 /** Connected YouTube channel a slot can publish to (subset of lib/stream StreamAccount). */
 export interface SlotAccount {
@@ -34,6 +48,7 @@ export interface SlotAccount {
 /** Selectable scheduled-restart cadences (minutes; 0 = never recycle). */
 const RESTART_MINUTES = [0, 10, 15, 30, 45, 60, 120, 240, 360, 480, 660, 720, 1440];
 const MINUTE_MS = 60_000;
+const restartLabel = (m: number) => (m === 0 ? "never" : m < 60 ? `${m} min` : `${m / 60}h`);
 
 /** Colour for a slot's derived status label (canonical run statuses + off/starting/retrying/…). */
 function slotStatusColor(status: string): "default" | "error" | "warning" | "success" {
@@ -49,6 +64,9 @@ function accountLabel(accounts: SlotAccount[], accountId?: string): string | nul
   return a?.channelTitle || accountId;
 }
 
+
+type SaveBody = Partial<StreamSlot> & { sceneId: string };
+
 export default function SlotsCard({
   slots,
   scenes,
@@ -63,10 +81,12 @@ export default function SlotsCard({
   encoders: StreamEncoderInfo[];
   accounts?: SlotAccount[];
   runs: RunState[];
-  onSave: (body: Partial<StreamSlot> & { sceneId: string }) => Promise<unknown>;
+  onSave: (body: SaveBody) => Promise<unknown>;
   onDelete: (id: string) => Promise<unknown>;
 }) {
   const [err, setErr] = useState<string | null>(null);
+  // null = closed; { slot: undefined } = adding a new stream.
+  const [editing, setEditing] = useState<{ slot?: StreamSlot } | null>(null);
 
   const run = async (fn: () => Promise<unknown>) => {
     setErr(null);
@@ -76,12 +96,18 @@ export default function SlotsCard({
       setErr(String((e as Error)?.message ?? e));
     }
   };
+  const runFor = (slot?: StreamSlot) => (slot ? (runs.find((r) => r.id === slot.runId) ?? null) : null);
 
   return (
     <Paper sx={{ p: 1.75, mt: 1.75 }}>
-      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-        Constant streams
-      </Typography>
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+        <Typography variant="body2" sx={{ fontWeight: 600, flex: 1 }}>
+          Constant streams
+        </Typography>
+        <Button size="small" variant="outlined" onClick={() => setEditing({})}>
+          Add stream
+        </Button>
+      </Stack>
       <Typography variant="caption" color="text.secondary">
         Always-on YouTube streams the worker keeps alive (restarted with backoff if they die). Switch a
         slot on to go live; switching it off ends its stream. A restart interval recycles the stream on
@@ -101,26 +127,34 @@ export default function SlotsCard({
             key={slot.id}
             slot={slot}
             accounts={accounts}
-            run={runs.find((r) => r.id === slot.runId) ?? null}
+            encoders={encoders}
+            scenes={scenes}
+            run={runFor(slot)}
             onToggle={(enabled) => run(() => onSave({ ...slot, enabled }))}
-            onRestartChange={(restartEveryMs) => run(() => onSave({ ...slot, restartEveryMs }))}
-            onAnnounceChange={(announce) => run(() => onSave({ ...slot, announce }))}
-            onTitleChange={(title) => onSave({ ...slot, title })}
-            onDelete={() => run(() => onDelete(slot.id))}
+            onEdit={() => setEditing({ slot })}
           />
         ))}
       </Box>
 
-      <AddSlotForm
-        scenes={scenes}
-        encoders={encoders}
-        accounts={accounts}
-        onSave={(body) => run(() => onSave(body))}
-      />
       {err && (
         <Alert severity="error" sx={{ mt: 1 }}>
           {err}
         </Alert>
+      )}
+
+      {editing && (
+        <SlotDialog
+          // Remount per slot so the draft always starts from the saved values.
+          key={editing.slot?.id ?? "new"}
+          slot={editing.slot}
+          run={runFor(editing.slot)}
+          scenes={scenes}
+          encoders={encoders}
+          accounts={accounts}
+          onSave={onSave}
+          onDelete={onDelete}
+          onClose={() => setEditing(null)}
+        />
       )}
     </Paper>
   );
@@ -129,26 +163,20 @@ export default function SlotsCard({
 function SlotRow({
   slot,
   accounts,
+  encoders,
+  scenes,
   run,
   onToggle,
-  onRestartChange,
-  onAnnounceChange,
-  onTitleChange,
-  onDelete,
+  onEdit,
 }: {
   slot: StreamSlot;
   accounts: SlotAccount[];
+  encoders: StreamEncoderInfo[];
+  scenes: SceneMeta[];
   run: RunState | null;
   onToggle: (enabled: boolean) => void;
-  onRestartChange: (restartEveryMs: number | null) => void;
-  onAnnounceChange: (announce: boolean) => void;
-  onTitleChange: (title: string) => Promise<unknown>;
-  onDelete: () => void;
+  onEdit: () => void;
 }) {
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(slot.title ?? "");
-  const [savingTitle, setSavingTitle] = useState(false);
-  const [titleError, setTitleError] = useState<string | null>(null);
   const active = !!run && runIsActive(run.status);
   const status = !slot.enabled
     ? active
@@ -160,6 +188,9 @@ function SlotRow({
         ? `retrying (${slot.failCount})`
         : "starting…";
   const channel = accountLabel(accounts, slot.accountId);
+  const sceneName = scenes.find((s) => s.id === slot.sceneId)?.name || slot.sceneId;
+  const encoder = slot.encoderId ? encoders.find((e) => e.id === slot.encoderId)?.name || slot.encoderId : "auto";
+  const restartMin = Math.round((slot.restartEveryMs ?? 0) / MINUTE_MS);
   return (
     <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
       <Chip size="small" color={slotStatusColor(status)} label={status} />
@@ -167,10 +198,14 @@ function SlotRow({
         {slot.name || slot.id}
       </Typography>
       <Typography variant="caption" color="text.secondary">
-        channel {slot.sceneId} · encoder {slot.encoderId || "auto"} · {slot.privacy || "public"}
+        channel {sceneName} · encoder {encoder} · {slot.privacy || "public"}
         {channel ? ` · YT ${channel}` : " · default YT"}
+        {` · restart ${restartLabel(restartMin)}`}
         {slot.monitorStream ? " · monitor" : ""}
-        {slot.chat?.enabled ? (slot.chat.promoteToTicker ? " · chat→ticker" : " · chat") : ""}
+        {slot.chat?.enabled !== false
+          ? ` · chat${slot.chat?.promoteToTicker ? "→ticker" : ""} ${fmtChatPoll(slot.chat?.pollEveryMs)}`
+          : " · no chat"}
+        {slot.announce ? " · 📣" : ""}
       </Typography>
       {run?.youtube?.watchUrl && (
         <MuiLink href={run.youtube.watchUrl} target="_blank" variant="caption">
@@ -182,30 +217,6 @@ function SlotRow({
           {run.error.step}: {run.error.message}
         </Typography>
       )}
-      <Box sx={{ flex: 1 }} />
-      <Button size="small" onClick={() => { setTitleDraft(slot.title ?? ""); setTitleError(null); setEditingTitle(!editingTitle); }}>
-        Edit title
-      </Button>
-      <FormControlLabel
-        control={<Checkbox size="small" checked={!!slot.announce} onChange={(e) => onAnnounceChange(e.target.checked)} />}
-        label="📣"
-        title="Notify the world each time this stream (re)launches: hydra blog post + social fan-out with the watch URL"
-        sx={{ mr: 0 }}
-      />
-      <TextField
-        select
-        size="small"
-        label="restart"
-        value={String(slot.restartEveryMs ?? 0)}
-        onChange={(e) => onRestartChange(Number(e.target.value) || null)}
-        sx={{ width: 100 }}
-      >
-        {RESTART_MINUTES.map((m) => (
-          <MenuItem key={m} value={String(m * MINUTE_MS)}>
-            {m === 0 ? "never" : m < 60 ? `${m} min` : `${m / 60}h`}
-          </MenuItem>
-        ))}
-      </TextField>
       {vodArchiveAtRisk(slot.restartEveryMs) && (
         <Chip
           size="small"
@@ -215,172 +226,278 @@ function SlotRow({
           title="YouTube won't archive a stream that runs 12 h or longer — set the restart interval under 12 h if you want the as-run page and chapters to have a video"
         />
       )}
+      <Box sx={{ flex: 1 }} />
+      <Button size="small" onClick={onEdit} aria-label={`edit ${slot.name || slot.id}`}>
+        Edit
+      </Button>
       <Switch
         size="small"
         checked={slot.enabled}
         onChange={(e) => onToggle(e.target.checked)}
         slotProps={{ input: { "aria-label": `enable ${slot.name || slot.id}` } }}
       />
-      <Button size="small" color="error" onClick={onDelete}>
-        Remove
-      </Button>
-      {editingTitle && (
-        <Box sx={{ width: "100%", p: 1, borderTop: "1px solid", borderColor: "divider" }}>
-          <StreamTitleField value={titleDraft} onChange={setTitleDraft} recurring />
-          <Typography variant="caption" color="text.secondary" component="p" sx={{ my: 1 }}>
-            Changes apply to the next broadcast. An already-live video keeps its current title. Leave it blank to
-            use the channel&apos;s title; the description and thumbnail always come from the channel&apos;s{" "}
-            <MuiLink href={`/admin/scenes/${encodeURIComponent(slot.sceneId)}#youtube`}>YouTube settings</MuiLink>.
-          </Typography>
-          {titleError && <Alert severity="error" sx={{ mb: 1 }}>{titleError}</Alert>}
-          <Button size="small" variant="contained" disabled={savingTitle} onClick={async () => {
-            setSavingTitle(true);
-            setTitleError(null);
-            try { await onTitleChange(titleDraft); setEditingTitle(false); }
-            catch (e) { setTitleError(String((e as Error)?.message ?? e)); }
-            finally { setSavingTitle(false); }
-          }}>Save title</Button>
-          <Button size="small" disabled={savingTitle} onClick={() => setEditingTitle(false)}>Cancel</Button>
-        </Box>
-      )}
     </Stack>
   );
 }
 
-function AddSlotForm({
+interface Draft {
+  name: string;
+  sceneId: string;
+  encoderId: string;
+  accountId: string;
+  title: string;
+  privacy: YoutubePrivacy;
+  restartMinutes: number;
+  monitorStream: boolean;
+  chatEnabled: boolean;
+  promoteToTicker: boolean;
+  pollEveryMs: number | null;
+  announce: boolean;
+}
+
+function draftFrom(slot?: StreamSlot): Draft {
+  return {
+    name: slot?.name ?? "",
+    sceneId: slot?.sceneId ?? "",
+    encoderId: slot?.encoderId ?? "",
+    accountId: slot?.accountId ?? "",
+    title: slot?.title ?? "",
+    privacy: slot?.privacy ?? "public",
+    restartMinutes: Math.round((slot?.restartEveryMs ?? 0) / MINUTE_MS),
+    monitorStream: !!slot?.monitorStream,
+    // Chat defaults ON — the chat log only records while a run's poller runs.
+    chatEnabled: slot ? slot.chat?.enabled !== false : true,
+    promoteToTicker: !!slot?.chat?.promoteToTicker,
+    // New streams start calm (every 2 min); existing ones keep what they have.
+    pollEveryMs: slot ? (slot.chat?.pollEveryMs ?? null) : DEFAULT_CHAT_POLL_MS,
+    announce: !!slot?.announce,
+  };
+}
+
+function SlotDialog({
+  slot,
+  run,
   scenes,
   encoders,
   accounts,
   onSave,
+  onDelete,
+  onClose,
 }: {
+  slot?: StreamSlot;
+  run: RunState | null;
   scenes: SceneMeta[];
   encoders: StreamEncoderInfo[];
   accounts: SlotAccount[];
-  onSave: (body: Partial<StreamSlot> & { sceneId: string }) => void;
+  onSave: (body: SaveBody) => Promise<unknown>;
+  onDelete: (id: string) => Promise<unknown>;
+  onClose: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [sceneId, setSceneId] = useState("");
-  const [encoderId, setEncoderId] = useState("");
-  const [accountId, setAccountId] = useState("");
-  const [title, setTitle] = useState("");
-  const [privacy, setPrivacy] = useState<"public" | "unlisted" | "private">("public");
-  const [restartMinutes, setRestartMinutes] = useState(0);
-  const [monitorStream, setMonitorStream] = useState(false);
-  const [chatEnabled, setChatEnabled] = useState(true);
-  const [promoteToTicker, setPromoteToTicker] = useState(false);
-  const [announce, setAnnounce] = useState(false);
+  const [d, setD] = useState<Draft>(() => draftFrom(slot));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((cur) => ({ ...cur, [k]: v }));
+  const live = !!run && runIsActive(run.status);
+  const restartMs = d.restartMinutes ? d.restartMinutes * MINUTE_MS : null;
 
-  const add = () => {
-    onSave({
-      name: name || undefined,
-      sceneId,
-      encoderId: encoderId || undefined,
-      accountId: accountId || undefined,
-      title: title || undefined,
-      privacy,
-      restartEveryMs: restartMinutes ? restartMinutes * MINUTE_MS : null,
-      monitorStream,
-      chat: { enabled: chatEnabled, promoteToTicker: chatEnabled && promoteToTicker },
-      announce,
-      enabled: false, // created off — the switch is the go-live control
-    });
-    setName("");
-    setSceneId("");
-    setEncoderId("");
-    setAccountId("");
-    setTitle("");
-    setRestartMinutes(0);
-    setMonitorStream(false);
-    setChatEnabled(true);
-    setPromoteToTicker(false);
-    setAnnounce(false);
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      onClose(); // unmounts the dialog — no state to reset
+    } catch (e) {
+      setError(String((e as Error)?.message ?? e));
+      setBusy(false);
+    }
   };
 
+  const save = () =>
+    act(() =>
+      onSave({
+        ...(slot ?? {}),
+        name: d.name.trim() || undefined,
+        sceneId: d.sceneId,
+        encoderId: d.encoderId || undefined,
+        accountId: d.accountId || undefined,
+        title: d.title,
+        privacy: d.privacy,
+        restartEveryMs: restartMs,
+        monitorStream: d.monitorStream,
+        chat: {
+          enabled: d.chatEnabled,
+          promoteToTicker: d.chatEnabled && d.promoteToTicker,
+          pollEveryMs: d.pollEveryMs,
+        },
+        announce: d.announce,
+        enabled: slot ? slot.enabled : false, // created off — the switch is the go-live control
+      }),
+    );
+
   return (
-    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", mt: 1.5 }}>
-      <TextField label="name" value={name} onChange={(e) => setName(e.target.value)} sx={{ width: 140 }} />
-      <TextField select label="channel" value={sceneId} onChange={(e) => setSceneId(e.target.value)} sx={{ minWidth: 140 }}>
-        {scenes.map((s) => (
-          <MenuItem key={s.id} value={s.id}>
-            {s.name}
-          </MenuItem>
-        ))}
-      </TextField>
-      <TextField
-        select
-        label="encoder"
-        value={encoderId}
-        onChange={(e) => setEncoderId(e.target.value)}
-        sx={{ minWidth: 130 }}
-      >
-        <MenuItem value="">auto</MenuItem>
-        {encoders.map((enc) => (
-          <MenuItem key={enc.id} value={enc.id}>
-            {enc.name || enc.id}
-          </MenuItem>
-        ))}
-      </TextField>
-      <TextField
-        select
-        label="YouTube"
-        value={accounts.some((a) => a.channelId === accountId) ? accountId : ""}
-        onChange={(e) => setAccountId(e.target.value)}
-        sx={{ minWidth: 150 }}
-      >
-        <MenuItem value="">Default channel</MenuItem>
-        {accounts.map((a) => (
-          <MenuItem key={a.channelId} value={a.channelId}>
-            {a.channelTitle || a.channelId}
-          </MenuItem>
-        ))}
-      </TextField>
-      <StreamTitleField value={title} onChange={setTitle} recurring />
-      <TextField
-        select
-        label="privacy"
-        value={privacy}
-        onChange={(e) => setPrivacy(e.target.value as typeof privacy)}
-        sx={{ minWidth: 110 }}
-      >
-        <MenuItem value="public">Public</MenuItem>
-        <MenuItem value="unlisted">Unlisted</MenuItem>
-        <MenuItem value="private">Private</MenuItem>
-      </TextField>
-      <TextField
-        select
-        label="restart"
-        value={String(restartMinutes)}
-        onChange={(e) => setRestartMinutes(Number(e.target.value) || 0)}
-        sx={{ minWidth: 100 }}
-      >
-        {RESTART_MINUTES.map((m) => (
-          <MenuItem key={m} value={String(m)}>
-            {m === 0 ? "never" : m < 60 ? `${m} min` : `${m / 60}h`}
-          </MenuItem>
-        ))}
-      </TextField>
-      <FormControlLabel
-        control={<Checkbox checked={monitorStream} onChange={(e) => setMonitorStream(e.target.checked)} />}
-        label="monitor"
-      />
-      <FormControlLabel
-        control={<Checkbox checked={chatEnabled} onChange={(e) => setChatEnabled(e.target.checked)} />}
-        label="chat"
-      />
-      {chatEnabled && (
-        <FormControlLabel
-          control={<Checkbox checked={promoteToTicker} onChange={(e) => setPromoteToTicker(e.target.checked)} />}
-          label="→ ticker"
-        />
-      )}
-      <FormControlLabel
-        control={<Checkbox checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />}
-        label="📣 notify"
-        title="Notify the world each time this stream (re)launches: hydra blog post + social fan-out with the watch URL"
-      />
-      <Button variant="outlined" onClick={add} disabled={!sceneId}>
-        Add stream
-      </Button>
-    </Stack>
+    <Dialog open onClose={busy ? undefined : onClose} maxWidth="md" fullWidth>
+      <DialogTitle>{slot ? `Edit ${slot.name || slot.id}` : "Add constant stream"}</DialogTitle>
+      <DialogContent dividers>
+        {live && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            This stream is live. The chat poll interval applies within about 30 s; everything else (channel,
+            encoder, YouTube channel, title, privacy, chat on/off, monitor) applies at its next launch or scheduled
+            restart.
+          </Alert>
+        )}
+
+        <Section title="Stream">
+          <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+            <TextField label="name" value={d.name} onChange={(e) => set("name", e.target.value)} placeholder="Wind 24/7" />
+            <TextField select label="channel" value={d.sceneId} onChange={(e) => set("sceneId", e.target.value)}>
+              {scenes.map((s) => (
+                <MenuItem key={s.id} value={s.id}>
+                  {s.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField select label="encoder" value={d.encoderId} onChange={(e) => set("encoderId", e.target.value)}>
+              <MenuItem value="">auto</MenuItem>
+              {encoders.map((enc) => (
+                <MenuItem key={enc.id} value={enc.id}>
+                  {enc.name || enc.id}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="YouTube"
+              value={accounts.some((a) => a.channelId === d.accountId) ? d.accountId : ""}
+              onChange={(e) => set("accountId", e.target.value)}
+            >
+              <MenuItem value="">Default channel</MenuItem>
+              {accounts.map((a) => (
+                <MenuItem key={a.channelId} value={a.channelId}>
+                  {a.channelTitle || a.channelId}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="privacy"
+              value={d.privacy}
+              onChange={(e) => set("privacy", e.target.value as YoutubePrivacy)}
+            >
+              <MenuItem value="public">Public</MenuItem>
+              <MenuItem value="unlisted">Unlisted</MenuItem>
+              <MenuItem value="private">Private</MenuItem>
+            </TextField>
+            <TextField
+              select
+              label="restart"
+              value={String(d.restartMinutes)}
+              onChange={(e) => set("restartMinutes", Number(e.target.value) || 0)}
+              helperText={
+                vodArchiveAtRisk(restartMs)
+                  ? "No VOD: YouTube won't archive a stream that runs 12 h or longer."
+                  : "Ends and relaunches onto a fresh broadcast on this cadence."
+              }
+            >
+              {RESTART_MINUTES.map((m) => (
+                <MenuItem key={m} value={String(m)}>
+                  {restartLabel(m)}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Box>
+        </Section>
+
+        <Section title="Title">
+          <StreamTitleField value={d.title} onChange={(v) => set("title", v)} recurring />
+          {d.sceneId && (
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
+              The description and thumbnail come from the channel&apos;s{" "}
+              <MuiLink href={`/admin/scenes/${encodeURIComponent(d.sceneId)}#youtube`}>YouTube settings</MuiLink>.
+            </Typography>
+          )}
+        </Section>
+
+        <Section title="Chat">
+          <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap", alignItems: "flex-start" }}>
+            <FormControlLabel
+              control={<Checkbox checked={d.chatEnabled} onChange={(e) => set("chatEnabled", e.target.checked)} />}
+              label="monitor chat"
+            />
+            <FormControlLabel
+              disabled={!d.chatEnabled}
+              control={<Checkbox checked={d.promoteToTicker} onChange={(e) => set("promoteToTicker", e.target.checked)} />}
+              label="→ ticker"
+            />
+            <Box sx={{ flex: 1, minWidth: 240 }}>
+              <ChatPollSelect value={d.pollEveryMs} onChange={(v) => set("pollEveryMs", v)} disabled={!d.chatEnabled} fullWidth />
+            </Box>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
+            Every chat check costs YouTube quota whether or not anyone spoke (10k units/day shared by every stream,
+            go-live and end included). Commands that pile up between checks are merged: each viewer counts once and
+            each command goes to a vote, so the most-asked-for option wins (a mod&apos;s request always wins).
+          </Typography>
+        </Section>
+
+        <Section title="Extras">
+          <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap" }}>
+            <FormControlLabel
+              control={<Checkbox checked={d.monitorStream} onChange={(e) => set("monitorStream", e.target.checked)} />}
+              label="monitor stream (YouTube preview)"
+            />
+            <FormControlLabel
+              control={<Checkbox checked={d.announce} onChange={(e) => set("announce", e.target.checked)} />}
+              label="📣 notify"
+              title="Notify the world each time this stream (re)launches: hydra blog post + social fan-out with the watch URL"
+            />
+          </Stack>
+        </Section>
+
+        {error && (
+          <Alert severity="error" sx={{ mt: 1 }}>
+            {error}
+          </Alert>
+        )}
+      </DialogContent>
+      <DialogActions>
+        {slot &&
+          (confirmRemove ? (
+            <>
+              <Typography variant="caption" color="error" sx={{ mr: 1 }}>
+                {live ? "This ends the live stream too." : "Remove this stream?"}
+              </Typography>
+              <Button color="error" variant="contained" disabled={busy} onClick={() => act(() => onDelete(slot.id))}>
+                Confirm remove
+              </Button>
+              <Button disabled={busy} onClick={() => setConfirmRemove(false)}>
+                Keep
+              </Button>
+            </>
+          ) : (
+            <Button color="error" disabled={busy} onClick={() => setConfirmRemove(true)}>
+              Remove
+            </Button>
+          ))}
+        <Box sx={{ flex: 1 }} />
+        <Button disabled={busy} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="contained" disabled={busy || !d.sceneId} onClick={save}>
+          {slot ? "Save" : "Add stream"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Box sx={{ mb: 2.5 }}>
+      <Typography variant="overline" color="text.secondary" component="h3" sx={{ display: "block", mb: 1 }}>
+        {title}
+      </Typography>
+      {children}
+    </Box>
   );
 }
