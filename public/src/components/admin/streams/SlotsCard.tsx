@@ -23,6 +23,7 @@ import Typography from "@mui/material/Typography";
 import type { SceneMeta } from "@photonsurge/shared/control";
 import { runIsActive, type RunState, type StreamEncoderInfo, type StreamSlot } from "@photonsurge/shared/runs";
 import { vodArchiveAtRisk } from "@photonsurge/shared/vod";
+import EncoderSelect from "./EncoderSelect";
 import StreamTitleField from "../../StreamTitleField";
 
 /** Connected YouTube channel a slot can publish to (subset of lib/stream StreamAccount). */
@@ -306,20 +307,7 @@ function AddSlotForm({
           </MenuItem>
         ))}
       </TextField>
-      <TextField
-        select
-        label="encoder"
-        value={encoderId}
-        onChange={(e) => setEncoderId(e.target.value)}
-        sx={{ minWidth: 130 }}
-      >
-        <MenuItem value="">auto</MenuItem>
-        {encoders.map((enc) => (
-          <MenuItem key={enc.id} value={enc.id}>
-            {enc.name || enc.id}
-          </MenuItem>
-        ))}
-      </TextField>
+      <EncoderSelect purpose="channel" encoders={encoders} value={encoderId} onChange={setEncoderId} sx={{ minWidth: 130 }} />
       <TextField
         select
         label="YouTube"

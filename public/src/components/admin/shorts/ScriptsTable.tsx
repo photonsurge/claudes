@@ -3,8 +3,8 @@
 /**
  * The saved short scripts, newest first: title, format, scope, length, clip
  * count, when it was made, and how its last play on its format's scene went.
- * Clicking a row selects it; Preview plays it on its format's scene; Delete
- * asks first.
+ * Clicking a row selects it; Preview plays it on its format's scene; Render
+ * opens the Render form (§6.1) to queue it as a video; Delete asks first.
  */
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -55,6 +55,8 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onPreview: (id: string) => void;
+  /** Opens the Render form for this script (absent = no Render button). */
+  onRender?: (id: string) => void;
   onDelete: (id: string) => void;
   /** Disables the row actions (a request is in flight). */
   busy?: boolean;
@@ -68,6 +70,7 @@ export default function ScriptsTable({
   selectedId,
   onSelect,
   onPreview,
+  onRender,
   onDelete,
   busy,
   confirmDelete = (m) => window.confirm(m),
@@ -124,6 +127,11 @@ export default function ScriptsTable({
                   <Button size="small" onClick={() => onPreview(s.id)} disabled={busy || !preview.exists || !s.clipCount}>
                     Preview
                   </Button>
+                  {onRender && (
+                    <Button size="small" onClick={() => onRender(s.id)} disabled={busy || !s.clipCount}>
+                      Render
+                    </Button>
+                  )}
                   <Button
                     size="small"
                     color="error"

@@ -204,6 +204,12 @@ describe("planRenderStarts", () => {
     expect(planRenderStarts({ ...blocked, activeRuns: [{ id: "run", encoderId: "v1", sceneId: "default", status: "ended" }] })).toHaveLength(1);
   });
 
+  it("a video queued for later is not in line until its time, and doesn't hold up the next", () => {
+    const rs = [r("a1", "v1", 1, { notBefore: 5_000 }), r("b1", "v1", 2)];
+    expect(planRenderStarts(base({ renders: rs, now: 4_000 }))).toEqual([{ renderId: "b1", encoderId: "v1" }]);
+    expect(planRenderStarts(base({ renders: rs, now: 5_000 }))).toEqual([{ renderId: "a1", encoderId: "v1" }]);
+  });
+
   it("an encoder held by an enabled slot, paused or disabled takes nothing", () => {
     const rs = [r("a1", "ch", 1), r("b1", "v1", 2), r("a2", "v2", 3)];
     const picks = planRenderStarts(

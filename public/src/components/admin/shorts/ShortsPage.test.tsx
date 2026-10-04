@@ -6,6 +6,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ShortsPage from "./ShortsPage";
 import { SHORTS_POLL_MS, type ShortsListResponse } from "../../../lib/shorts";
+import type { RendersResponse } from "../../../lib/renders";
 
 const script = {
   id: "s1",
@@ -18,6 +19,7 @@ const script = {
 };
 
 let list: ShortsListResponse;
+let renders: RendersResponse;
 const calls: string[] = [];
 
 beforeEach(() => {
@@ -26,6 +28,7 @@ beforeEach(() => {
     scripts: [{ id: "s1", formatId: "shorts", title: "World round-up", scope: { type: "globe" }, status: "draft", clipCount: 1, durationMs: 60_000 }],
     formats: [{ id: "shorts", name: "Round-up", preview: { sceneId: "shorts", exists: true, watchToken: "tok", mode: "off" } }],
   };
+  renders = { renders: [], queues: [] };
   global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const u = String(url);
     calls.push(`${init?.method ?? "GET"} ${u}`);
@@ -36,6 +39,7 @@ beforeEach(() => {
       return json({ ok: true, playNonce: 9 });
     }
     if (u === "/api/shorts/s1") return json(script);
+    if (u === "/api/shorts/renders") return json(renders);
     return { ok: false, status: 404, json: async () => ({ error: "nope" }) } as Response;
   }) as typeof fetch;
 });
@@ -80,4 +84,37 @@ it("doesn't poll while nothing is playing", async () => {
     await jest.advanceTimersByTimeAsync(SHORTS_POLL_MS * 3);
   });
   expect(calls.filter((c) => c === "GET /api/shorts").length).toBe(before);
+});
+
+it("lists renders, and a live render takes over the preview pane", async () => {
+  renders = {
+    queues: [{ encoderId: "v1", name: "Video 1", use: "videos", paused: false }],
+    renders: [
+      {
+        id: "r1",
+        encoderId: "v1",
+        assignedEncoderId: "v1",
+        what: { type: "script", scriptId: "s1" },
+        formatId: "shorts",
+        publishAs: "public",
+        offline: false,
+        status: "live",
+        queuedAt: 1,
+        runId: "run1",
+        label: "World round-up",
+        run: { id: "run1", sceneId: "shorts", status: "live", title: "World round-up · Tuesday", needsManualObs: false },
+      },
+    ],
+  };
+  render(<ShortsPage />);
+  expect(await screen.findByText(/Rendering “World round-up · Tuesday” — live on v1/)).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "Queue Video 1" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Play" })).toBeDisabled();
+});
+
+it("a script's Render opens the Render form", async () => {
+  render(<ShortsPage />);
+  await screen.findByText("World round-up spin");
+  fireEvent.click(screen.getByRole("button", { name: "Render" }));
+  expect(await screen.findByRole("dialog", { name: "Render a video" })).toBeInTheDocument();
 });

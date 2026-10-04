@@ -7,7 +7,9 @@
  * and the Generate button. The
  * worker builds the script; while it runs the form shows progress, a failure
  * shows the worker's own message (it says what to fix), and a success hands
- * the new script id up so the page selects it.
+ * the new script id up so the page selects it. Render (§6.1, §6.6) opens the
+ * Render form for the same format and scope instead: the video is generated
+ * when it reaches the front of its encoder's queue, from the data current then.
  *
  * The event switches (alerts / quakes / volcanoes) are a later package: they
  * slot in as an `include` row under the scope, and `request` already carries
@@ -45,11 +47,13 @@ interface Props {
   onGenerated: (result: GenerateShortResult) => void;
   /** The formats to pick from; the default format when empty. */
   formats?: { id: string; name: string }[];
+  /** Opens the Render form for this format and scope (absent = no Render button). */
+  onRender?: (req: { formatId: string; scope: ShortScope; include: ShortInclude }) => void;
   /** Injectable for tests. */
   generate?: typeof generateShort;
 }
 
-export default function GenerateForm({ onGenerated, formats = [], generate = generateShort }: Props) {
+export default function GenerateForm({ onGenerated, onRender, formats = [], generate = generateShort }: Props) {
   const [formatId, setFormatId] = useState<string>(DEFAULT_SHORT_FORMAT_ID);
   const [type, setType] = useState<ScopeType>("globe");
   const [countryId, setCountryId] = useState(COUNTRY_OPTIONS[0]?.id ?? "");
@@ -134,6 +138,16 @@ export default function GenerateForm({ onGenerated, formats = [], generate = gen
         <Button variant="contained" onClick={submit} disabled={busy || (type !== "globe" && !placeValue)}>
           {busy ? "Generating…" : "Generate"}
         </Button>
+        {onRender && (
+          <Button
+            variant="outlined"
+            onClick={() => onRender({ formatId, scope, include: ROUNDUP_ONLY })}
+            disabled={busy || (type !== "globe" && !placeValue)}
+            title="Queue a video that generates this round-up when it reaches the front of the queue"
+          >
+            Render…
+          </Button>
+        )}
       </Stack>
       {busy && (
         <Stack spacing={0.75} sx={{ mt: 1.5 }}>

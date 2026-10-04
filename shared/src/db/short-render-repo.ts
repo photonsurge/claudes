@@ -17,6 +17,7 @@ const KEYS: (keyof ShortRender)[] = [
   "batchId",
   "status",
   "startBy",
+  "notBefore",
   "queuedAt",
   "startedAt",
   "endedAt",

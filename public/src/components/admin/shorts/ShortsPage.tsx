@@ -5,9 +5,16 @@
  * round-up script in a format, list the saved scripts, inspect one's clips,
  * and preview it playing on its FORMAT's own scene (§5.3 — the scene a render
  * uses, so the preview is what renders), and the Formats section (list, new,
- * duplicate, delete; each format's editor is /admin/shorts/formats/:id). No
- * timeline editing, render or scheduling yet — those join this page as their
- * own sections.
+ * duplicate, delete; each format's editor is /admin/shorts/formats/:id), and
+ * the Renders section (§6.7): Render on a script row or from the generate form
+ * opens the Render form (§6.1); the section lists every queue and recent
+ * render with its controls. No timeline editing or scheduling yet — those join
+ * this page as their own sections.
+ *
+ * Renders update live from the socket run events (useStreams, the same
+ * run:state / run:status the streams page uses) plus a poll of
+ * /api/shorts/renders. While a render plays, the preview pane shows it: it
+ * plays on its format's scene (§5.3).
  *
  * The list polls while a preview plays (see `useShortsList`), and the selected
  * script's detail reloads whenever its preview play record changes, so skipped
@@ -26,6 +33,11 @@ import FormatsSection from "./formats/FormatsSection";
 import GenerateForm from "./GenerateForm";
 import PreviewPane from "./PreviewPane";
 import ScriptsTable from "./ScriptsTable";
+import RenderDialog, { type RenderTarget } from "./RenderDialog";
+import RendersSection from "./RendersSection";
+import { renderIsActive } from "@photonsurge/shared/short-render";
+import { controlRender, useRenders, type RenderAction } from "../../../lib/renders";
+import { useStreams, useYoutubeVideoStats } from "../../../lib/stream";
 import {
   deleteShort,
   getShort,
@@ -42,6 +54,34 @@ export default function ShortsPage() {
   const [detail, setDetail] = useState<ShortScript | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [renderTarget, setRenderTarget] = useState<RenderTarget | null>(null);
+  const { data: renders, error: rendersError, refresh: refreshRenders } = useRenders();
+  const { snapshot, health } = useStreams();
+
+  // Socket run events for render runs: fresher than the list, and a cue to re-read it.
+  const renderRuns = useMemo(() => {
+    const out: Record<string, NonNullable<typeof snapshot>["runs"][number]> = {};
+    for (const r of snapshot?.runs ?? []) if (r.script) out[r.id] = r;
+    return out;
+  }, [snapshot]);
+  const runsKey = Object.values(renderRuns)
+    .map((r) => `${r.id}:${r.status}`)
+    .join(",");
+  useEffect(() => {
+    if (runsKey) refreshRenders();
+  }, [runsKey, refreshRenders]);
+  const { stats: youtubeStats, error: statsError } = useYoutubeVideoStats(
+    Object.values(renderRuns).some((r) => r.status === "live" && !!r.youtube?.broadcastId),
+  );
+
+  const onRenderAction = useCallback(
+    async (a: RenderAction) => {
+      const res = await controlRender(a);
+      await refreshRenders();
+      return res.ok ? { ok: true } : { ok: false, error: res.error };
+    },
+    [refreshRenders],
+  );
 
   const scripts = useMemo(() => data?.scripts ?? [], [data]);
   const selectedRow = scripts.find((s) => s.id === selectedId) ?? null;
@@ -95,8 +135,18 @@ export default function ShortsPage() {
   };
 
   const shown = detail && detail.id === selectedId ? detail : null;
-  // The pane shows the selected script's format scene (the default's with none selected).
-  const pane = previewForFormat(data, selectedRow?.formatId);
+  // The pane shows the selected script's format scene (the default's with none
+  // selected) — or a render playing now: its format's first if several are.
+  const activeRenders = (renders?.renders ?? []).filter((r) => renderIsActive(r.status) && r.formatId);
+  const liveRender = activeRenders.find((r) => r.formatId === selectedRow?.formatId) ?? activeRenders[0];
+  const pane = previewForFormat(data, liveRender?.formatId ?? selectedRow?.formatId);
+  const liveRun = liveRender?.runId ? (renderRuns[liveRender.runId] ?? liveRender.run) : liveRender?.run;
+  const rendering = liveRender
+    ? {
+        title: liveRun?.title || liveRender.label || "a video",
+        detail: `${liveRender.offline ? "offline test" : liveRun?.status === "live" ? "live" : "starting"} on ${liveRender.assignedEncoderId ?? liveRender.encoderId}`,
+      }
+    : null;
 
   return (
     <AdminPageShell
@@ -110,7 +160,11 @@ export default function ShortsPage() {
       }
     >
       <Stack spacing={1.75}>
-        <GenerateForm onGenerated={onGenerated} formats={data?.formats ?? []} />
+        <GenerateForm
+          onGenerated={onGenerated}
+          onRender={(req) => setRenderTarget({ type: "generate", ...req })}
+          formats={data?.formats ?? []}
+        />
 
         {listError && <Alert severity="error">Couldn&apos;t load scripts: {listError}</Alert>}
         {actionError && (
@@ -129,11 +183,19 @@ export default function ShortsPage() {
               selectedId={selectedId}
               onSelect={setSelectedId}
               onPreview={preview}
+              onRender={(id) => setRenderTarget({ type: "script", scriptId: id })}
               onDelete={(id) => act(() => deleteShort(id))}
               busy={busy}
             />
 
-            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(360px, 1fr) minmax(480px, 1.4fr)" }, gap: 1.75, alignItems: "start" }}>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", lg: "minmax(360px, 1fr) minmax(480px, 1.4fr)" },
+                gap: 1.75,
+                alignItems: "start",
+              }}
+            >
               {shown ? (
                 <ClipList script={shown} play={playFor(shown, sceneIdForScript(shown))} />
               ) : (
@@ -147,13 +209,30 @@ export default function ShortsPage() {
                 busy={busy}
                 onPlay={() => selectedRow && preview(selectedRow.id)}
                 onStop={() => act(() => stopShortPreview(pane.sceneId))}
+                rendering={rendering}
               />
             </Box>
           </>
         )}
 
+        <RendersSection
+          data={renders}
+          error={rendersError}
+          runs={renderRuns}
+          health={health}
+          youtubeStats={youtubeStats}
+          statsError={statsError}
+          onAction={onRenderAction}
+        />
+
         <FormatsSection onChanged={refresh} />
       </Stack>
+      <RenderDialog
+        open={!!renderTarget}
+        target={renderTarget}
+        onClose={() => setRenderTarget(null)}
+        onQueued={() => refreshRenders()}
+      />
     </AdminPageShell>
   );
 }
