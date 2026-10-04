@@ -237,9 +237,11 @@ three include switches give every variant.
   States"); the closing spin is under YouTube's 10 s floor and drops out.
 - Built (WP10): generate returns the places it left out (`skipped`), and the Generate
   form names them. Title codes: `%{place}` is the names joined with ", ",
-  `%{placeId}` is the literal `places`, `%{places}` the count, `%{flag}` and
-  `%{headline}` empty, `%{asOf}` the oldest round-up's time in London. The render
-  queue's freshness rule checks every place; the first stale one decides.
+  `%{placeId}` the scope's place ids joined with `-` (stable when a place is left
+  out), `%{places}` the count, `%{flag}` and `%{headline}` empty, `%{asOf}` the
+  oldest round-up's time in London. The render queue's freshness rule checks every
+  place: under `refresh` each stale place is rewritten; under `skip` a stale place is
+  left out and named, and the video is skipped only when no place is left.
 - Each place writes its round-up at its own local hours, so some are hours older than
   others when the video is made. The schedule's freshness rule covers this (§8).
 

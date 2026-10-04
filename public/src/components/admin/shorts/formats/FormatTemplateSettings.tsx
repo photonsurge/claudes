@@ -9,6 +9,7 @@
  * several places, whether the world round-up opens it. A Generate request can
  * still override any of it. Stages whole `name` / `template` fields.
  */
+import Alert from "@mui/material/Alert";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
@@ -110,6 +111,11 @@ export default function FormatTemplateSettings() {
                 places={t.scope.places}
                 onChange={(places) => setTemplate({ scope: { type: "places", places } })}
               />
+              {!t.scope.places.length && (
+                <Alert severity="warning" sx={{ mt: 1 }}>
+                  Add at least one place. Save is blocked until you do.
+                </Alert>
+              )}
             </Stack>
           )}
         </div>

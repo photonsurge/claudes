@@ -62,6 +62,15 @@ it("PUT patches onto the stored format, keeps the URL's id and renames the scene
   expect(mockDb.setSceneMeta).toHaveBeenCalledWith("short-uk", { name: "UK daily" });
 });
 
+it("PUT 400s Several places with no valid place instead of keeping the old scope", async () => {
+  for (const places of [[], [{ type: "area", id: "atlantis" }]]) {
+    const res = await PUT(req("PUT", { template: { scope: { type: "places", places } } }), ctx("short-uk"));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/add at least one place/);
+  }
+  expect(mockDb.shortFormats.upsert).not.toHaveBeenCalled();
+});
+
 it("PUT 404s an unknown format and 400s a non-JSON body", async () => {
   expect((await PUT(req("PUT", {}), ctx("nope"))).status).toBe(404);
   const bad = new Request("http://x", { method: "PUT", body: "{" });

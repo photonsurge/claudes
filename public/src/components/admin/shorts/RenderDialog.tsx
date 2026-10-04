@@ -168,7 +168,7 @@ export default function RenderDialog({
       else if (sc.type === "places") {
         // As script-values stamps them for several places (§6.8).
         ex.place = sc.places.map(shortPlaceName).join(", ");
-        ex.placeId = "places";
+        ex.placeId = sc.places.map((p) => p.id).join("-");
         ex.places = String(sc.places.length);
         ex.flag = "";
       } else ex.place = scopeLabel(sc).replace(/^\w+ · /, "");

@@ -77,9 +77,10 @@ const openerTarget = (p: ShortPlace) => `${p.type === "country" ? "country" : "r
 /**
  * Values for a several-places video (§4, §6.8):
  *  • `place` — the places' names joined with ", " ("Europe, United States, Asia");
- *  • `placeId` — the literal "places" (path-safe and stable, so a thumbnail
- *    template like `/thumbs/%{placeId}.png` gives one file for every
- *    several-places video, whatever its list);
+ *  • `placeId` — the scope's place ids joined with "-", in order
+ *    ("europe-usa-asia-australia-africa-south_america"): path-safe, one per
+ *    list, and the same every day even when a place is left out, so a
+ *    thumbnail template like `/thumbs/%{placeId}.png` names a stable file;
  *  • `places` — how many places the video has;
  *  • `flag` and `headline` — left empty (no single place to take them from);
  *  • `asOf` — the OLDEST round-up's time (London, as the date codes of a video
@@ -102,7 +103,7 @@ async function placesValues(
   const v: Record<string, string> = {
     kind: "round-up",
     place: used.map(shortPlaceName).join(", "),
-    placeId: "places",
+    placeId: places.map((p) => p.id).join("-"),
     places: String(used.length),
     alerts: "0",
     quakes: "0",

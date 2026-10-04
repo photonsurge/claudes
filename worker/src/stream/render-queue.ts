@@ -377,15 +377,21 @@ async function generateAtFront(db: AppDb, render: ShortRender, format: ShortForm
   }
 
   // 3. Freshness: skip, or refresh the place's round-up first (one LLM call).
-  // A several-places video applies the rule per place (§8): any stale place
-  // skips the whole video under "skip", and each stale place is refreshed
-  // under "refresh".
+  // A several-places video applies the rule per place (§8): under "refresh"
+  // each stale place is rewritten; under "skip" a stale place is left out (as
+  // generate leaves out a place with no round-up) and named on the render, and
+  // the video is skipped only when no place is left.
   const freshnessScopes: (ShortPlace | Extract<ShortScope, { type: "globe" }>)[] =
     scope.type === "places" ? scope.places : [scope];
+  const leftOut: { place: ShortPlace; why: string }[] = [];
   for (const one of freshnessScopes) {
     const stale = await staleRoundup(db, one, render.roundup, now);
-    if (stale && render.roundup!.ifStale === "skip") throw new RenderOutcome("skipped", stale);
     if (!stale) continue;
+    if (render.roundup!.ifStale === "skip") {
+      if (scope.type !== "places" || one.type === "globe") throw new RenderOutcome("skipped", stale);
+      leftOut.push({ place: one, why: stale });
+      continue;
+    }
     if (one.type === "globe") {
       throw new RenderOutcome(
         "failed",
@@ -398,6 +404,15 @@ async function generateAtFront(db: AppDb, render: ShortRender, format: ShortForm
     } catch (err) {
       throw new RenderOutcome("failed", `${stale}; refresh failed: ${errMsg(err)}`);
     }
+  }
+  if (leftOut.length && scope.type === "places") {
+    const reasons = leftOut.map((l) => l.why).join("; ");
+    const kept = scope.places.filter((p) => !leftOut.some((l) => l.place === p));
+    if (!kept.length) throw new RenderOutcome("skipped", `every place is stale: ${reasons}`);
+    scope = { type: "places", places: kept };
+    const note = `left out: ${reasons}`;
+    await db.shortRenders.update(render.id, { note }).catch(() => {});
+    log(TAG, `render ${render.id}: ${note}`);
   }
 
   // 4. Generate, in the resolved scope.

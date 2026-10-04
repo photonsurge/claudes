@@ -112,7 +112,7 @@ describe("scriptValues", () => {
         kind: "round-up", // round-up only, whatever the switches
         format: "Main areas",
         place: "Europe, United States, Asia",
-        placeId: "places",
+        placeId: "europe-usa-asia-africa", // the whole list, stable when a place is left out
         places: "3",
         asOf: "23:30", // Asia's, 22:30 UTC the day before, in London
         roundup: "Europe — Storms in the north.\n\nUnited States — Heat in Texas. More.\n\nAsia — Typhoon nears.",
