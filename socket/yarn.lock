@@ -638,7 +638,7 @@
     "@tybys/wasm-util" "^0.10.3"
 
 "@photonsurge/shared@file:../shared":
-  version "0.4.100"
+  version "0.5.1"
   dependencies:
     bcryptjs "^3.0.2"
     bullmq "5.73.4"
@@ -2262,9 +2262,9 @@ mongodb@~6.20.0:
     mongodb-connection-string-url "^3.0.2"
 
 mongoose@^8.19.4:
-  version "8.24.4"
-  resolved "https://registry.yarnpkg.com/mongoose/-/mongoose-8.24.4.tgz#1bdd73d7282b74b3349e4cdcca80cf4afe552e33"
-  integrity sha512-DoV8hYy5ssoh/j99rhYzeS2BLLcLJZ+EGQYfe/Ln+yMorBy0wgKdlwJBj59zJ1N0MnEKQypbeqUYFB0FVThmYg==
+  version "8.24.5"
+  resolved "https://registry.yarnpkg.com/mongoose/-/mongoose-8.24.5.tgz#508a132ac8bc14405e8b2ae7be0137d712bde8d3"
+  integrity sha512-S1cvmzLhw5Xthv450UjInCBq2JreRvvyfGSA3FmDw8yThPxUbPAyJqtXMz0dNm8BBFm2ctRBOBKJxDPqM2sG0w==
   dependencies:
     bson "^6.10.4"
     kareem "2.6.3"
