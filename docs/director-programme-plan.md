@@ -488,8 +488,10 @@ export interface ViewerPalette { id; label; broadcastTheme: BroadcastThemeId; th
 ```
 
 `allowed: []` means everything the scene can show. Music and theme holds default to 5 min,
-with a 15 min max. `:mode aurora` needs **both** `mapType.enabled` and `director.enabled`,
-because it moves the camera. Sanitised in `mergeControlState`, persisted on the scene
+with a 15 min max. `:mode aurora` needs only `mapType.enabled`, and it **always waits for the next
+shot change** (never immediate, whatever `director.mode` says), so it never needs
+the full "viewers may steer the director" switch. It still respects `everyS` and
+the director queue cap. Sanitised in `mergeControlState`, persisted on the scene
 doc (**strict schema + parity test**), and mirrored onto `Run.chat` at run creation.
 
 ### 3.9 `DirectorState` additions (readouts only)
@@ -581,11 +583,11 @@ silent. `mode: "off"` is refused at enqueue time by the route, which reads the c
 
 ### 4.5 Map looks via the director `[chat][cmd]`
 
-A viewer `:mode aurora` becomes `cut { target: mapType }` on the queue. The client tour
+A viewer `:mode aurora` becomes `queue { target: mapType }` on the queue, so it airs at the next shot change. The client tour
 stepper (`useMapStep` / `globalMapTour`) prefers `segment.mapTypes` over
 `cfg.mapTypes[kind]`, so a one-element list parks the look. A break-in still wins.
 Because an interrupted shot is not resumed (§1.7), a pinned look that a break-in cuts
-short is not resumed either; see §14.
+short is not resumed either. The viewer can simply ask again.
 
 ---
 
@@ -621,7 +623,7 @@ because all of its state is in the doc.
 |---|---|---|
 | `:help` / `:commands` | lists what **this** scene allows (built from the policy) | commands |
 | `:modes` / `:mode` | list looks available now / what's on now | commands |
-| `:mode aurora [10]` | `cut` `mapType` | `mapType` + `director` |
+| `:mode aurora [10]` | `queue` `mapType` (next shot change) | `mapType` |
 | `:music` / `:music deep [10]` | list / request music mode | `music` |
 | `:skip` / `:shuffle` | next phrase / reseed (`audioSkipEpoch` / `audioSeed`) | `music.allowSkip` / `allowShuffle` |
 | `:themes` / `:theme storm [10]` | list / request palette | `theme` |
@@ -690,21 +692,22 @@ is declared in its `fields`, and the catalog parity test passes.
 
 | Card id | Title | `fields` (director bucket) | Notes |
 |---|---|---|---|
-| `director` (exists) | Director: programme | `kinds`, `kindWeights`, `countries`, `regions` | + **Apply template** and **Copy from channel…** (§7.3) |
-| `director-pacing` | Director: pacing | `kindHoldSeconds`, `quakeHoldSeconds`, `stormHoldSeconds`, `volcanoHoldSeconds`, `transitionSeconds`, `alertCycleSeconds`, `adEveryNShots`, `tempo` | |
-| `director-pools` | Director: pools & rotation | `minQuakeMag`, `minAlertSeverity`, `pools`, `rotation` | the **pool** bar |
-| `director-tours` | Director: tours & round-ups | `tours` | |
-| `director-looks` | Director: looks | `mapTypes`, `overlayOverrides`, `kindLooks`, `kindSlides` | reuses `DirectorMapTypes` / `DirectorSlides` with an `update` that stages instead of patching live |
-| `director-break-ins` | Director: break-ins | `breakIn` | §7.2 |
+| `director` (exists) | Content | `kinds`, `kindWeights`, `countries`, `regions` | + **Apply template** and **Copy from channel…** (§7.3) |
+| `director-pacing` | Pacing | `kindHoldSeconds`, `quakeHoldSeconds`, `stormHoldSeconds`, `volcanoHoldSeconds`, `transitionSeconds`, `alertCycleSeconds`, `adEveryNShots`, `tempo` | |
+| `director-pools` | Pools & rotation | `minQuakeMag`, `minAlertSeverity`, `pools`, `rotation` | the **pool** bar |
+| `director-tours` | Tours & round-ups | `tours` | |
+| `director-looks` | Looks | `mapTypes`, `overlayOverrides`, `kindLooks`, `kindSlides` | reuses `DirectorMapTypes` / `DirectorSlides` with an `update` that stages instead of patching live |
+| `director-break-ins` | Break-ins | `breakIn` | §7.2 |
 
 Every pacing/tuning field shows its default as helper text ("default 6 s"), and each card
 has a **Reset to defaults** button that stages the default object. `activeSlideId` and `skipNonce` stay
 live-only on `/control`.
 
-**Naming:** the operator decided on 2026-09-13 that these cards read as one family with a
-"Director:" prefix, so the existing card renames from "Auto-director content" to
-"Director: programme". Now that they all sit under the Programme rail group, the prefix is arguably
-redundant; see §14.
+**Naming (decided 2026-10-04):** no "Director:" prefix. The rail group is already
+called Programme, so the cards read Content, Pacing, Pools & rotation, Tours &
+round-ups, Looks, Break-ins. The existing card renames from "Auto-director content"
+to "Content". This supersedes the 2026-09-13 prefix decision, which was made before
+the rail shipped.
 
 ### 7.2 Break-ins card `[brk]`
 
@@ -716,7 +719,7 @@ From top to bottom:
 3. **What breaks in**: one row per reason, each with a checkbox and a threshold in words.
    Each row prints the pool bar beside its own bar ("This channel airs M4.5+ · breaking in at M6.0+").
    Options below the pool bar are disabled. An `info` alert appears when the reason's kind is off
-   in Director: programme.
+   in the Content card.
    - **Earthquakes**: `QUAKE_MAGNITUDE_BANDS`
    - **Weather warnings**: `SEVERITY_LABELS`
    - **Volcanoes**: *Eruptions only* / *Eruptions and unrest* (6 h window)
@@ -755,7 +758,7 @@ change from live chat") with one card:
 |---|---|---|
 | `chat` | Chat commands | `chat` |
 
-It has no "Director:" prefix because it governs music and palette too. It stages the complete
+It sits in its own group because it governs music and palette as well as the camera. It stages the complete
 `chat` object. The sections, each greyed out with its reason when a switch above it is off, are:
 
 1. **Monitor chat** (`chat.enabled`) and promote-to-ticker.
@@ -764,7 +767,7 @@ It has no "Director:" prefix because it governs music and palette too. It stages
 3. **Music**: a checkbox per mode, hold and max, skip and shuffle toggles, skip cooldown.
 4. **Palettes**: rows of label + base preset + optional "use this scene's current
    overrides", seeded with the three built-in presets.
-5. **Map looks**: a checkbox per look, hold and max. Needs section 6.
+5. **Map looks**: a checkbox per look, hold and max. Requests wait for the next shot change.
 6. **Viewers may steer the director**: boundary vs immediate, allowed ops, kinds,
    places (countries / areas / cities), hold and max, `everyS`, queue cap.
 
@@ -866,7 +869,7 @@ three change nothing on air at defaults.
 | # | Phase | Deliverable | From | Depends on | Visible change |
 |---|---|---|---|---|---|
 | **1** | **Foundations** | tuning buckets + defaults + merges + model + **config parity test**; worker reads them; `Segment.tempo` + client honours it; `breakIn` config + `mergeBreakIn` + `qualifiesAsBreakIn`; `Candidate.breakIn` replaces `breaking`; `selectPriority` parameterised; **single-item builders**; **`performCut` extraction** | cfg T0, brk 0 (contract + worker half) | — | none (defaults = constants) |
-| **2** | **Director cards** | catalog entries + Pacing, Pools & rotation, Tours & round-ups, Looks, **Break-ins** cards; rename to Director: programme; `/control` link | cfg T1, brk 0 (card) | 1 | operators can tune everything per channel; nothing changes until Save |
+| **2** | **Director cards** | catalog entries + Pacing, Pools & rotation, Tours & round-ups, Looks, **Break-ins** cards; rename "Auto-director content" to "Content"; `/control` link | cfg T1, brk 0 (card) | 1 | operators can tune everything per channel; nothing changes until Save |
 | **3** | **Operator commands** | commands contract + model/repo + routes + loop drain (`cut` by segment/kind, skip, hold, pause/resume, clear); `DirectorCommandBar` with **Take to air**; command log; `DirectorState.paused/queued` | cmd C0 | 1 | Take / Hold / Pause from `/control` |
 | **4** | **Break-in interrupt + queue + grouping + as-run** | `fresh.ts`, `reconcilePending` / `selectBreakIn`, `*Since` repos, interrupt branch, `buildGroupSegment`, `AirEntry`/`AirRun` fields, `RunTimelineEntry` chips, `break-in-items` slide, queue readouts | brk 1 + 1b | 1 (3 for the shared `AirEntry.command` field, or add it here) | "Interrupt the current shot" works; bursts group and drain; everything is readable per video |
 | **5** | **INCOMING reticle** | `lib/incoming.ts`, `EventOverlay`, `BroadcastCard` badge, `eventPulse` gating, `BREAK_IN_LABEL` | brk 2 | 4 | pre-roll + lock on breaking cuts |
@@ -955,17 +958,13 @@ flipping a channel live are done by the operator.
     new Viewers group, not on a director card.
 17. Acknowledgement is on air by default; chat replies are opt-in (50 quota units each).
 18. Arbitration is FIFO with per-user cooldowns. Voting is deferred.
+19. Admin card titles have no "Director:" prefix; the Programme rail group supplies it.
+20. A viewer map-look request (`:mode`) always waits for the next shot change and needs
+    only the Map looks switch, not full director steering.
+21. A viewer look cut short by a break-in is not resumed (same rule as any interrupted shot).
 
 ## 14. Assumptions to confirm
 
-- **Card prefix:** keep "Director: …" titles now that they sit in a Programme rail group, or
-  drop the prefix ("Pacing", "Break-ins")? The operator chose the prefix on 2026-09-13,
-  before the rail shipped.
-- **Interrupted viewer looks:** a viewer's `:mode aurora` cut short by a break-in is not
-  resumed (it follows the "interrupted shot is not resumed" rule). The original chat plan
-  resumed it for its remaining hold. Is not resuming acceptable?
-- **`:mode` needs director steering on:** a map-look request moves the camera, so it requires
-  both `mapType.enabled` and `director.enabled`. Should map looks have their own lighter gate?
 - **Volcano break-ins default to eruptions only**, using the 6 h status-flip window. `usgsAlertLevel`
   only covers US-monitored volcanoes, so status is the universal signal.
 - **"Every event shot" incoming mode** also covers flights and ships, labelled `EVENT DETECTED`.
