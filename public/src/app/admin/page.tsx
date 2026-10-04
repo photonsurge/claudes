@@ -38,6 +38,7 @@ export const ADMIN_LINKS: AdminLink[] = [
   { group: "Signals", href: "/admin/events", title: "Watched events", desc: "Cross-source event dossiers — timeline, sources, resources, snapshots.", ready: true },
   { group: "Signals", href: "/admin/summaries", title: "Round-ups", desc: "Scheduled global weather-event summaries + narrative.", ready: true },
   { group: "Signals", href: "/admin/place-roundups", title: "Place round-ups", desc: "Per-country & per-region 12h AI round-ups, each written with the previous in view.", ready: true },
+  { group: "Signals", href: "/admin/presenters", title: "Presenters", desc: "Presenter voices and the voice bench — test any presenter by ear, with the master switch for all speech.", ready: true },
   { group: "Signals", href: "/admin/tracks", title: "Live tracks", desc: "Satellites (SGP4), aircraft (ADS-B), ships (AIS).", ready: true },
 
   { group: "Catalogs", href: "/admin/content", title: "Content editor", desc: "Edit on-air text + images for cities, countries, regions, volcanoes, alerts, quakes and seismic stations — with a live on-air preview.", ready: true },

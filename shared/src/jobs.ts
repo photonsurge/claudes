@@ -478,6 +478,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Tracks",
   },
   {
+    id: "presenter-refresh-voices",
+    label: "Refresh presenter voices",
+    description:
+      "Fetch OpenRouter's speech models, their voices and prices into the cache /admin/presenters reads. Run once before auditioning voices, and again when OpenRouter adds models.",
+    domain: "presenter",
+    type: "presenter",
+    event: "refreshVoices",
+    group: "Alerts & events",
+  },
+  {
     id: "summaries-hourly",
     label: "Round-up (hourly)",
     description: "Generate the hourly global weather-event round-up.",

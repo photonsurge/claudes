@@ -26,6 +26,7 @@
     "build": "rm -rf dist/; tsc",
     "start": "PORT=10102 node dist/index.js",
     "seed": "ts-node src/scripts/seed.ts",
+    "speak": "ts-node src/scripts/speak.ts",
     "seed:admin": "ts-node src/scripts/seedAdmin.ts",
     "seed:capitals": "ts-node src/scripts/seedCapitals.ts",
     "seed:cities": "ts-node src/scripts/seedCities.ts",
