@@ -119,6 +119,8 @@ import { getShortScriptModel } from "./short-script-model";
 import { makeShortScriptRepo } from "./short-script-repo";
 import { getShortRenderModel, getShortRenderQueueModel } from "./short-render-model";
 import { makeShortRenderRepo } from "./short-render-repo";
+import { getShortScheduleModel } from "./short-schedule-model";
+import { makeShortScheduleRepo } from "./short-schedule-repo";
 import { getShortFormatModel } from "./short-format-model";
 import { makeShortFormatRepo } from "./short-format-repo";
 import { getAdModel } from "./ad-model";
@@ -309,6 +311,8 @@ export function createDb(conn: Connection) {
     seaPoints: makeSeaPointRepo(getSeaPointModel(conn)),
     shortScripts: makeShortScriptRepo(getShortScriptModel(conn)),
     shortRenders: makeShortRenderRepo(getShortRenderModel(conn), getShortRenderQueueModel(conn)),
+    // Scheduled video batches (short-video plan §8); the worker's short-video.tick fires them.
+    shortSchedules: makeShortScheduleRepo(getShortScheduleModel(conn)),
     // A short format's own settings; its look is the scene doc of the same id.
     shortFormats: makeShortFormatRepo(getShortFormatModel(conn)),
     ads: makeAdRepo(getAdModel(conn), blobs.ad),

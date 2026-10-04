@@ -27,6 +27,7 @@ const KEYS: (keyof ShortRender)[] = [
   "assignedEncoderId",
   "retryOf",
   "formatId",
+  "n",
 ];
 
 /** Wire shape from a lean doc: known keys only, unset ones omitted. */
@@ -107,6 +108,20 @@ export function makeShortRenderRepo(model: Model<iShortRenderModel>, queueModel:
       statuses: ShortRenderStatus[] = ["queued", "preparing", "live"],
     ): Promise<number> {
       return model.countDocuments({ formatId, status: { $in: statuses } }).exec();
+    },
+
+    /**
+     * A schedule's most recent renders that made (or were making) a script,
+     * newest first — `auto` scope skips the places these were made of (§8).
+     */
+    async recentWithScriptForSchedule(scheduleId: string, limit: number): Promise<ShortRender[]> {
+      const docs = await model
+        .find({ scheduleId, scriptId: { $exists: true, $ne: null } })
+        .sort({ queuedAt: -1 })
+        .limit(limit)
+        .lean()
+        .exec();
+      return docs.map((d) => toRender(d as iShortRenderModel));
     },
 
     /** Encoders whose render queue is paused. */

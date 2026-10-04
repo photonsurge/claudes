@@ -16,6 +16,7 @@ const db = {
   ]),
   listStreamSlots: jest.fn(async () => []),
   shortRenders: { list: jest.fn(async () => [{ id: "y", encoderId: "obs-v1", status: "queued" }]) },
+  shortSchedules: { list: jest.fn(async (): Promise<any[]> => []) },
 };
 jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: jest.fn(async () => db) }));
 
@@ -42,4 +43,23 @@ it("still answers when the render queue can't be read", async () => {
   const res = await (GET as () => Promise<Response>)();
   expect(res.status).toBe(200);
   expect((await res.json()).encoders).toHaveLength(3);
+});
+
+it("shows a schedule booked on a named encoder within 24 h as booked; 'any' books none", async () => {
+  const soon = Date.now() + 2 * 3_600_000;
+  db.shortSchedules.list.mockResolvedValueOnce([
+    { id: "morning", name: "Morning batch", enabled: true, encoderId: "obs-v2", nextAt: soon },
+    { id: "pool", name: "Any", enabled: true, encoderId: "any", nextAt: soon },
+  ]);
+  const body = await (await (GET as () => Promise<Response>)()).json();
+  const byId = Object.fromEntries(body.encoders.map((e: any) => [e.id, e]));
+  expect(byId["obs-v2"].occupancy).toMatchObject({ state: "booked", scheduleId: "morning", bookedAt: soon });
+  expect(byId["obs-v1"].occupancy.state).toBe("rendering");
+});
+
+it("still answers when the schedules can't be read", async () => {
+  db.shortSchedules.list.mockRejectedValueOnce(new Error("mongo"));
+  const res = await (GET as () => Promise<Response>)();
+  expect(res.status).toBe(200);
+  expect((await res.json()).encoders.find((e: any) => e.id === "obs-v2").occupancy.state).toBe("free");
 });

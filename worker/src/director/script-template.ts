@@ -291,7 +291,7 @@ async function bookends(
 }
 
 /** Every in-scope event of the included kinds, scored by the director's own builders. */
-async function scopeEvents(
+export async function scopeEvents(
   db: AppDb,
   cfg: DirectorConfig,
   rs: ResolvedScope,

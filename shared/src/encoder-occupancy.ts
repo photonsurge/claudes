@@ -32,8 +32,8 @@ export interface OccupancyRun {
 }
 
 /**
- * The fields of a schedule (§8, WP9a) occupancy needs. Schedules don't exist
- * yet: callers pass `[]` until WP9 adds `ShortSchedule`, which satisfies this.
+ * The fields of a schedule (§8) occupancy needs — a `ShortSchedule`
+ * (short-schedule.ts) satisfies it, so callers pass `db.shortSchedules.list()`.
  */
 export interface OccupancySchedule {
   id: string;

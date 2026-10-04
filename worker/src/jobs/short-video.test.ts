@@ -160,6 +160,6 @@ describe("short-video.seedFormat", () => {
 
 describe("jobs/short-video exports", () => {
   it("exports handlers only — the job loader registers every export", () => {
-    expect(Object.keys(jobs).sort()).toEqual(["generate", "seedFormat"]);
+    expect(Object.keys(jobs).sort()).toEqual(["generate", "runBatch", "seedFormat", "tick"]);
   });
 });

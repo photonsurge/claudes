@@ -21,9 +21,11 @@
  *    the same way.
  *  - Paused: a paused encoder finishes the video that is live and starts nothing.
  *  - `startBy`: a video still queued past it is skipped as too late.
- *  - At the front, in order: quota check (live only), the script (saved, or
- *    freshness check + generate), the title-code values, the title and
- *    description resolved onto a new Run, then goLive. Any failure there fails
+ *  - At the front, in order: quota check (live only), the script (saved, or:
+ *    `auto` scope resolved to a place, `skipIfQuiet`, the round-up freshness
+ *    check and refresh, then generate — §8), the title-code values (with the
+ *    schedule's `%{n}`), the title and description resolved onto a new Run,
+ *    then goLive. Any failure there fails
  *    THAT video with a note and the queue moves on — one failure never stops a
  *    batch.
  */
@@ -48,7 +50,9 @@ import {
   type ShortRender,
   type ShortRenderRequest,
 } from "@photonsurge/shared/short-render";
-import { sceneIdForScript, scriptDurationMs, type ShortScript } from "@photonsurge/shared/short-script";
+import { sceneIdForScript, scriptDurationMs, type ShortInclude, type ShortScope, type ShortScript } from "@photonsurge/shared/short-script";
+import type { DirectorConfig } from "@photonsurge/shared/director";
+import type { SummaryPeriod } from "@photonsurge/shared/db/event-summary-model";
 import { PLACE_TIMEZONE, type ShortFormat } from "@photonsurge/shared/short-format";
 import { countryShot } from "@photonsurge/shared/director-countries";
 import {
@@ -59,7 +63,9 @@ import {
   VIDEO_TEXT_TIMEZONE,
 } from "@photonsurge/shared/video-text";
 import { log } from "@photonsurge/shared/utill/logger";
-import { generateFormat, generateShortScript } from "../director/script-generate";
+import { generateFormat, generateShortScript, sceneDirectorConfig } from "../director/script-generate";
+import { resolveAutoScope, scopeHasActivity } from "../director/script-auto";
+import { refreshPlaceRoundup } from "../placeRoundups/refresh";
 import { exhaustedUntil, fmtResetTime, quotaSnapshot } from "../youtube/quota";
 import { watchBaseUrl } from "./encoders";
 import { formatDuration, scriptValues } from "./script-values";
@@ -117,18 +123,19 @@ export async function loadRenderFormat(db: AppDb, formatId: string): Promise<Sho
 
 /**
  * Generate at the front of the queue — the ONE call into the generate path, in
- * the render's format. `auto` scope (pick the busiest place) belongs to
- * scheduling (WP9a) and fails here until then.
+ * the render's format. An `auto` scope is resolved to a place before this
+ * (`generateAtFront`), so one still here fails.
  */
 export async function generateForRender(
   db: AppDb,
   what: Extract<ShortRender["what"], { type: "generate" }>,
 ): Promise<ShortScript> {
-  if (what.scope.type === "auto") {
-    throw new RenderOutcome("failed", "auto scope is not available yet (it arrives with scheduling, WP9a)");
-  }
+  if (what.scope.type === "auto") throw new RenderOutcome("failed", "auto scope was not resolved to a place");
   return generateShortScript(db, { formatId: what.formatId, scope: what.scope, include: what.include });
 }
+
+/** How many of a schedule's latest videos `auto` won't repeat the place of (§8). */
+export const AUTO_SKIP_RECENT = 3;
 
 // ---- pure helpers ----
 
@@ -256,20 +263,131 @@ export async function quotaAllowsRender(accountId: string, now = Date.now()): Pr
   return { ok: true };
 }
 
-/** Freshness of a place's round-up against the render's rule; null when fine (or not applicable). */
-async function staleRoundup(db: AppDb, render: ShortRender, now: number): Promise<string | null> {
-  if (!render.roundup || render.what.type !== "generate") return null;
-  const scope = render.what.scope;
-  if (scope.type !== "country" && scope.type !== "area") return null;
-  const placeId = scope.type === "country" ? countryShot(scope.id)?.iso2.toLowerCase() : scope.id;
-  if (!placeId) return null;
-  const repo = scope.type === "country" ? db.countryRoundups : db.regionRoundups;
-  const latest = await repo.latestForPlace(placeId).catch(() => null);
-  const limitMs = render.roundup.maxAgeHours * 3_600_000;
-  if (!latest?.generatedAt) return `no round-up for ${scope.id}`;
-  const ageMs = now - new Date(latest.generatedAt).getTime();
-  if (ageMs <= limitMs) return null;
-  return `round-up for ${scope.id} is ${Math.round(ageMs / 3_600_000)} h old (limit ${render.roundup.maxAgeHours} h)`;
+/** The world round-up's cadences, any of which a globe video can open with. */
+const WORLD_PERIODS: SummaryPeriod[] = ["hourly", "12h", "daily"];
+
+/**
+ * Freshness of the scope's round-up against the render's rule; null when fine
+ * (or no rule). A place's is its latest place round-up; the globe's is the
+ * newest world round-up of any cadence.
+ */
+export async function staleRoundup(
+  db: AppDb,
+  scope: ShortScope,
+  rule: ShortRender["roundup"],
+  now: number,
+): Promise<string | null> {
+  if (!rule) return null;
+  let at: number | null = null;
+  let label: string;
+  if (scope.type === "globe") {
+    label = "the world";
+    const docs = await Promise.all(WORLD_PERIODS.map((p) => db.eventSummaries.latest(p).catch(() => null)));
+    for (const d of docs) {
+      const t = d?.generatedAt ? new Date(d.generatedAt).getTime() : NaN;
+      if (Number.isFinite(t) && (at == null || t > at)) at = t;
+    }
+  } else {
+    const placeId = scope.type === "country" ? countryShot(scope.id)?.iso2.toLowerCase() : scope.id;
+    if (!placeId) return null; // an unknown country: generate says so
+    label = scope.id;
+    const repo = scope.type === "country" ? db.countryRoundups : db.regionRoundups;
+    const latest = await repo.latestForPlace(placeId).catch(() => null);
+    at = latest?.generatedAt ? new Date(latest.generatedAt).getTime() : null;
+  }
+  if (at == null) return `no round-up for ${label}`;
+  const ageMs = now - at;
+  if (ageMs <= rule.maxAgeHours * 3_600_000) return null;
+  return `round-up for ${label} is ${Math.round(ageMs / 3_600_000)} h old (limit ${rule.maxAgeHours} h)`;
+}
+
+/** The places (scope ids) this render's schedule made its latest videos of — `auto` skips them. */
+async function recentSchedulePlaces(db: AppDb, render: ShortRender): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!render.scheduleId) return out;
+  const recent = await db.shortRenders.recentWithScriptForSchedule(render.scheduleId, AUTO_SKIP_RECENT + 1).catch(() => []);
+  for (const r of recent.filter((x) => x.id !== render.id).slice(0, AUTO_SKIP_RECENT)) {
+    const s = r.scriptId ? await db.shortScripts.get(r.scriptId).catch(() => null) : null;
+    if (s && s.scope.type !== "globe") out.add(s.scope.id);
+  }
+  return out;
+}
+
+const anyEvents = (inc: ShortInclude) => inc.alerts || inc.quakes || inc.volcanoes;
+
+/**
+ * The generate path at the front (§8 "Order of work"): resolve `auto` to a
+ * place, skip a quiet scope, check the round-up's freshness and refresh it,
+ * then generate. Throws a RenderOutcome for a skip or a failure.
+ */
+async function generateAtFront(db: AppDb, render: ShortRender, format: ShortFormat, now: number): Promise<ShortScript> {
+  const what = render.what as Extract<ShortRender["what"], { type: "generate" }>;
+  const include = what.include ?? format.template.include;
+  let cfg: DirectorConfig | undefined;
+  const directorCfg = async () => (cfg ??= await sceneDirectorConfig(db, format.id, true));
+
+  // 1. `auto`: the busiest place, not one of this schedule's last few.
+  let scope: ShortScope;
+  if (what.scope.type === "auto") {
+    const auto = what.scope;
+    const exclude = await recentSchedulePlaces(db, render);
+    let picked: Awaited<ReturnType<typeof resolveAutoScope>>;
+    try {
+      picked = await resolveAutoScope(db, await directorCfg(), auto, include, exclude, now);
+    } catch (err) {
+      throw new RenderOutcome("failed", `auto scope failed: ${errMsg(err)}`);
+    }
+    if (!picked) {
+      const outside = exclude.size ? ` outside the last places made (${[...exclude].join(", ")})` : "";
+      throw new RenderOutcome(render.skipIfQuiet ? "skipped" : "failed", `auto: no ${auto.of} has anything active${outside}`);
+    }
+    scope = picked.scope;
+    log(TAG, `render ${render.id}: auto ${auto.of} -> ${picked.name} (score ${Math.round(picked.score)})`);
+  } else {
+    scope = what.scope;
+  }
+
+  // 2. Quiet: only with an include switch on, and before any LLM call.
+  if (render.skipIfQuiet && anyEvents(include)) {
+    let active: boolean;
+    try {
+      active = await scopeHasActivity(db, await directorCfg(), scope, include, now);
+    } catch (err) {
+      throw new RenderOutcome("failed", `generate failed: ${errMsg(err)}`);
+    }
+    if (!active) throw new RenderOutcome("skipped", "quiet: nothing active in scope");
+  }
+
+  // 3. Freshness: skip, or refresh the place's round-up first (one LLM call).
+  const stale = await staleRoundup(db, scope, render.roundup, now);
+  if (stale && render.roundup!.ifStale === "skip") throw new RenderOutcome("skipped", stale);
+  if (stale) {
+    if (scope.type === "globe") {
+      throw new RenderOutcome(
+        "failed",
+        `${stale}; the world round-up can't be refreshed for a video (it is written on its own schedule) - choose skip, or allow an older round-up`,
+      );
+    }
+    try {
+      await refreshPlaceRoundup(db, scope);
+      log(TAG, `render ${render.id}: ${stale} - refreshed`);
+    } catch (err) {
+      throw new RenderOutcome("failed", `${stale}; refresh failed: ${errMsg(err)}`);
+    }
+  }
+
+  // 4. Generate, in the resolved scope.
+  let script: ShortScript;
+  try {
+    script = await generateForRender(db, { ...what, scope });
+  } catch (err) {
+    if (err instanceof RenderOutcome) throw err;
+    throw new RenderOutcome("failed", `generate failed: ${errMsg(err)}`);
+  }
+  const scriptInclude = what.include ?? script.include;
+  const hasEvents = script.clips.some((c) => /^(storm|quake|volcano):/.test(c.target));
+  if (render.skipIfQuiet && anyEvents(scriptInclude) && !hasEvents) throw new RenderOutcome("skipped", "quiet: nothing active in scope");
+  return script;
 }
 
 /** The format a render plays in, when it can be known without generating. */
@@ -334,23 +452,7 @@ async function startRender(db: AppDb, render: ShortRender, encoderId: string, no
     if (saved || render.what.type !== "generate") {
       script = saved!;
     } else {
-      const stale = await staleRoundup(db, render, now);
-      if (stale && render.roundup!.ifStale === "skip") throw new RenderOutcome("skipped", stale);
-      if (stale) {
-        // TODO(WP9a): `refresh` writes a new round-up for the place first, through a
-        // single-place entry point in jobs/placeRoundups.ts that doesn't exist yet.
-        throw new RenderOutcome("failed", `${stale}; refreshing it is not available yet (WP9a)`);
-      }
-      try {
-        script = await generateForRender(db, render.what);
-      } catch (err) {
-        if (err instanceof RenderOutcome) throw err;
-        throw new RenderOutcome("failed", `generate failed: ${errMsg(err)}`);
-      }
-      const include = render.what.include ?? script.include;
-      const wantsEvents = include.alerts || include.quakes || include.volcanoes;
-      const hasEvents = script.clips.some((c) => /^(storm|quake|volcano):/.test(c.target));
-      if (render.skipIfQuiet && wantsEvents && !hasEvents) throw new RenderOutcome("skipped", "quiet: nothing active in scope");
+      script = await generateAtFront(db, render, format, now);
     }
     if (!script.clips.length) throw new RenderOutcome("failed", "the script has no clips");
     await db.shortRenders.update(render.id, { scriptId: script.id, formatId: sceneIdForScript(script) });
@@ -361,6 +463,8 @@ async function startRender(db: AppDb, render: ShortRender, encoderId: string, no
       values = await scriptValues(db, script, { formatName: format.name, roundupDepth: format.opener.roundupDepth, now });
       await db.shortScripts.stampValues(script.id, values).catch((err) => log(TAG, `values stamp failed ${script!.id}`, errMsg(err)));
     }
+    // `%{n}`: the schedule's running number for this fire - the render's, not the script's.
+    if (render.n != null) values = { ...values, n: String(render.n) };
     const video: ShortFormatVideo = { ...format.video, ...(render.video ?? {}) } as ShortFormatVideo;
     const durationMs = scriptDurationMs(script.clips);
     const text = resolveVideoText(video, values, durationMs, new Date(now));
@@ -521,6 +625,22 @@ async function requestFormatId(db: AppDb, req: Pick<ShortRenderRequest, "what">)
   return script ? sceneIdForScript(script) : undefined;
 }
 
+/**
+ * Queue several videos in order (a schedule's batch, §8) WITHOUT advancing:
+ * each gets a later `queuedAt` than the one before, so the queue keeps the
+ * batch's order. The caller advances (`advanceRenderQueues`), typically
+ * without waiting - a refresh or generate at the front can take a while.
+ */
+export async function createRenders(reqs: ShortRenderRequest[], now = Date.now()): Promise<ShortRender[]> {
+  const db = await getAppDb();
+  const out: ShortRender[] = [];
+  for (const [i, req] of reqs.entries()) {
+    out.push(await db.shortRenders.create({ ...req, formatId: await requestFormatId(db, req) }, now + i));
+  }
+  if (out.length) log(TAG, `queued ${out.length} render(s)${reqs[0]?.batchId ? ` as batch ${reqs[0].batchId}` : ""}`);
+  return out;
+}
+
 /** Queue a video (Render now, a schedule's batch, Retry) and advance at once. */
 export async function queueRender(req: ShortRenderRequest, now = Date.now()): Promise<ShortRender> {
   const db = await getAppDb();
@@ -586,6 +706,7 @@ export async function controlRender(c: RenderControl): Promise<{ ok: boolean; er
       ...(r.skipIfQuiet ? { skipIfQuiet: true } : {}),
       ...(r.scheduleId ? { scheduleId: r.scheduleId } : {}),
       ...(r.batchId ? { batchId: r.batchId } : {}),
+      ...(r.n != null ? { n: r.n } : {}),
       // A retry is "now": the original start-by window has passed by definition.
     };
     const created = await db.shortRenders.create({ ...req, formatId: r.formatId ?? (await requestFormatId(db, req)) });

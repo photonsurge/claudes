@@ -68,6 +68,9 @@ export interface ShortRender {
    *  generate request's). Drives "one video per format", the preview refusal
    *  (§5.3) and the format delete guard. */
   formatId?: string;
+  /** The schedule's running number for this fire (`%{n}`, §6.8): the
+   *  schedule's `fireCount` when it queued the video. Absent off a schedule. */
+  n?: number;
 }
 
 /** The format a render makes its video in, when known without loading a script. */
@@ -102,7 +105,8 @@ export type ShortRenderRequest = Omit<
 
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
-function sanitizeVideo(v: unknown): Partial<ShortFormatVideo> | undefined {
+/** A video's overrides of its format's YouTube settings, or undefined when none survive. */
+export function sanitizeVideoOverrides(v: unknown): Partial<ShortFormatVideo> | undefined {
   if (!v || typeof v !== "object") return undefined;
   const s = v as Record<string, unknown>;
   const out: Partial<ShortFormatVideo> = {};
@@ -151,7 +155,7 @@ export function sanitizeRenderRequest(v: unknown): ShortRenderRequest | null {
     offline: s.offline === true,
   };
   if (str(s.accountId)) req.accountId = str(s.accountId);
-  const video = sanitizeVideo(s.video);
+  const video = sanitizeVideoOverrides(s.video);
   if (video) req.video = video;
   const r = s.roundup as Record<string, unknown> | undefined;
   if (r && typeof r.maxAgeHours === "number" && r.maxAgeHours > 0 && (r.ifStale === "refresh" || r.ifStale === "skip")) {

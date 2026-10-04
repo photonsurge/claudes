@@ -9,6 +9,9 @@
  *  • seedFormat — create the default short format and its hidden scene
  *    (`shorts`). Skips what already exists; `{ force: true }` re-applies the
  *    seed look. See director/short-format-seed.ts.
+ *  • tick — the 60 s schedule ticker: fire due schedules' batches (§8).
+ *  • runBatch — "Run batch now" for one schedule (§8.1). Both live in
+ *    stream/short-schedules.ts.
  *
  * The job loader registers every export of this file as a handler, so it
  * exports handlers ONLY — helpers live in director/script-generate.ts.
@@ -19,6 +22,8 @@ import { scriptDurationMs } from "@photonsurge/shared/short-script";
 import { log } from "@photonsurge/shared/utill/logger";
 import { generateShortScript, type GenerateRequest } from "../director/script-generate";
 import { seedShortFormat } from "../director/short-format-seed";
+import { runBatchNow, tickSchedules } from "../stream/short-schedules";
+import { sanitizePublishAs } from "@photonsurge/shared/short-schedule";
 import { blogInfo, blogErr } from "../blog";
 import { summarizeForLog } from "../utils";
 
@@ -60,4 +65,26 @@ export async function seedFormat(job: Job) {
     blogErr(TAG, "default short format seed failed", err, "short-video", "seedFormat");
     throw err;
   }
+}
+
+/**
+ * Job handler: `short-video.tick` — the 60 s schedule ticker (index.ts): fire
+ * every enabled schedule whose time has come by queuing its batch (§8). Cheap
+ * no-op when nothing is due.
+ */
+export async function tick(_job: Job) {
+  return tickSchedules();
+}
+
+/**
+ * Job handler: `short-video.runBatch` `{ scheduleId, publishAs? }` — "Run batch
+ * now": queue a schedule's videos immediately, without touching its next time;
+ * `publishAs` overrides every video's privacy for this batch (§8.1 step 5).
+ * Resolves `{ ok, ... }`; never rejects for an operator error.
+ */
+export async function runBatch(job: Job) {
+  const d = job.data?.data ?? {};
+  const scheduleId = typeof d.scheduleId === "string" ? d.scheduleId.trim() : "";
+  if (!scheduleId) return { ok: false, error: "scheduleId is required" };
+  return runBatchNow(scheduleId, sanitizePublishAs(d.publishAs));
 }
