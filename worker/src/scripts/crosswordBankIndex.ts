@@ -3,7 +3,9 @@
  * imported word bank (crosswordbankwords, crosswordbankclues), the same code
  * as the /admin/jobs "Index the crossword word bank" button. Run once after
  * each import (docs/crossword-mode-plan.md §7.2 step 3); safe to re-run, an
- * existing index is left as it is. Slow on a million words.
+ * existing index is left as it is. The first build's pick index
+ * (`xwbank_pick_ix`, now `xwbank_approved_pick_ix`) is dropped if present.
+ * Slow on a million words.
  */
 import { loadWorkerEnv } from "../loadEnv";
 loadWorkerEnv();
@@ -14,8 +16,9 @@ import { indexBank } from "../crossword/build";
 (async () => {
   const db = await getAppDb();
   const t0 = Date.now();
-  const { indexes } = await indexBank(db);
+  const { indexes, dropped } = await indexBank(db);
   for (const name of indexes) console.log(`index ${name}: ok`);
+  for (const name of dropped) console.log(`index ${name}: dropped (replaced)`);
   console.log(`crossword bank indexed (${indexes.length} indexes, ${((Date.now() - t0) / 1000).toFixed(1)}s).`);
   await db.conn.close();
   process.exit(0);

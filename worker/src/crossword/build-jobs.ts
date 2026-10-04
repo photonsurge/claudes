@@ -2,11 +2,13 @@
  * Crossword puzzle building (docs/crossword-mode-plan.md §7) — the job
  * handlers, re-exported by jobs/crossword.ts.
  *
- *  • generate — build one puzzle for a scene (`CrosswordGenerateRequest`:
- *    `{ sceneId, theme?, seed? }`). See build.ts.
- *  • topUp — one build for each enabled crossword scene short of stock
- *    (repeatable, every 30 minutes, and a button on /admin/jobs).
- *  • bankIndex — build the imported word bank's indexes. Idempotent.
+ *  • generate — build one puzzle for a scene from approved words and clues
+ *    (`CrosswordGenerateRequest`: `{ sceneId, seed? }`). See build.ts.
+ *  • topUp — one build for each enabled crossword scene short of stock, when
+ *    the pool can supply one (repeatable, every 30 minutes, and a button on
+ *    /admin/jobs).
+ *  • bankIndex — build the imported word bank's indexes and drop the legacy
+ *    pick index. Idempotent.
  *  • writeClues — the Words page's "Write clues" (WP11, not built yet).
  *
  * Only the handlers are re-exported from jobs/crossword.ts; the work lives in
@@ -34,12 +36,14 @@ export async function generate(job: Job) {
       words: r.puzzle.entries.length,
       size: `${r.puzzle.width}x${r.puzzle.height}`,
       status: r.puzzle.status,
+      familyFriendly: r.puzzle.familyFriendly,
       source: r.source,
       seed: r.seed,
-      dropped: r.dropped,
+      available: r.available,
+      ...(r.unapproved ? { unapproved: true } : {}),
     };
     log(TAG, "generate done", result);
-    blogInfo(TAG, `crossword built: ${r.puzzle.title} (${r.puzzle.entries.length} words, ${r.puzzle.status})`, result, "crossword", r.puzzle.id);
+    blogInfo(TAG, `crossword built: ${r.puzzle.title} (${r.puzzle.entries.length} words${r.puzzle.familyFriendly ? ", family friendly" : ""})`, result, "crossword", r.puzzle.id);
     return result;
   } catch (err) {
     log(TAG, "generate failed", { err: summarizeForLog(err), sceneId: req.sceneId });
@@ -59,6 +63,8 @@ export async function topUp(_job: Job) {
     log(TAG, "topUp done", result);
     const built = scenes.filter((s) => s.outcome === "built").length;
     const failed = scenes.filter((s) => s.outcome === "failed");
+    // A skip is the pool being too small, not a fault: logged each run, not blogged.
+    for (const s of scenes) if (s.outcome === "skipped") log(TAG, "topUp skipped", { sceneId: s.sceneId, reason: s.reason });
     if (failed.length) {
       blogWarn(TAG, `crossword top-up: ${failed.length} scene(s) failed to build`, result, "crossword", "topUp");
     } else if (built) {
@@ -78,7 +84,7 @@ export async function bankIndex(_job: Job) {
     const db = await getAppDb();
     const result = await indexBank(db);
     log(TAG, "bankIndex done", result);
-    blogInfo(TAG, `crossword bank indexed (${result.indexes.length} indexes)`, result, "crossword", "bankIndex");
+    blogInfo(TAG, `crossword bank indexed (${result.indexes.length} indexes${result.dropped.length ? `, dropped ${result.dropped.join(", ")}` : ""})`, result, "crossword", "bankIndex");
     return result;
   } catch (err) {
     log(TAG, "bankIndex failed", { err: summarizeForLog(err) });
