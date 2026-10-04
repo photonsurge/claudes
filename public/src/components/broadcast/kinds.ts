@@ -6,6 +6,7 @@
  * single target, so they get a small tucked-away card instead of a reticle.
  */
 import type { SegmentKind } from "@photonsurge/shared/director";
+import type { BreakInReason } from "@photonsurge/shared/director-break-in";
 
 /** Per-kind accent — matches the "now viewing" card's kind badge colours. */
 export const KIND_COLOR: Record<SegmentKind, string> = {
@@ -40,6 +41,25 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
   ship: "Vessel",
   ad: "Sponsor",
 };
+
+/** The INCOMING eyebrow per break-in reason (EventOverlay / the deck badge). */
+export const BREAK_IN_LABEL: Record<BreakInReason, string> = {
+  quake: "EARTHQUAKE",
+  storm: "NEW WARNING",
+  volcano: "ERUPTION",
+  roundup: "NEW ROUND-UP",
+};
+
+/** The reticle's pre-roll eyebrow: what's incoming, or a plain detection. */
+export function incomingEyebrow(segment: { breakIn?: { reason: BreakInReason } }): string {
+  return segment.breakIn ? `⚡ INCOMING · ${BREAK_IN_LABEL[segment.breakIn.reason]}` : "EVENT DETECTED";
+}
+
+/** Who asked for this shot, for the on-air eyebrow — null for the director's own picks. */
+export function requestedByLabel(segment: { requestedBy?: { author: string } }): string | null {
+  const author = segment.requestedBy?.author?.trim();
+  return author ? `REQUESTED BY @${author.replace(/^@/, "")}` : null;
+}
 
 /** Kinds that are a single tracked point → get the centred event reticle. */
 const TARGETED = new Set<SegmentKind>(["storm", "volcano", "quake", "flight", "ship"]);

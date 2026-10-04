@@ -76,9 +76,24 @@ export function makeAirLogRepo(runModel: Model<iAirRunModel>, entryModel: Model<
       await runModel
         .updateOne(
           { id: cut.runId },
-          { $inc: { cuts: 1, [`kindCounts.${cut.kind}`]: 1 }, $set: { lastCutAt: cut.startedAt } },
+          {
+            $inc: {
+              cuts: 1,
+              [`kindCounts.${cut.kind}`]: 1,
+              ...(cut.breakIn || cut.breaking ? { breakIns: 1 } : {}),
+              ...(cut.breakInItems && cut.breakInItems.length > 1 ? { grouped: 1 } : {}),
+              ...(cut.command ? { commands: 1 } : {}),
+              ...(cut.command?.source === "viewer" ? { viewerRequests: 1 } : {}),
+            },
+            $set: { lastCutAt: cut.startedAt },
+          },
         )
         .exec();
+    },
+
+    /** Count breaking events that left a run's queue without airing. */
+    async addQueueDrops(runId: string, n: number): Promise<void> {
+      if (n > 0) await runModel.updateOne({ id: runId }, { $inc: { queueDropped: n } }).exec();
     },
 
     /** Runs newest-first, optionally for one scene. No default cap. */

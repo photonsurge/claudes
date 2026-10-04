@@ -33,6 +33,7 @@ import { installJobConsoleTap, runInJobLogContext, getJobLog, listJobLogs } from
 import { beginJob, endJob, startCancelSubscriber, activeJobLabels } from "./jobCancel";
 import { startDirector, stopDirector } from "./director/loop";
 import { startScriptRunner, stopScriptRunner } from "./director/script-runner";
+import { startViewerSweep, stopViewerSweep } from "./stream/viewer-sweep";
 import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
 import { getEnabledCamSources } from "./cams/registry";
@@ -212,6 +213,8 @@ process.on("uncaughtException", (err) => {
   // Scripted shorts: plays a saved script on scenes in "script" mode, on its
   // own clock so a cut never waits behind the auto loop's candidate builds.
   startScriptRunner();
+  // Viewer chat picks (music / palette): lapse and promote them on time.
+  startViewerSweep();
 
   // Restore streaming-run monitors + re-arm auto-end for runs that were live when
   // the worker last stopped (health/confirm loops are in-process, so a restart
@@ -1799,6 +1802,7 @@ process.on("uncaughtException", (err) => {
     // carries on cutting shots the whole time bullWorker.close() drains jobs.
     stopDirector();
     stopScriptRunner();
+    stopViewerSweep();
 
     // Stop the streaming-run monitors (in-process health/confirm loops) too.
     stopAllMonitors();

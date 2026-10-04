@@ -11,6 +11,7 @@
  */
 "use client";
 
+import { incomingPhaseAt, useIncomingPhase } from "./incoming";
 import { useEffect, useMemo, useState } from "react";
 import type { ControlState } from "@photonsurge/shared/control";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
@@ -54,6 +55,11 @@ const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
   // A region ("area") spotlight tours the same ambient field cycle as a country.
   region: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
 };
+/*
+ * Within-shot dwell numbers. The worker stamps the channel's own values on every
+ * cut (`Segment.tempo`, from DirectorConfig.tempo / tours.stopDwellS); these are
+ * the defaults for a cut from an older worker that carries none.
+ */
 const VAR_CYCLE_MS = 5500;
 /** Per-map dwell for the global map-type tour — a touch longer, each look is a beat. */
 const GLOBAL_MAP_CYCLE_MS = 6000;
@@ -95,14 +101,15 @@ const DEPTH_CYCLE_MS = 2500;
  * operator's transition-speed setting); the dwell is ON TOP of that flight, not
  * instead of it. NB the worker must size the segment's holdMs to
  * stops × (flight + dwell) or the tour cuts away mid-package — see
- * `summaryCandidates` in worker/src/director/candidates.ts.
+ * `summaryCandidates` in worker/src/director/candidates.ts. The channel's own
+ * dwell arrives as `segment.tempo.stopDwellMs`; this is the fallback.
  */
 const SUMMARY_STOP_DWELL_MS = 40_000;
 /** The per-stop dwell a cut's tour actually uses: the segment's own
- *  `tourDwellMs` (scripted shorts pace a tour inside a fixed clip) or the
- *  live channel's full-package default. */
+ *  `tourDwellMs` (scripted shorts pace a tour inside a fixed clip), else the
+ *  channel's `tempo.stopDwellMs`, else the full-package default. */
 export function tourDwellOf(cut: Segment): number {
-  return cut.tourDwellMs ?? SUMMARY_STOP_DWELL_MS;
+  return cut.tourDwellMs ?? cut.tempo?.stopDwellMs ?? SUMMARY_STOP_DWELL_MS;
 }
 const SUMMARY_STOP_ZOOM = 5;
 
@@ -192,10 +199,11 @@ export function cutSteps(
   avail: MapTypeAvailability,
   mapTypeIds?: string[],
 ): { steps: MapStep[]; periodMs: number; anchored: boolean } {
+  const tempo = cut.tempo;
   if (cut.kind === "ocean" && cut.depthCycle) {
     return {
       steps: DEPTH_CYCLE_VARS.map((v) => ({ patch: { activeVariable: v } })),
-      periodMs: DEPTH_CYCLE_MS,
+      periodMs: tempo?.depthCycleMs ?? DEPTH_CYCLE_MS,
       anchored: false,
     };
   }
@@ -240,14 +248,14 @@ export function cutSteps(
         patch: t.patch,
         label: relabel ? { title: t.title, subtitle: t.subtitle } : undefined,
       }));
-    return { steps, periodMs: GLOBAL_MAP_CYCLE_MS, anchored: true };
+    return { steps, periodMs: tempo?.mapStepMs ?? GLOBAL_MAP_CYCLE_MS, anchored: true };
   }
   if (cut.kind === "storm") {
     const plan = hazardMapPlan(cut.hazard);
     return { steps: plan.cycle.map((v) => ({ patch: { activeVariable: v } })), periodMs: plan.cycleMs, anchored: true };
   }
   const cyc = VAR_CYCLE[cut.kind] ?? [];
-  return { steps: cyc.map((v) => ({ patch: { activeVariable: v } })), periodMs: VAR_CYCLE_MS, anchored: false };
+  return { steps: cyc.map((v) => ({ patch: { activeVariable: v } })), periodMs: tempo?.varCycleMs ?? VAR_CYCLE_MS, anchored: false };
 }
 
 /**
@@ -285,10 +293,21 @@ function useMapStep(cut: Segment | null, avail: MapTypeAvailability, mapTypeIds?
 /** Event kinds worth pulse-highlighting on the globe (a fixed point of interest). */
 const PULSE_KINDS = new Set<SegmentKind>(["storm", "quake", "volcano"]);
 
-/** The [lng,lat] to pulse-highlight for the current shot, or null. */
-export function eventPulse(director: DirectorState | null): [number, number] | null {
+/**
+ * The [lng,lat] to pulse-highlight for the current shot, or null. During a
+ * breaking cut's INCOMING pre-roll there is no pulse yet: it fires on lock, so
+ * the ring reads as "acquired".
+ */
+export function eventPulse(director: DirectorState | null, now: number = Date.now()): [number, number] | null {
   if (!director?.active || !director.segment) return null;
+  if (incomingPhaseAt(director.segment, now) === "incoming") return null;
   return PULSE_KINDS.has(director.segment.kind) ? director.segment.camera.center : null;
+}
+
+/** `eventPulse`, re-rendered at the INCOMING → locked flip. */
+export function useEventPulse(director: DirectorState | null): [number, number] | null {
+  useIncomingPhase(director?.active ? director.segment : null);
+  return eventPulse(director);
 }
 
 /** ISO-3166 alpha-2 of the on-air country spotlight to glow-highlight on the
@@ -349,6 +368,18 @@ export function activeRegionBbox(
 }
 
 /**
+ * The map looks a cut tours: its own (a viewer's `:mode aurora` parks the spin
+ * on one look) or else the channel's enabled looks for its kind.
+ */
+export function cutMapTypeIds(
+  cut: Pick<Segment, "kind" | "mapTypes"> | null,
+  config: { mapTypes: Partial<Record<SegmentKind, string[]>> },
+): string[] | undefined {
+  if (!cut) return undefined;
+  return cut.mapTypes?.length ? cut.mapTypes : config.mapTypes[cut.kind];
+}
+
+/**
  * The effective look for the current cut: its baseline `patch` with the current
  * within-shot map step folded in (the cycled field, or a full map-type look for a
  * global spin), plus the `segment` relabelled to the current map type (global
@@ -399,6 +430,18 @@ export function directorRunning(mode: DirectorMode): boolean {
 const SCRIPT_MODE_POLL_MS = 5000;
 
 /** Cold-start a scene's director config from the API. */
+/** One scene's director config, or null when it can't be read (Copy from
+ *  channel must never stage defaults in place of a failed fetch). */
+export async function loadDirectorConfig(sceneId: string): Promise<DirectorConfig | null> {
+  try {
+    const res = await fetch(`/api/director/${encodeURIComponent(sceneId)}/config`, { cache: "no-store" });
+    if (!res.ok) return null;
+    return mergeDirectorConfig(DEFAULT_DIRECTOR_CONFIG, (await res.json()) as Partial<DirectorConfig>);
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchDirectorConfig(sceneId: string): Promise<DirectorConfig> {
   try {
     const res = await fetch(`/api/director/${encodeURIComponent(sceneId)}/config`, { cache: "no-store" });

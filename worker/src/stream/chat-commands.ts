@@ -13,9 +13,10 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { MAIN_SCENE_ID, type ControlState } from "@photonsurge/shared/control";
 import { INTRO_MAP_TYPES, OCEAN_MAP_TYPES } from "@photonsurge/shared/director-rois";
 import type { ChatMessage, Run } from "@photonsurge/shared/runs";
+import { helpText, sceneControl } from "./chat-handler";
 
 const COOLDOWN_MS = 30_000;
-const MAX_REPLIES_PER_BATCH = 2;
+export const MAX_REPLIES_PER_BATCH = 2;
 
 type Ctx = { run: Run };
 type Handler = (ctx: Ctx) => Promise<string | null> | string | null;
@@ -23,6 +24,8 @@ type Handler = (ctx: Ctx) => Promise<string | null> | string | null;
 /** ":modes", "!mode" etc. → "modes" / "mode"; plain chatter → null. */
 export function parseCommand(text: string): string | null {
   const m = /^[!:]([a-z]+)\s*$/i.exec(text.trim());
+  // (Commands WITH arguments — `:music deep`, `:mode aurora` — are viewer
+  // requests, handled by chat-handler.ts under the channel's policy.)
   return m ? m[1].toLowerCase() : null;
 }
 
@@ -55,7 +58,16 @@ const COMMANDS: Record<string, Handler> = {
     return state.activeVariable ? `Now showing: ${state.activeVariable}` : "Now showing: the base globe";
   },
 
-  help: () => "Commands: :modes (all map looks) · :mode (what's on now) · :help",
+  /** What this channel answers — including viewer requests when its policy allows them. */
+  help: async ({ run }) => {
+    const basic = "Commands: :modes (all map looks) · :mode (what's on now) · :help";
+    try {
+      const policy = (await sceneControl(await getAppDb(), run.sceneId))?.chat.commands;
+      return policy?.enabled ? helpText(policy) : basic;
+    } catch {
+      return basic; // a Mongo blip still gets the basic answer
+    }
+  },
 };
 COMMANDS.commands = COMMANDS.help;
 

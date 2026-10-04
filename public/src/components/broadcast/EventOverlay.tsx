@@ -17,7 +17,8 @@
 import type { CSSProperties } from "react";
 import type { Segment } from "@photonsurge/shared/director";
 import { STAGE_W, STAGE_H } from "./useStageScale";
-import { KIND_COLOR } from "./kinds";
+import { KIND_COLOR, incomingEyebrow, requestedByLabel } from "./kinds";
+import { useIncomingPhase } from "../../lib/incoming";
 import { TILE_BG } from "./config";
 import { KindGlyph } from "./glyphs";
 import { DIVIDER } from "./BroadcastCard";
@@ -94,13 +95,19 @@ export default function EventOverlay({
 }) {
   const color = KIND_COLOR[segment.kind] ?? "#38bdf8";
   const name = segment.title.toUpperCase();
+  // INCOMING pre-roll on a breaking cut: while the camera is still flying, the
+  // reticle reads "acquiring" (brackets wide and closing, a fast scan, a
+  // spinning ring and the eyebrow) and the name waits; then it locks on.
+  const phase = useIncomingPhase(segment);
+  const incoming = phase === "incoming";
+  const preRollMs = segment.incomingMs ?? 0;
 
   const left = (STAGE_W - W) / 2;
   const top0 = (STAGE_H - H) / 2 - 40;
 
   return (
     <div style={{ position: "absolute", left, top: top0, width: W, height: H, pointerEvents: "none" }}>
-      <style>{`@keyframes bcast-reticle-scan{0%{transform:translateY(0);opacity:0}12%{opacity:0.5}88%{opacity:0.5}100%{transform:translateY(${H - 20}px);opacity:0}}@media (prefers-reduced-motion:reduce){.bcast-reticle-scan{display:none}}`}</style>
+      <style>{`@keyframes bcast-reticle-scan{0%{transform:translateY(0);opacity:0}12%{opacity:0.5}88%{opacity:0.5}100%{transform:translateY(${H - 20}px);opacity:0}}@keyframes bcast-incoming-close{from{transform:scale(0.8);opacity:0.5}to{transform:scale(0.95);opacity:0.85}}@keyframes bcast-incoming-ring{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.bcast-reticle-scan{display:none}.bcast-incoming-anim{animation:none!important;transition:none!important}}`}</style>
       {/* Tilted reticle frame — targeting marks + a slow scan sweep read as a live
           "detection lock" on the centred subject. overflow:hidden clips the sweep
           to the frame; all marks sit at a ≥2px inset so nothing is cropped. */}
@@ -127,12 +134,72 @@ export default function EventOverlay({
             height: 2,
             background: `linear-gradient(90deg, transparent, ${color}, transparent)`,
             boxShadow: `0 0 12px ${color}`,
-            animation: "bcast-reticle-scan 4s ease-in-out infinite",
+            animation: `bcast-reticle-scan ${incoming ? 1 : 4}s ease-in-out infinite`,
             willChange: "transform, opacity",
           }}
         />
-        <ReticleMarks color={color} />
+        {/* The marks start drawn in tight and widen toward the frame over the
+            pre-roll (the frame clips, so they can't start outside it), then snap
+            home with a small overshoot on lock — transform/opacity only, which
+            OBS's software renderer handles. */}
+        <div
+          className="bcast-incoming-anim"
+          data-phase={phase ?? "none"}
+          style={{
+            position: "absolute",
+            inset: 0,
+            transformOrigin: "center center",
+            ...(incoming
+              ? { animation: `bcast-incoming-close ${preRollMs}ms ease-in forwards` }
+              : { transform: "scale(1)", opacity: 1, transition: "transform 260ms cubic-bezier(.3,1.6,.6,1), opacity 200ms" }),
+          }}
+        >
+          <ReticleMarks color={color} />
+        </div>
       </div>
+
+      {incoming ? (
+        <div
+          role="status"
+          aria-label={incomingEyebrow(segment)}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 10,
+            fontFamily: UI_SANS,
+          }}
+        >
+          <div
+            className="bcast-incoming-anim"
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: "50%",
+              background: `conic-gradient(${color}, transparent 70%)`,
+              WebkitMask: "radial-gradient(circle, transparent 26px, #000 27px)",
+              mask: "radial-gradient(circle, transparent 26px, #000 27px)",
+              animation: "bcast-incoming-ring 0.9s linear infinite",
+            }}
+          />
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 900,
+              letterSpacing: 2.5,
+              color,
+              whiteSpace: "nowrap",
+              textShadow: "0 2px 10px rgba(0,0,0,0.9)",
+            }}
+          >
+            {incomingEyebrow(segment)}
+          </div>
+        </div>
+      ) : null}
 
       {/* Point-history trend, top-right of the frame (pushed out to the right).
           Each hung readout is scaled up as a unit (anchored to the corner it
@@ -164,11 +231,32 @@ export default function EventOverlay({
           // readable on any map type (and through stream compression).
           padding: "10px 18px 12px",
           borderRadius: 12,
+          // The name waits for the lock (rendered at 0 opacity, so nothing reflows).
+          opacity: incoming ? 0 : 1,
+          transition: "opacity 220ms",
           background: TILE_BG,
           backdropFilter: "var(--panel-blur, blur(5px))",
           WebkitBackdropFilter: "var(--panel-blur, blur(5px))",
         }}
       >
+        {requestedByLabel(segment) ? (
+          <div
+            data-testid="requested-by"
+            style={{
+              fontSize: 11.5,
+              fontWeight: 800,
+              letterSpacing: 2,
+              color,
+              marginBottom: 6,
+              maxWidth: "100%",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {requestedByLabel(segment)}
+          </div>
+        ) : null}
         <div style={{ display: "flex", alignItems: "center", gap: 10, maxWidth: "100%" }}>
           <KindGlyph kind={segment.kind} color={color} size={27} />
           <div

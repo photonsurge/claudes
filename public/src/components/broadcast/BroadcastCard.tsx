@@ -49,6 +49,9 @@ export const CARD_H = 415;
 export interface DeckChrome {
   /** Event-type label, e.g. "Seismic", "Aircraft", "Country". */
   badge: string;
+  /** A breaking cut's INCOMING pre-roll on a wide shot: a small spinning ring
+   *  beside the badge (see BroadcastFrame's deckBadge). */
+  acquiring?: boolean;
   badgeColor?: string;
   /** Event title — the constant header repeated on every slide of the mode. */
   title?: string;
@@ -235,6 +238,25 @@ export default function BroadcastCard({
                 >
                   {chrome.badge}
                 </span>
+                {chrome.acquiring ? (
+                  <style>{`@keyframes bcast-incoming-ring{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.bcast-incoming-anim{animation:none!important}}`}</style>
+                ) : null}
+                {chrome.acquiring ? (
+                  <span
+                    className="bcast-incoming-anim"
+                    aria-hidden
+                    style={{
+                      flexShrink: 0,
+                      width: 18,
+                      height: 18,
+                      borderRadius: "50%",
+                      background: `conic-gradient(${chrome.badgeColor ?? stripe}, transparent 70%)`,
+                      WebkitMask: "radial-gradient(circle, transparent 6px, #000 7px)",
+                      mask: "radial-gradient(circle, transparent 6px, #000 7px)",
+                      animation: "bcast-incoming-ring 0.9s linear infinite",
+                    }}
+                  />
+                ) : null}
                 {chrome.title ? (
                   <div
                     style={{

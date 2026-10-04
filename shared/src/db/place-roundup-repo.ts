@@ -24,6 +24,17 @@ export function makePlaceRoundupRepo(model: Model<iPlaceRoundupModel>) {
       return strip(doc.toObject());
     },
 
+    /** Round-ups generated after `sinceMs`, oldest first (the director's fresh-event watch). */
+    async generatedSince(sinceMs: number, opts: { limit?: number } = {}): Promise<iPlaceRoundupModel[]> {
+      const docs = await model
+        .find({ generatedAt: { $gt: new Date(sinceMs) } }, { placeKind: 1, placeId: 1, name: 1, generatedAt: 1, narrativeStatus: 1, id: 1 })
+        .sort({ generatedAt: 1 })
+        .limit(opts.limit ?? 100)
+        .lean()
+        .exec();
+      return docs.map(strip);
+    },
+
     /** Newest round-up for one place, or null (the continuity source). */
     async latestForPlace(placeId: string): Promise<iPlaceRoundupModel | null> {
       const doc = await model.findOne({ placeId }).sort({ generatedAt: -1 }).lean().exec();

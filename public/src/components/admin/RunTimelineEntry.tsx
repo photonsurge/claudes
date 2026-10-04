@@ -18,6 +18,14 @@ import Typography from "@mui/material/Typography";
 import { fmtDuration, kindColor, type AirEntry } from "../../lib/airlog";
 import { font } from "../../theme/tokens";
 
+/** How the as-run log names each break-in reason. */
+export const BREAK_IN_REASON_LABEL: Record<"quake" | "storm" | "volcano" | "roundup", string> = {
+  quake: "new quake",
+  storm: "new warning",
+  volcano: "eruption",
+  roundup: "new round-up",
+};
+
 const timeOf = (iso: string): string => new Date(iso).toISOString().slice(11, 19);
 
 /** DESIGN_BIBLE §3: air times, holds and coordinates are readings. */
@@ -115,8 +123,20 @@ export default function RunTimelineEntry({
             {entry.icon ? `${entry.icon} ` : ""}
             {entry.title}
           </Typography>
-          {entry.breaking && (
-            <Chip title="Aired via the breaking-news priority tier" label="⚡ breaking" color="warning" />
+          {entry.breakIn ? (
+            <Chip
+              title={entry.breakIn.interrupted ? "Cut the previous shot short for breaking news" : "Jumped the queue at a shot change"}
+              label={`⚡ break-in · ${BREAK_IN_REASON_LABEL[entry.breakIn.reason]}${entry.breakIn.interrupted ? " · interrupted" : ""}`}
+              color="warning"
+            />
+          ) : (
+            entry.breaking && <Chip title="Aired via the breaking-news priority tier" label="⚡ breaking" color="warning" />
+          )}
+          {entry.command && (
+            <Chip
+              title={entry.command.source === "viewer" ? "Requested from live chat" : "Ordered from the director desk"}
+              label={entry.command.source === "viewer" ? `💬 @${entry.command.author ?? "viewer"}` : `👤 ${entry.command.source}`}
+            />
           )}
           {entry.timesShown > 1 && (
             <Chip title="Nth airing of this segment in the session" label={`×${entry.timesShown}`} />
@@ -159,6 +179,18 @@ export default function RunTimelineEntry({
             </Typography>
           )}
         </Stack>
+
+        {/* A grouped break-in: every event the one cut covered. */}
+        {(entry.breakInItems?.length ?? 0) > 1 && (
+          <Box sx={{ mt: 1, borderLeft: 2, borderColor: "warning.main", pl: 1.25 }} aria-label="Break-in members">
+            {entry.breakInItems!.map((item) => (
+              <Typography key={item.segmentId} variant="caption" color="text.secondary" component="div" sx={{ py: 0.25 }}>
+                ⚡ {item.title}
+                {item.subtitle ? <Box component="span" sx={{ color: "text.disabled" }}> · {item.subtitle}</Box> : null}
+              </Typography>
+            ))}
+          </Box>
+        )}
 
         {/* Sub-views: the camera stops this shot toured through, in order. */}
         {!!entry.stops?.length && (

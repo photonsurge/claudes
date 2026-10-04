@@ -16,6 +16,7 @@ import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
+import { freshEvents } from "../director/fresh";
 import { runQuakeArchive, archiveEnabled as quakeArchiveEnabled } from "../seismo/archive";
 
 const TAG = "job:tracks";
@@ -431,6 +432,8 @@ export async function snapshotSeismic(job: Job) {
     blogInfo(TAG, `seismic snapshot: ${quakes.length} quakes (+${r.upserted} new)`, result, "tracks", "seismic");
     // Live push so the quake overlay refetches the instant a feed lands.
     emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "seismic", count: quakes.length } });
+    // A new quake may be breaking news — let the director's watch look now.
+    freshEvents.nudge();
     return result;
   } catch (err) {
     log(TAG, `snapshotSeismic failed`, { feed, err: summarizeForLog(err) });

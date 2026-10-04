@@ -6,6 +6,7 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
+import { freshEvents } from "../director/fresh";
 import { aggregate } from "../summaries/aggregate";
 import { generateNarrative, summaryTrend } from "../summaries/openrouter";
 import { buildAreaContext } from "../summaries/areaContext";
@@ -86,6 +87,7 @@ async function run(period: SummaryPeriod): Promise<{ id?: string; period: Summar
     log(TAG, `${period} round-up done`, result);
     blogInfo(TAG, `${period} round-up (${agg.hotspots.length} hotspots, narrative=${narrative.status})`, result, "summaries", period);
     emitWorkerEvent({ type: SUMMARIES_UPDATED, data: { period, id: saved.id } });
+    freshEvents.nudge();
     return { id: saved.id, period, narrativeStatus: narrative.status };
   } catch (err) {
     log(TAG, `${period} round-up failed`, summarizeForLog(err));

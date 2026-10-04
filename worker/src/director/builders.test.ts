@@ -74,10 +74,10 @@ describe("quakeCandidate", () => {
     expect(c.score).toBeCloseTo(40 + 6.1 * 10);
   });
 
-  it("is breaking only inside the recent window, and never without a time", () => {
-    expect(quakeCandidate(quake(), cfg(), NOW).breaking).toBe(true);
-    expect(quakeCandidate(quake({ time: new Date(NOW - 2 * 60 * 60 * 1000) }), cfg(), NOW).breaking).toBe(false);
-    expect(quakeCandidate(quake({ time: undefined }), cfg(), NOW).breaking).toBe(false);
+  it("is tagged a break-in only inside the recent window, and never without a time", () => {
+    expect(quakeCandidate(quake(), cfg(), NOW).breakIn?.reason).toBeDefined();
+    expect(quakeCandidate(quake({ time: new Date(NOW - 2 * 60 * 60 * 1000) }), cfg(), NOW).breakIn).toBeUndefined();
+    expect(quakeCandidate(quake({ time: undefined }), cfg(), NOW).breakIn).toBeUndefined();
   });
 
   it("builds the same candidate the pool loop does", async () => {
@@ -108,10 +108,10 @@ describe("volcanoCandidate", () => {
     expect(c.score).toBeCloseTo(50 + 3 * 12);
   });
 
-  it("is breaking only on a fresh flip to erupting", () => {
-    expect(volcanoCandidate(volcano(), cfg(), NOW)!.breaking).toBe(true);
-    expect(volcanoCandidate(volcano({ statusChangedAt: NOW - 7 * 60 * 60 * 1000 }), cfg(), NOW)!.breaking).toBe(false);
-    expect(volcanoCandidate(volcano({ status: "unrest" }), cfg(), NOW)!.breaking).toBe(false);
+  it("is tagged a break-in only on a fresh flip to erupting", () => {
+    expect(volcanoCandidate(volcano(), cfg(), NOW)!.breakIn?.reason).toBeDefined();
+    expect(volcanoCandidate(volcano({ statusChangedAt: NOW - 7 * 60 * 60 * 1000 }), cfg(), NOW)!.breakIn).toBeUndefined();
+    expect(volcanoCandidate(volcano({ status: "unrest" }), cfg(), NOW)!.breakIn).toBeUndefined();
   });
 });
 
@@ -136,10 +136,10 @@ describe("stormCandidate", () => {
     expect(c.score).toBe(50 + 4 * 12);
   });
 
-  it("keys breaking off when we first saw it, and carries the country as its area", () => {
-    expect(stormCandidate(...stormArgs(alert()), cfg(), NOW)!.breaking).toBe(true);
+  it("keys the break-in off when we first saw it, and carries the country as its area", () => {
+    expect(stormCandidate(...stormArgs(alert()), cfg(), NOW)!.breakIn?.reason).toBeDefined();
     const old = alert({ created: new Date(NOW - 2 * 60 * 60 * 1000) });
-    expect(stormCandidate(...stormArgs(old), cfg(), NOW)!.breaking).toBe(false);
+    expect(stormCandidate(...stormArgs(old), cfg(), NOW)!.breakIn).toBeUndefined();
     const hr = alert({ source: "meteoalarm", identifier: "2.49.0.0.HR.20260829.1" });
     expect(stormCandidate(...stormArgs(hr), cfg(), NOW)!.areaKey).toBe("country:HR");
   });

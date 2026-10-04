@@ -2,6 +2,19 @@ import mongoose, { Connection } from "mongoose";
 import { iGeneralModel, mongoTimestamps } from "../interfaces/iGeneralModel";
 import { getModel } from "../utill/getModel";
 import type { DirectorConfig } from "../director";
+import {
+  DEFAULT_DIRECTOR_POOLS,
+  DEFAULT_DIRECTOR_ROTATION,
+  DEFAULT_DIRECTOR_TEMPO,
+  DEFAULT_DIRECTOR_TOURS,
+} from "../director-tuning";
+import { DEFAULT_BREAK_IN } from "../director-break-in";
+
+/** Typed `{ type: Number, default }` paths for a flat numeric bucket. */
+const numberPaths = <T extends object>(defaults: T) =>
+  Object.fromEntries(
+    Object.entries(defaults).map(([k, v]) => [k, { type: Number, default: v as number }]),
+  );
 
 /**
  * One director-config document PER SCENE, keyed by the scene id (see
@@ -30,6 +43,7 @@ export const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
       orbital: { type: Number, default: 17 },
       country: { type: Number, default: 12 },
       region: { type: Number, default: 12 },
+      point: { type: Number, default: 12 },
       storm: { type: Number, default: 12 },
       volcano: { type: Number, default: 12 },
       quake: { type: Number, default: 12 },
@@ -68,6 +82,7 @@ export const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
       orbital: { type: Boolean, default: true },
       country: { type: Boolean, default: true },
       region: { type: Boolean, default: false },
+      point: { type: Boolean, default: false },
       storm: { type: Boolean, default: true },
       volcano: { type: Boolean, default: true },
       quake: { type: Boolean, default: true },
@@ -99,6 +114,34 @@ export const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
     kindLooks: { type: mongoose.Schema.Types.Mixed, default: {} },
     kindSlides: { type: mongoose.Schema.Types.Mixed, default: {} },
     activeSlideId: { type: mongoose.Schema.Types.Mixed, default: {} },
+    // Fixed-shape tuning buckets (director-tuning.ts) — typed paths, not Mixed.
+    rotation: numberPaths(DEFAULT_DIRECTOR_ROTATION),
+    pools: numberPaths(DEFAULT_DIRECTOR_POOLS),
+    tours: numberPaths(DEFAULT_DIRECTOR_TOURS),
+    tempo: numberPaths(DEFAULT_DIRECTOR_TEMPO),
+    breakIn: {
+      enabled: { type: Boolean, default: DEFAULT_BREAK_IN.enabled },
+      interrupt: { type: String, enum: ["boundary", "immediate"], default: DEFAULT_BREAK_IN.interrupt },
+      reasons: {
+        quake: { type: Boolean, default: DEFAULT_BREAK_IN.reasons.quake },
+        storm: { type: Boolean, default: DEFAULT_BREAK_IN.reasons.storm },
+        volcano: { type: Boolean, default: DEFAULT_BREAK_IN.reasons.volcano },
+        roundup: { type: Boolean, default: DEFAULT_BREAK_IN.reasons.roundup },
+      },
+      minQuakeMag: { type: Number, default: DEFAULT_BREAK_IN.minQuakeMag },
+      minAlertSeverity: { type: Number, default: DEFAULT_BREAK_IN.minAlertSeverity },
+      volcanoMin: { type: String, enum: ["erupting", "unrest"], default: DEFAULT_BREAK_IN.volcanoMin },
+      windowMinutes: { type: Number, default: DEFAULT_BREAK_IN.windowMinutes },
+      guardSeconds: { type: Number, default: DEFAULT_BREAK_IN.guardSeconds },
+      cooldownSeconds: { type: Number, default: DEFAULT_BREAK_IN.cooldownSeconds },
+      clusterMin: { type: Number, default: DEFAULT_BREAK_IN.clusterMin },
+      clusterWindowSeconds: { type: Number, default: DEFAULT_BREAK_IN.clusterWindowSeconds },
+      maxPending: { type: Number, default: DEFAULT_BREAK_IN.maxPending },
+      roundupCooldownMinutes: { type: Number, default: DEFAULT_BREAK_IN.roundupCooldownMinutes },
+      incoming: { type: String, enum: ["off", "breakIns", "allEvents"], default: DEFAULT_BREAK_IN.incoming },
+      incomingSeconds: { type: Number, default: DEFAULT_BREAK_IN.incomingSeconds },
+      worldRoundup: { type: Boolean, default: DEFAULT_BREAK_IN.worldRoundup },
+    },
   },
   mongoTimestamps,
 );

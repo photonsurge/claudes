@@ -1,5 +1,13 @@
-import { buildCandidates, summaryTourHoldMs } from "./candidates";
-import { DEFAULT_DIRECTOR_CONFIG, type DirectorConfig } from "@photonsurge/shared/director";
+import {
+  buildCandidates,
+  quakeCandidate,
+  stormCandidate,
+  summaryCandidate,
+  summaryTourHoldMs,
+  volcanoCandidate,
+} from "./candidates";
+import { DEFAULT_DIRECTOR_CONFIG, mergeDirectorConfig, type DirectorConfig } from "@photonsurge/shared/director";
+import { DEFAULT_DIRECTOR_TOURS } from "@photonsurge/shared/director-tuning";
 import { SEED_SEA_POINTS } from "@photonsurge/shared/director-sea-points";
 import type { AppDb } from "@photonsurge/shared/db/index";
 import { sanitizeRoundupSettings } from "@photonsurge/shared/roundup-settings";
@@ -327,7 +335,7 @@ describe("buildCandidates", () => {
       fakeDb({ quakes: [{ quakeId: "q1", mag: 6.1, place: "Off Japan", lng: 140, lat: 38, time: new Date() }] }),
       cfg(),
     );
-    expect(recent.find((c) => c.segment.id === "quake:q1")!.breaking).toBe(true);
+    expect(recent.find((c) => c.segment.id === "quake:q1")!.breakIn?.reason).toBe("quake");
 
     const stale = await buildCandidates(
       fakeDb({
@@ -335,11 +343,11 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    expect(stale.find((c) => c.segment.id === "quake:q1")!.breaking).toBe(false);
+    expect(stale.find((c) => c.segment.id === "quake:q1")!.breakIn).toBeUndefined();
 
     // No timestamp at all (shouldn't happen, but don't let it default to breaking).
     const untimed = await buildCandidates(fakeDb(), cfg());
-    expect(untimed.find((c) => c.segment.id === "quake:q1")!.breaking).toBe(false);
+    expect(untimed.find((c) => c.segment.id === "quake:q1")!.breakIn).toBeUndefined();
   });
 
   it("flags a storm breaking based on when we first saw it, not the CAP onset/effective timestamps", async () => {
@@ -365,7 +373,7 @@ describe("buildCandidates", () => {
     ];
     const recent = await buildCandidates(fakeDb({ alerts: alert(new Date().toISOString()) }), cfg());
     const recentStorm = recent.find((c) => c.segment.kind === "storm")!;
-    expect(recentStorm.breaking).toBe(true);
+    expect(recentStorm.breakIn?.reason).toBe("storm");
     expect(recentStorm.areaKey).toBe("country:US");
 
     // Ingested an hour ago — no longer breaking, even though NWS re-stamped the onset
@@ -376,7 +384,7 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    expect(stale.find((c) => c.segment.kind === "storm")!.breaking).toBe(false);
+    expect(stale.find((c) => c.segment.kind === "storm")!.breakIn).toBeUndefined();
   });
 
   it("adds an erupting volcano candidate as its own segment kind", async () => {
@@ -417,7 +425,7 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    expect(justChanged.find((c) => c.segment.id === "volcano:gvp:1")!.breaking).toBe(true);
+    expect(justChanged.find((c) => c.segment.id === "volcano:gvp:1")!.breakIn?.reason).toBe("volcano");
 
     const longErupting = await buildCandidates(
       fakeDb({
@@ -435,7 +443,7 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    expect(longErupting.find((c) => c.segment.id === "volcano:gvp:1")!.breaking).toBe(false);
+    expect(longErupting.find((c) => c.segment.id === "volcano:gvp:1")!.breakIn).toBeUndefined();
 
     const unrest = await buildCandidates(
       fakeDb({
@@ -446,7 +454,7 @@ describe("buildCandidates", () => {
       cfg(),
     );
     // Only a fresh transition to erupting counts as breaking — unrest never does.
-    expect(unrest.find((c) => c.segment.id === "volcano:gvp:3")!.breaking).toBe(false);
+    expect(unrest.find((c) => c.segment.id === "volcano:gvp:3")!.breakIn).toBeUndefined();
   });
 
   it("layers an operator overlayOverride onto the preset without touching other kinds", async () => {
@@ -640,7 +648,7 @@ describe("buildCandidates", () => {
     const pool = await buildCandidates(db, cfg());
     const flight = pool.find((c) => c.segment.id === "flight:adfeb7")!;
     expect(flight).toBeTruthy();
-    expect(flight.score).toBe(80); // VIP_SCORE — well above the generic 18
+    expect(flight.score).toBe(80); // pools.vipBoost default — well above the generic 18
     expect(flight.segment.title).toBe("Air Force One");
     expect(flight.segment.trackInfo).toMatchObject({
       label: "Air Force One", type: "Boeing VC-25A", photoUrl: "https://cdn/af1.jpg",
@@ -658,7 +666,7 @@ describe("buildCandidates", () => {
     });
     const pool = await buildCandidates(db, cfg());
     const ship = pool.find((c) => c.segment.id === "ship:310627000")!;
-    expect(ship.score).toBe(45); // NOTABLE_SCORE (not a VIP)
+    expect(ship.score).toBe(45); // pools.notableBoost default (not a VIP)
     expect(ship.segment.title).toBe("Queen Mary 2");
     expect(ship.segment.trackInfo).toMatchObject({ label: "Queen Mary 2", notable: true });
   });
@@ -793,7 +801,7 @@ describe("buildCandidates", () => {
       });
 
       it("bounds the toured stops so a huge round-up can't run for many minutes", () => {
-        // 20 stops clamp to SUMMARY_MAX_TOUR_STOPS (6) → 6 × 44s = 264s.
+        // 20 stops clamp to tours.roundupStops (6) → 6 × 44s = 264s.
         expect(summaryTourHoldMs(20, 4000, 30_000, 20_000)).toBe(264_000);
       });
 
@@ -832,3 +840,290 @@ describe("buildCandidates", () => {
    expect(areas.length).toBeGreaterThan(1);
    expect(areas.some((c) => c.segment.id === "region:europe")).toBe(true);
  });
+
+/**
+ * The per-channel config (rotation / pools / tours / tempo / breakIn) reaching
+ * the builders. Configs go through mergeDirectorConfig, as the worker's do, so
+ * the clamps and the pool-floor rule apply exactly as they will live.
+ */
+describe("per-channel director config", () => {
+  const channel = (patch: Record<string, unknown>): DirectorConfig =>
+    mergeDirectorConfig(DEFAULT_DIRECTOR_CONFIG, patch as Partial<DirectorConfig>);
+  const NOW = Date.now();
+  const nwsAlert = (identifier: string, over: Record<string, unknown> = {}) => ({
+    source: "nws",
+    identifier,
+    maxSeverityRank: 4,
+    created: new Date(NOW).toISOString(),
+    info: [
+      {
+        event: "Hurricane Warning",
+        area: [
+          {
+            areaDesc: "Gulf Coast",
+            geometry: { type: "Polygon", coordinates: [[[-90, 25], [-88, 25], [-88, 27], [-90, 27], [-90, 25]]] },
+          },
+        ],
+      },
+    ],
+    ...over,
+  });
+  const quake = (over: Record<string, unknown> = {}) => ({
+    quakeId: "q1",
+    mag: 6.1,
+    place: "Off Japan",
+    lng: 140,
+    lat: 38,
+    depthKm: 10,
+    time: new Date(NOW),
+    ...over,
+  });
+
+  describe("tempo", () => {
+    it("stamps the default pacing on every built segment", async () => {
+      const pool = await buildCandidates(fakeDb(), channel({}));
+      expect(pool.length).toBeGreaterThan(0);
+      for (const c of pool) {
+        expect(c.segment.tempo).toEqual({ mapStepMs: 6000, varCycleMs: 5500, depthCycleMs: 2500, stopDwellMs: 40000 });
+      }
+    });
+
+    it("stamps the channel's own pacing", async () => {
+      const pool = await buildCandidates(
+        fakeDb(),
+        channel({ tempo: { mapStepS: 10, varCycleS: 3, depthCycleS: 4 }, tours: { stopDwellS: 20 } }),
+      );
+      expect(pool.find((c) => c.segment.kind === "global")!.segment.tempo).toEqual({
+        mapStepMs: 10000,
+        varCycleMs: 3000,
+        depthCycleMs: 4000,
+        stopDwellMs: 20000,
+      });
+    });
+  });
+
+  describe("breakIn stamping", () => {
+    it("stamps nothing for a reason the channel turned off", async () => {
+      const pool = await buildCandidates(
+        fakeDb({ quakes: [quake()], alerts: [nwsAlert("a1")] }),
+        channel({ breakIn: { reasons: { quake: false } } }),
+      );
+      expect(pool.find((c) => c.segment.kind === "quake")!.breakIn).toBeUndefined();
+      expect(pool.find((c) => c.segment.kind === "storm")!.breakIn).toEqual({ reason: "storm", at: NOW });
+    });
+
+    it("airs a quake below the break-in bar through rotation only", async () => {
+      const cfg = channel({ minQuakeMag: 4.5, breakIn: { minQuakeMag: 6.5 } });
+      const pool = await buildCandidates(
+        fakeDb({ quakes: [quake({ quakeId: "small", mag: 5 }), quake({ quakeId: "big", mag: 7 })] }),
+        cfg,
+      );
+      expect(pool.find((c) => c.segment.id === "quake:small")!.breakIn).toBeUndefined();
+      expect(pool.find((c) => c.segment.id === "quake:big")!.breakIn?.reason).toBe("quake");
+    });
+
+    it("uses the channel's freshness window", async () => {
+      const db = fakeDb({ quakes: [quake({ time: new Date(NOW - 45 * 60_000) })] });
+      expect((await buildCandidates(db, channel({}))).find((c) => c.segment.kind === "quake")!.breakIn).toBeUndefined();
+      const wide = await buildCandidates(db, channel({ breakIn: { windowMinutes: 60 } }));
+      expect(wide.find((c) => c.segment.kind === "quake")!.breakIn?.reason).toBe("quake");
+    });
+
+    it("breaks in for a volcano flipping to unrest only when the channel opts in", async () => {
+      const db = fakeDb({
+        volcanoes: [{ id: "gvp:3", name: "Merapi", status: "unrest", lng: 110.4, lat: -7.5, lastDate: NOW, statusChangedAt: NOW }],
+      });
+      expect((await buildCandidates(db, channel({}))).find((c) => c.segment.kind === "volcano")!.breakIn).toBeUndefined();
+      const optIn = await buildCandidates(db, channel({ breakIn: { volcanoMin: "unrest" } }));
+      expect(optIn.find((c) => c.segment.kind === "volcano")!.breakIn).toEqual({ reason: "volcano", at: NOW });
+    });
+
+    it("keeps an alert's below-the-break-in-bar severity out of the tier", async () => {
+      const pool = await buildCandidates(
+        fakeDb({ alerts: [nwsAlert("sev3", { maxSeverityRank: 3 }), nwsAlert("sev4")] }),
+        channel({ breakIn: { minAlertSeverity: 4 } }),
+      );
+      expect(pool.find((c) => c.segment.id === "storm:nws:sev3")!.breakIn).toBeUndefined();
+      expect(pool.find((c) => c.segment.id === "storm:nws:sev4")!.breakIn?.reason).toBe("storm");
+    });
+  });
+
+  describe("pools", () => {
+    const manyUsAlerts = Array.from({ length: 8 }, (_, i) => nwsAlert(`a${i}`));
+
+    it("caps storms per country at the channel's alertCountryCap", async () => {
+      const def = await buildCandidates(fakeDb({ alerts: manyUsAlerts }), channel({}));
+      expect(def.filter((c) => c.segment.kind === "storm")).toHaveLength(3);
+      const wider = await buildCandidates(fakeDb({ alerts: manyUsAlerts }), channel({ pools: { alertCountryCap: 6 } }));
+      expect(wider.filter((c) => c.segment.kind === "storm")).toHaveLength(6);
+    });
+
+    it("caps the whole storm pool at the channel's alertPoolCap", async () => {
+      const pool = await buildCandidates(
+        fakeDb({ alerts: manyUsAlerts }),
+        channel({ pools: { alertPoolCap: 2, alertCountryCap: 10 } }),
+      );
+      expect(pool.filter((c) => c.segment.kind === "storm")).toHaveLength(2);
+    });
+
+    it("scores catalogued craft with the channel's boosts", async () => {
+      const pool = await buildCandidates(
+        fakeDb({
+          vehicles: [
+            { id: "aircraft:abc123", kind: "aircraft", code: "abc123", name: "BAW123", enabled: true, notable: true, vip: true },
+            { id: "ship:232000001", kind: "ship", code: "232000001", name: "Boaty", enabled: true, notable: true },
+          ],
+        }),
+        channel({ pools: { notableBoost: 12, vipBoost: 99 } }),
+      );
+      expect(pool.find((c) => c.segment.kind === "flight")!.score).toBe(99);
+      expect(pool.find((c) => c.segment.kind === "ship")!.score).toBe(12);
+    });
+  });
+
+  describe("tours", () => {
+    const ukDossier = (cityCount: number) => ({
+      gb: {
+        countryId: "gb",
+        iso2: "GB",
+        tourCentroid: [-2.0, 53.5],
+        tourFrame: { center: [-2.0, 54.0], zoom: 4.4 },
+        tourCities: Array.from({ length: cityCount }, (_, i) => ({
+          name: `City ${i}`,
+          cc: "gb",
+          lng: -i,
+          lat: 50 + i * 0.1,
+          population: 1_000_000 - i,
+          sector: i,
+        })),
+      },
+    });
+
+    it("limits a country tour to countryStops, counting the establishing stop", async () => {
+      const db = fakeDb({ countries: ukDossier(12) });
+      const def = (await buildCandidates(db, channel({ countries: ["uk"] }))).find((c) => c.segment.id === "country:uk")!;
+      expect(def.segment.tourStops).toHaveLength(8);
+      const short = (await buildCandidates(db, channel({ countries: ["uk"], tours: { countryStops: 3 } }))).find(
+        (c) => c.segment.id === "country:uk",
+      )!;
+      expect(short.segment.tourStops!.map((t) => t.label)).toEqual(["United Kingdom", "City 0", "City 1"]);
+    });
+
+    it("sizes a tour's hold from the channel's stop dwell", async () => {
+      const db = fakeDb({ countries: ukDossier(2) });
+      const cfg = channel({ countries: ["uk"], transitionSeconds: 4, tours: { stopDwellS: 10 } });
+      const uk = (await buildCandidates(db, cfg)).find((c) => c.segment.id === "country:uk")!;
+      // Establishing stop + 2 cities, each (4 s flight + 10 s dwell); above the 12 s floor.
+      expect(uk.segment.holdMs).toBe(3 * 14_000);
+    });
+
+    it("limits an area tour to regionStops countries", async () => {
+      const topCities = ["gb", "fr", "de", "es", "it"].map((cc, i) => ({
+        name: `Capital ${cc}`,
+        country: cc.toUpperCase(),
+        cc,
+        lng: i,
+        lat: 45,
+        population: 5_000_000 - i * 100_000,
+      }));
+      const db = fakeDb({ region: { regionId: "europe", topCities } });
+      const cfg = channel({ kinds: { region: true }, regions: ["europe"], tours: { regionStops: 2 } });
+      const europe = (await buildCandidates(db, cfg)).find((c) => c.segment.id === "region:europe")!;
+      expect(europe.segment.tourStops!.map((t) => t.iso2)).toEqual(["GB", "FR"]);
+    });
+
+    it("frames volcanoes at the channel's zoom", async () => {
+      const db = fakeDb({
+        volcanoes: [{ id: "gvp:1", name: "Etna", status: "erupting", lng: 15, lat: 37.7, lastDate: NOW, statusChangedAt: NOW }],
+      });
+      const v = (await buildCandidates(db, channel({ tours: { volcanoZoom: 7 } }))).find((c) => c.segment.kind === "volcano")!;
+      expect(v.segment.camera.zoom).toBe(7);
+    });
+
+    it("reads a round-up at the channel's words-per-minute", async () => {
+      // 100 words, no stops: 170 wpm → ~35 s; 60 wpm → 100 s, capped at roundupMaxHoldS.
+      const narrative = Array.from({ length: 100 }, () => "word").join(" ");
+      const db = fakeDb({ eventSummaries: { hourly: freshSummary({ narrative }) } });
+      const hold = async (tours: Record<string, number>) =>
+        (await buildCandidates(db, channel({ tours }))).find((c) => c.segment.id === "global:sum1")!.segment.holdMs;
+      expect(await hold({})).toBe(Math.round((100 / 170) * 60_000));
+      expect(await hold({ roundupWordsPerMin: 60, roundupMaxHoldS: 300 })).toBe(100_000);
+      expect(await hold({ roundupWordsPerMin: 60, roundupMaxHoldS: 45 })).toBe(45_000);
+    });
+
+    it("sizes a toured round-up from roundupStops and the stop dwell", () => {
+      const tours = { ...DEFAULT_DIRECTOR_TOURS, roundupStops: 2, stopDwellS: 20 };
+      // 5 stops clamp to 2 × (4 s flight + 20 s dwell) = 48 s.
+      expect(summaryTourHoldMs(5, 4000, 10_000, 5_000, tours)).toBe(48_000);
+    });
+  });
+
+  describe("kinds filter", () => {
+    it("builds only the requested kinds", async () => {
+      const pool = await buildCandidates(fakeDb(), channel({}), undefined, { kinds: ["quake"] });
+      expect(new Set(pool.map((c) => c.segment.kind))).toEqual(new Set(["quake"]));
+    });
+
+    it("never builds a kind the channel has turned off", async () => {
+      const pool = await buildCandidates(fakeDb(), channel({ kinds: { quake: false } }), undefined, {
+        kinds: ["quake", "storm"],
+      });
+      expect(new Set(pool.map((c) => c.segment.kind))).toEqual(new Set(["storm"]));
+    });
+  });
+});
+
+/**
+ * The single-item builders are what break-ins and commands will use to build a
+ * shot for one event. They must produce exactly the candidate the pool build
+ * produces for the same event, or the same event would look different
+ * depending on which path aired it.
+ */
+describe("single-item builders", () => {
+  const cfg = mergeDirectorConfig(DEFAULT_DIRECTOR_CONFIG, {});
+  const NOW = Date.now();
+
+  it("quakeCandidate matches the pool's quake", async () => {
+    const q = { quakeId: "q9", mag: 6.4, place: "Chile", lng: -71, lat: -33, depthKm: 30, time: new Date(NOW - 60_000) };
+    const fromPool = (await buildCandidates(fakeDb({ quakes: [q] }), cfg)).find((c) => c.segment.id === "quake:q9")!;
+    const single = quakeCandidate(q, cfg, NOW);
+    expect(single).toEqual(fromPool);
+    expect(single.breakIn).toEqual({ reason: "quake", at: NOW - 60_000 });
+  });
+
+  it("volcanoCandidate matches the pool's volcano", async () => {
+    const v = { id: "gvp:7", name: "Etna", country: "Italy", status: "erupting", lng: 15, lat: 37.7, lastDate: NOW, statusChangedAt: NOW };
+    const fromPool = (await buildCandidates(fakeDb({ volcanoes: [v] }), cfg)).find((c) => c.segment.id === "volcano:gvp:7")!;
+    expect(volcanoCandidate(v as any, cfg, NOW)).toEqual(fromPool);
+  });
+
+  it("stormCandidate matches the pool's storm", async () => {
+    const a = {
+      source: "nws",
+      identifier: "z1",
+      maxSeverityRank: 4,
+      created: new Date(NOW).toISOString(),
+      info: [
+        {
+          event: "Hurricane Warning",
+          area: [{ areaDesc: "Gulf", geometry: { type: "Polygon", coordinates: [[[-90, 25], [-88, 25], [-88, 27], [-90, 27], [-90, 25]]] } }],
+        },
+      ],
+    };
+    const fromPool = (await buildCandidates(fakeDb({ alerts: [a] }), cfg)).find((c) => c.segment.id === "storm:nws:z1")!;
+    expect(stormCandidate(a, a.info[0], a.info[0].area[0], cfg, NOW)).toEqual(fromPool);
+  });
+
+  it("stormCandidate returns null for an alert with no polygon to frame", () => {
+    const a = { source: "nws", identifier: "x", info: [{ area: [{ areaDesc: "Somewhere" }] }] };
+    expect(stormCandidate(a, a.info[0], a.info[0].area[0], cfg, NOW)).toBeNull();
+  });
+
+  it("summaryCandidate matches the pool's round-up", async () => {
+    const doc = freshSummary();
+    const fromPool = (await buildCandidates(fakeDb({ eventSummaries: { hourly: doc } }), cfg)).find(
+      (c) => c.segment.id === "global:sum1",
+    )!;
+    expect(summaryCandidate(doc as any, "hourly", cfg)).toEqual(fromPool);
+  });
+});

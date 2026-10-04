@@ -40,6 +40,7 @@ import DirectorHolds from "./DirectorHolds";
 import DirectorTuning from "./DirectorTuning";
 import DirectorMapTypes from "./DirectorMapTypes";
 import DirectorSlides from "./DirectorSlides";
+import DirectorCommandBar from "./DirectorCommandBar";
 import { box } from "./panelBox";
 
 const TABS = [
@@ -117,10 +118,18 @@ export default function DirectorPanel({
       />
 
       <DirectorOnAirReadout auto={running} live={live} />
+      {/* Commands steer the auto director; a scripted short plays its own list. */}
+      {auto && !showSettings ? <DirectorCommandBar sceneId={sceneId} live={live} kinds={config.kinds} /> : null}
       <DirectorRecentlyAired sceneId={sceneId} live={live} visible={running && !showSettings} />
 
       {showForm ? (
         <>
+          <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 8 }}>
+            The channel&apos;s saved director settings (pacing, pools, tours, looks, break-ins) live on{" "}
+            <a href={`/admin/scenes/${encodeURIComponent(sceneId)}?s=programme`} style={{ color: "#7fb3ff" }}>
+              Channel settings ↗
+            </a>
+          </div>
           <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
             {TABS.map((t) => (
               <button

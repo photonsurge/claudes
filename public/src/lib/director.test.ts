@@ -1,4 +1,4 @@
-import { eventPulse, activeCountryIso, activeRegionBbox, cutSteps } from "./director";
+import { eventPulse, activeCountryIso, activeRegionBbox, cutMapTypeIds, cutSteps } from "./director";
 import type { DirectorState, Segment } from "@photonsurge/shared/director";
 import type { MapTypeAvailability } from "./director";
 
@@ -41,6 +41,15 @@ const director = (over: Partial<DirectorState> = {}): DirectorState => ({
 });
 
 describe("eventPulse", () => {
+  it("holds the pulse during a breaking cut's INCOMING pre-roll and fires it on lock", () => {
+    const T = Date.UTC(2026, 9, 4, 12);
+    const d = director({
+      segment: segment({ id: "quake:x", kind: "quake", camera: { center: [140, 38], zoom: 5 }, patch: { spinEpoch: T }, incomingMs: 4000 }),
+    });
+    expect(eventPulse(d, T + 1000)).toBeNull();
+    expect(eventPulse(d, T + 4000)).toEqual([140, 38]);
+  });
+
   it("is null when the director is idle or has no segment", () => {
     expect(eventPulse(null)).toBeNull();
     expect(eventPulse(director({ active: false }))).toBeNull();
@@ -206,6 +215,21 @@ describe("cutSteps", () => {
     expect(cutSteps(paced, avail).periodMs).toBe(cutSteps(spin, avail).periodMs);
   });
 
+  it("uses the channel's stop dwell when the segment carries none; a clip's own dwell wins", () => {
+    const tempo = { mapStepMs: 6000, varCycleMs: 5500, depthCycleMs: 2500, stopDwellMs: 20_000 };
+    const tour = segment({ id: "region:europe", kind: "region", patch: { cutTransitionMs: 3000 }, tourStops: tourStops(), tempo });
+    expect(cutSteps(tour, avail).periodMs).toBe(3000 + 20_000);
+    expect(cutSteps({ ...tour, tourDwellMs: 9000 }, avail).periodMs).toBe(3000 + 9000);
+  });
+
+  it("parks a viewer's :mode spin on the one look they asked for", () => {
+    const spin = segment({ id: "global:world", kind: "global", mapTypes: ["temp"] });
+    const live = { ...avail, variables: new Set(["temp", "cloud"]) };
+    const { steps } = cutSteps(spin, live, cutMapTypeIds(spin, { mapTypes: { global: ["temp", "cloud"] } }));
+    expect(steps).toHaveLength(1);
+    expect(steps[0].patch.activeVariable).toBe("temp");
+  });
+
   it("never tours a world spin — it shows maps off even when it carries stops", () => {
     // A round-up rides a `global` spin as narrative graphics only; the camera
     // keeps spinning through the map-type cycle rather than flying to the stops.
@@ -215,5 +239,58 @@ describe("cutSteps", () => {
     expect(steps.every((s) => s.patch.camera === undefined)).toBe(true); // no fly-to
     // A global map-type step relabels the card (title), it is never a `focus` step.
     expect(steps.every((s) => !s.focus)).toBe(true);
+  });
+
+  describe("pacing (Segment.tempo)", () => {
+    const tempo = { mapStepMs: 9000, varCycleMs: 3000, depthCycleMs: 1500, stopDwellMs: 12000 };
+
+    it("falls back to the built-in dwell when the cut carries no tempo (older worker)", () => {
+      expect(cutSteps(segment({ id: "global:world", kind: "global" }), avail).periodMs).toBe(6000);
+      expect(cutSteps(segment({ id: "country:uk", kind: "country" }), avail).periodMs).toBe(5500);
+      expect(cutSteps(segment({ id: "ocean:p", kind: "ocean", depthCycle: true }), avail).periodMs).toBe(2500);
+      const tour = segment({ id: "region:europe", kind: "region", tourStops: tourStops(), patch: { cutTransitionMs: 4000 } });
+      expect(cutSteps(tour, avail).periodMs).toBe(4000 + 40000);
+    });
+
+    it("paces a map-type tour from the channel's map step", () => {
+      expect(cutSteps(segment({ id: "global:world", kind: "global", tempo }), avail).periodMs).toBe(9000);
+    });
+
+    it("paces a variable cycle from the channel's var cycle", () => {
+      expect(cutSteps(segment({ id: "country:uk", kind: "country", tempo }), avail).periodMs).toBe(3000);
+    });
+
+    it("paces a depth cycle from the channel's depth cycle", () => {
+      expect(cutSteps(segment({ id: "ocean:p", kind: "ocean", depthCycle: true, tempo }), avail).periodMs).toBe(1500);
+    });
+
+    it("parks on each tour stop for the flight plus the channel's stop dwell", () => {
+      const tour = segment({ id: "region:europe", kind: "region", tourStops: tourStops(), tempo, patch: { cutTransitionMs: 2500 } });
+      expect(cutSteps(tour, avail).periodMs).toBe(2500 + 12000);
+    });
+
+    it("leaves a storm's hazard plan cadence alone", () => {
+      const withTempo = cutSteps(segment({ id: "storm:x", kind: "storm", tempo }), avail).periodMs;
+      const without = cutSteps(segment({ id: "storm:x", kind: "storm" }), avail).periodMs;
+      expect(withTempo).toBe(without);
+    });
+  });
+});
+
+describe("cutMapTypeIds", () => {
+  const cfg = { mapTypes: { global: ["temp", "cloud"] } };
+
+  it("prefers the cut's own looks (a viewer's :mode request)", () => {
+    expect(cutMapTypeIds({ kind: "global", mapTypes: ["aurora"] }, cfg)).toEqual(["aurora"]);
+  });
+
+  it("falls back to the channel's looks for the kind", () => {
+    expect(cutMapTypeIds({ kind: "global" }, cfg)).toEqual(["temp", "cloud"]);
+    expect(cutMapTypeIds({ kind: "global", mapTypes: [] }, cfg)).toEqual(["temp", "cloud"]);
+    expect(cutMapTypeIds({ kind: "ocean" }, cfg)).toBeUndefined();
+  });
+
+  it("is undefined with nothing on air", () => {
+    expect(cutMapTypeIds(null, cfg)).toBeUndefined();
   });
 });

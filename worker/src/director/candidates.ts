@@ -13,8 +13,10 @@ import {
   kindHoldMs,
   type DirectorConfig,
   type Segment,
+  type SegmentKind,
   type TrackInfo,
 } from "@photonsurge/shared/director";
+import { DEFAULT_DIRECTOR_POOLS } from "@photonsurge/shared/director-tuning";
 import { coarseGeoCell, type Candidate } from "@photonsurge/shared/director-select";
 import { vehicleId, vehicleLabel, type iVehicle } from "@photonsurge/shared/db/vehicle-model";
 import {
@@ -57,32 +59,34 @@ export {
   volcanoCandidate,
   stormCandidate,
   summaryTourHoldMs,
+  pointCandidate,
+  latestWorldRoundup,
 } from "./builders";
 
 type Detail = { label: string; value: string };
 
-/** Score for the two tiers of catalogued (enriched) craft — a plain notable clears
- *  the fillers, a VIP (Air Force One) tops them. Kept below severe-weather/quake
- *  headlines — tunable later; the data drives it. Only catalogued craft ever reach
- *  the flight/ship pool (see buildCandidates), so every candidate gets one of these. */
-const NOTABLE_SCORE = 45;
-const VIP_SCORE = 80;
-
-/** How many severe-weather candidates the storm pool holds at most. */
-const ALERT_POOL_CAP = 40;
-/** How deep into the globally severity-ranked alert list we scan to fill it. */
-const ALERT_SCAN_LIMIT = 300;
-/**
- * Per-country storm-candidate cap. `db.alerts.list` ranks by severity then
- * recency GLOBALLY, so one prolific met service can outnumber the whole pool
- * cap by itself (live incident: Kazhydromet ran 66 simultaneous sev-4 warnings
- * — the top-40 slice came back 36× Kazakhstan and rotation could only
- * ping-pong between it and the four other alerts that squeezed in, while every
- * lower-severity country never became a candidate at all). Walking the ranked
- * list and keeping at most this many per country preserves "biggest stories
- * first" while letting the rest of the world on air.
+/*
+ * Pool numbers come from the channel's config (`pools`, shared/director-tuning),
+ * defaults unchanged:
+ *  - `notableBoost` / `vipBoost` (45 / 80): score for the two tiers of
+ *    catalogued craft — a plain notable clears the fillers, a VIP (Air Force
+ *    One) tops them, both below severe-weather/quake headlines.
+ *  - `alertPoolCap` (40): how many severe-weather candidates the storm pool holds.
+ *  - `alertCountryCap` (3): per-country storm-candidate cap. `db.alerts.list`
+ *    ranks by severity then recency GLOBALLY, so one prolific met service can
+ *    outnumber the whole pool by itself (live incident: Kazhydromet ran 66
+ *    simultaneous sev-4 warnings — the top-40 slice came back 36× Kazakhstan).
+ *    Walking the ranked list and keeping at most this many per country
+ *    preserves "biggest stories first" while letting the rest of the world on air.
  */
-export const ALERT_COUNTRY_CAP = 3;
+
+/** How deep into the globally severity-ranked alert list we scan to fill the
+ *  storm pool. A query guard, not programme policy, so it stays a constant. */
+const ALERT_SCAN_LIMIT = 300;
+
+/** The default per-country storm cap (`pools.alertCountryCap`), for callers
+ *  without a channel config (scripted-short templates). */
+export const ALERT_COUNTRY_CAP = DEFAULT_DIRECTOR_POOLS.alertCountryCap;
 
 /**
  * Merge a notable catalog entry with the live meta into the on-air TrackInfo card
@@ -277,11 +281,27 @@ export async function summaryCandidates(
 }
 
 
+export interface BuildCandidatesOpts {
+  /** Only build these kinds (still subject to the channel's own `kinds`), so a
+   *  "show me a quake" request doesn't scan everything. */
+  kinds?: readonly SegmentKind[];
+}
+
 export async function buildCandidates(
   db: AppDb,
-  cfg: DirectorConfig,
+  channelCfg: DirectorConfig,
   seenCounts?: Map<string, number>,
+  opts?: BuildCandidatesOpts,
 ): Promise<Candidate[]> {
+  const only = opts?.kinds ? new Set(opts.kinds) : null;
+  const cfg: DirectorConfig = only
+    ? {
+        ...channelCfg,
+        kinds: Object.fromEntries(
+          Object.entries(channelCfg.kinds).map(([k, on]) => [k, on && only.has(k as SegmentKind)]),
+        ) as DirectorConfig["kinds"],
+      }
+    : channelCfg;
   const pool: Candidate[] = fillerCandidates(cfg);
   const now = Date.now();
   // Round-ups ride the recurring global spin, so they only make sense when the
@@ -356,7 +376,7 @@ export async function buildCandidates(
   }
 
   // --- Severe weather: normalised severity ranks; centroid from the polygon.
-  //     Scanned deep but capped per country (ALERT_COUNTRY_CAP) so the pool
+  //     Scanned deep but capped per country (pools.alertCountryCap) so the pool
   //     spans the world's active warnings, not one chatty source's. ---
   if (cfg.kinds.storm) {
     try {
@@ -364,7 +384,7 @@ export async function buildCandidates(
       const perCountry = new Map<string, number>();
       let stormCount = 0;
       for (const a of alerts as any[]) {
-        if (stormCount >= ALERT_POOL_CAP) break;
+        if (stormCount >= cfg.pools.alertPoolCap) break;
         const info = Array.isArray(a.info) ? a.info[0] : undefined;
         const area = info?.area?.[0];
         const center = alertRepPoint(area?.geometry);
@@ -378,7 +398,7 @@ export async function buildCandidates(
         const countryCode = alertCountryCode(a);
         const capKey = countryCode ? `country:${countryCode}` : coarseGeoCell(center) ?? "cell:unknown";
         const used = perCountry.get(capKey) ?? 0;
-        if (used >= ALERT_COUNTRY_CAP) continue;
+        if (used >= cfg.pools.alertCountryCap) continue;
         const cand = stormCandidate(a, info, area, cfg, now);
         if (!cand) continue;
         perCountry.set(capKey, used + 1);
@@ -437,7 +457,7 @@ export async function buildCandidates(
         if (call && call.toUpperCase() !== name.toUpperCase()) details.push({ label: "Callsign", value: call });
         seg.details = details;
         seg.trackInfo = notableTrackInfo(notable, { type: m?.type, operator: m?.operator, registration: m?.registration, flag, country: r.country });
-        pool.push({ score: notable.vip ? VIP_SCORE : NOTABLE_SCORE, segment: seg });
+        pool.push({ score: notable.vip ? cfg.pools.vipBoost : cfg.pools.notableBoost, segment: seg });
       }
     } catch {
       /* no aircraft frame — skip */
@@ -466,7 +486,7 @@ export async function buildCandidates(
         details.push({ label: "MMSI", value: r.externalId });
         seg.details = details;
         seg.trackInfo = notableTrackInfo(notable, { flag: country?.flag, country: country?.name });
-        pool.push({ score: notable.vip ? VIP_SCORE : NOTABLE_SCORE, segment: seg });
+        pool.push({ score: notable.vip ? cfg.pools.vipBoost : cfg.pools.notableBoost, segment: seg });
       }
     } catch {
       /* no ship frame — skip */

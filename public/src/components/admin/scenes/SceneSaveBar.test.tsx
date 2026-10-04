@@ -63,7 +63,7 @@ describe("SceneSaveBar", () => {
     });
 
     expect(screen.getByText(/2 unsaved changes/)).toBeInTheDocument();
-    expect(screen.getByText(/On-air widgets, Auto-director content/)).toBeInTheDocument();
+    expect(screen.getByText(/On-air widgets, Content/)).toBeInTheDocument();
   });
 
   it("saves on click", () => {

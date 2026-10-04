@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import type { Segment } from "@photonsurge/shared/director";
-import { EventTrackingLabel, trackingBlockHeight } from "./EventOverlay";
+import EventOverlay, { EventTrackingLabel, trackingBlockHeight } from "./EventOverlay";
+import { incomingEyebrow, requestedByLabel } from "./kinds";
 
 /** Minimal targeted-event segment for the readout block. */
 const quake: Segment = {
@@ -76,5 +77,64 @@ describe("EventTrackingLabel (deck-embedded tracking readout)", () => {
     expect(trackingBlockHeight([mag, region])).toBeGreaterThan(
       trackingBlockHeight([mag, mag]),
     );
+  });
+});
+
+describe("EventOverlay INCOMING pre-roll", () => {
+  const T = Date.UTC(2026, 9, 4, 12);
+  const seg = (over: Partial<Segment> = {}): Segment => ({
+    id: "quake:a",
+    kind: "quake",
+    title: "M6.4 Chile",
+    subtitle: "Off the coast",
+    camera: { center: [0, 0], zoom: 4 },
+    patch: { spinEpoch: T },
+    holdMs: 20_000,
+    ...over,
+  });
+
+  afterEach(() => jest.useRealTimers());
+
+  it("reads INCOMING while the camera flies, then locks on and shows the name", () => {
+    jest.useFakeTimers({ now: T + 500 });
+    render(<EventOverlay segment={seg({ incomingMs: 4000, breakIn: { reason: "quake", interrupted: true } })} />);
+    expect(screen.getByRole("status", { name: "⚡ INCOMING · EARTHQUAKE" })).toBeInTheDocument();
+    const name = screen.getByText("M6.4 CHILE");
+    expect(name.closest("div[style*='opacity']")).toHaveStyle({ opacity: "0" });
+    act(() => {
+      jest.advanceTimersByTime(4000);
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(name.closest("div[style*='opacity']")).toHaveStyle({ opacity: "1" });
+  });
+
+  it("is a plain locked reticle for a cut with no pre-roll", () => {
+    render(<EventOverlay segment={seg()} />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(document.querySelector("[data-phase]")).toHaveAttribute("data-phase", "none");
+    expect(screen.queryByTestId("requested-by")).not.toBeInTheDocument();
+  });
+
+  it("credits the viewer who asked, above the name", () => {
+    render(<EventOverlay segment={seg({ requestedBy: { author: "ann", platform: "youtube" } })} />);
+    expect(screen.getByTestId("requested-by")).toHaveTextContent("REQUESTED BY @ann");
+  });
+});
+
+describe("requestedByLabel", () => {
+  it("names the viewer, once-prefixed, and is null for the director's own picks", () => {
+    expect(requestedByLabel({ requestedBy: { author: "ann" } })).toBe("REQUESTED BY @ann");
+    expect(requestedByLabel({ requestedBy: { author: "@bob" } })).toBe("REQUESTED BY @bob");
+    expect(requestedByLabel({ requestedBy: { author: "  " } })).toBeNull();
+    expect(requestedByLabel({})).toBeNull();
+  });
+});
+
+describe("incomingEyebrow", () => {
+  it("names the break-in reason, or a plain detection", () => {
+    expect(incomingEyebrow({ breakIn: { reason: "storm" } })).toBe("⚡ INCOMING · NEW WARNING");
+    expect(incomingEyebrow({ breakIn: { reason: "volcano" } })).toBe("⚡ INCOMING · ERUPTION");
+    expect(incomingEyebrow({ breakIn: { reason: "roundup" } })).toBe("⚡ INCOMING · NEW ROUND-UP");
+    expect(incomingEyebrow({})).toBe("EVENT DETECTED");
   });
 });

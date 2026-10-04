@@ -49,8 +49,48 @@ describe("makeAirLogRepo", () => {
     expect(update.$set).toEqual({ endedAt: T1, actualMs: 45000, endReason: "skipped" });
     expect(entry.create.mock.calls[0][0]).toMatchObject({ seq: 2, kind: "quake", segmentId: "quake:us7000abcd" });
     const [, runUpdate] = run.updateOne.mock.calls[0];
-    expect(runUpdate.$inc).toEqual({ cuts: 1, "kindCounts.quake": 1 });
+    // The fixture is a breaking pick, which counts as a break-in on the run.
+    expect(runUpdate.$inc).toEqual({ cuts: 1, "kindCounts.quake": 1, breakIns: 1 });
     expect(runUpdate.$set).toEqual({ lastCutAt: T1 });
+  });
+
+  it("counts break-ins, grouped cuts, commands and viewer requests on the run", async () => {
+    const entry = fakeModel<iAirEntryModel>({ find: jest.fn(() => chain([])) });
+    const run = fakeModel<iAirRunModel>();
+    const repo = makeAirLogRepo(run.model, entry.model);
+
+    await repo.recordCut(
+      cut({
+        breaking: true,
+        breakIn: { reason: "storm", interrupted: true },
+        breakInItems: [
+          { segmentId: "storm:a", title: "A" },
+          { segmentId: "storm:b", title: "B" },
+        ],
+        command: { source: "viewer", author: "ann" },
+      }),
+      "skipped",
+    );
+    expect(run.updateOne.mock.calls[0][1].$inc).toEqual({
+      cuts: 1,
+      "kindCounts.quake": 1,
+      breakIns: 1,
+      grouped: 1,
+      commands: 1,
+      viewerRequests: 1,
+    });
+
+    await repo.recordCut(cut({ breaking: false, command: { source: "operator", author: "op" } }), "expired");
+    expect(run.updateOne.mock.calls[1][1].$inc).toEqual({ cuts: 1, "kindCounts.quake": 1, commands: 1 });
+  });
+
+  it("adds queue drops to the run, and skips the write for none", async () => {
+    const run = fakeModel<iAirRunModel>();
+    const repo = makeAirLogRepo(run.model, fakeModel<iAirEntryModel>().model);
+    await repo.addQueueDrops("run-1", 0);
+    expect(run.updateOne).not.toHaveBeenCalled();
+    await repo.addQueueDrops("run-1", 3);
+    expect(run.updateOne).toHaveBeenCalledWith({ id: "run-1" }, { $inc: { queueDropped: 3 } });
   });
 
   it("startRun closes dangling open runs for the scene as stale before opening the new one", async () => {

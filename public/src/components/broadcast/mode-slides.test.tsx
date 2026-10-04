@@ -1,4 +1,4 @@
-import { modeSlides, type ModeSlideContext } from "./mode-slides";
+import { leadWithRoundup, modeSlides, type ModeSlideContext } from "./mode-slides";
 import { DEFAULT_THEME } from "./config";
 import type { Segment } from "@photonsurge/shared/director";
 import type { City } from "../../lib/cities";
@@ -55,6 +55,27 @@ const ids = (s: Segment, c: ModeSlideContext) => modeSlides(s, c).map((x) => x.i
 describe("modeSlides", () => {
   it("a plain wide shot shows only the now-viewing card", () => {
     expect(ids(seg({ kind: "point" }), ctx())).toEqual(["onair"]);
+  });
+
+  it("a grouped break-in leads with the list of everything it covers", () => {
+    const items = [
+      { segmentId: "storm:a", title: "A" },
+      { segmentId: "storm:b", title: "B" },
+    ];
+    expect(ids(seg({ kind: "point", breakIn: { reason: "storm", interrupted: true, items } }), ctx()).slice(0, 2)).toEqual([
+      "onair",
+      "break-in-items",
+    ]);
+    // A single break-in has nothing to list.
+    expect(ids(seg({ kind: "point", breakIn: { reason: "storm", interrupted: true } }), ctx())).toEqual(["onair"]);
+  });
+
+  it("a channel can hide the break-in list like any other slide", () => {
+    const items = [
+      { segmentId: "storm:a", title: "A" },
+      { segmentId: "storm:b", title: "B" },
+    ];
+    expect(ids(seg({ kind: "point", breakIn: { reason: "storm", interrupted: true, items } }), ctx({ slidesOff: ["break-in-items"] }))).toEqual(["onair"]);
   });
 
   it("a country spotlight folds its place round-up in as the second slide when it has one", () => {
@@ -556,5 +577,28 @@ describe("modeSlides — near-event pages don't repeat the city guide", () => {
     const others = ["a", "b", "c", "d"].map((k) => rich(k, `Town ${k}`));
     const out = ids(storm, ctx({ topCities: guide, cities: [...guide, ...others] }));
     expect(out.filter((id) => id.startsWith("nearby:"))).toHaveLength(2);
+  });
+});
+
+describe("leadWithRoundup", () => {
+  const deck = (...ids: string[]) => ids.map((id) => ({ id }));
+
+  it("puts the round-up slides first, ahead of the lede, the rest in order", () => {
+    expect(leadWithRoundup(deck("onair", "nation", "topcities", "place-roundup", "place-roundup-24h")).map((s) => s.id)).toEqual([
+      "place-roundup",
+      "place-roundup-24h",
+      "onair",
+      "nation",
+      "topcities",
+    ]);
+    // The world round-up slide too, matched on its base id.
+    expect(leadWithRoundup(deck("onair", "forecast", "roundup:x")).map((s) => s.id)).toEqual(["roundup:x", "onair", "forecast"]);
+  });
+
+  it("leaves a deck alone when the round-up already leads or isn't there", () => {
+    const leading = deck("place-roundup", "onair", "nation");
+    expect(leadWithRoundup(leading)).toBe(leading);
+    const none = deck("onair", "nation");
+    expect(leadWithRoundup(none)).toBe(none);
   });
 });

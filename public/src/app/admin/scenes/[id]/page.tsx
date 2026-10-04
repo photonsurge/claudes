@@ -42,6 +42,12 @@ import AudioSettings from "../../../../components/admin/scenes/AudioSettings";
 import CameraSettings from "../../../../components/admin/scenes/CameraSettings";
 import ChannelSettings from "../../../../components/admin/scenes/ChannelSettings";
 import DirectorSettings from "../../../../components/admin/scenes/DirectorSettings";
+import DirectorPacingSettings from "../../../../components/admin/scenes/DirectorPacingSettings";
+import DirectorPoolSettings from "../../../../components/admin/scenes/DirectorPoolSettings";
+import DirectorTourSettings from "../../../../components/admin/scenes/DirectorTourSettings";
+import DirectorLooksSettings from "../../../../components/admin/scenes/DirectorLooksSettings";
+import BreakInSettings from "../../../../components/admin/scenes/BreakInSettings";
+import ChatCommandsSettings from "../../../../components/admin/scenes/ChatCommandsSettings";
 import PaceSettings from "../../../../components/admin/scenes/PaceSettings";
 import ReportSettings from "../../../../components/admin/scenes/ReportSettings";
 import SlidesSettings from "../../../../components/admin/scenes/SlidesSettings";
@@ -60,6 +66,12 @@ const CARD_COMPONENTS: Record<string, ComponentType> = {
   audio: AudioSettings,
   pace: PaceSettings,
   director: DirectorSettings,
+  "director-pacing": DirectorPacingSettings,
+  "director-pools": DirectorPoolSettings,
+  "director-tours": DirectorTourSettings,
+  "director-looks": DirectorLooksSettings,
+  "director-break-ins": BreakInSettings,
+  chat: ChatCommandsSettings,
   about: AboutCardSettings,
   youtube: YoutubeSettings,
 };

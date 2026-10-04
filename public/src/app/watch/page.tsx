@@ -34,8 +34,9 @@ const NO_UP_NEXT: never[] = [];
 import { listCities, type City } from "../../lib/cities";
 import { retryUntil } from "../../lib/retry";
 import { useRegionCities } from "../../lib/useRegionCities";
-import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
+import { cutMapTypeIds, useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
 import WatchSurface from "../../components/WatchSurface";
+import { useViewerState } from "../../lib/viewer";
 import ViewingOverlay from "../../components/ViewingOverlay";
 import { UI_SANS } from "../../lib/fonts";
 
@@ -51,6 +52,8 @@ function WatchPageInner() {
   // current shot's camera + layer patch over the operator baseline, re-applying
   // only on a new cut (seq change) so heartbeats don't restart the camera fly.
   const director = useDirector(MAIN_SCENE_ID);
+  // Viewers' chat picks (music, palette), layered over the channel by WatchSurface.
+  const viewer = useViewerState(MAIN_SCENE_ID);
   // Read-only here — /watch never edits the director config, just respects the
   // operator's enabled map-type tours (e.g. which basemaps a quake cycles through).
   const { config: directorConfig } = useDirectorConfig(MAIN_SCENE_ID);
@@ -71,7 +74,7 @@ function WatchPageInner() {
   const { patch: cutPatch, segment: onAir, focus } = useDirectorCut(
     cut,
     manifest,
-    cut ? directorConfig.mapTypes[cut.kind] : undefined,
+    cutMapTypeIds(cut, directorConfig),
   );
   const shown = useMemo(
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),
@@ -90,7 +93,7 @@ function WatchPageInner() {
   // Director-derived props for the surface, identity-stable while their VALUE
   // is unchanged: every director heartbeat re-renders this page, and fresh
   // little arrays here would defeat the memoised WatchSurface below.
-  const pulseAt = useStableJson(eventPulse(director));
+  const pulseAt = useStableJson(useEventPulse(director));
   const glowRegionBbox = useStableJson(activeRegionBbox(director, shown.camera));
   const upNext = useStableJson(director?.active ? director.upNext : NO_UP_NEXT);
 
@@ -187,6 +190,7 @@ function WatchPageInner() {
         slideName={director?.active ? slideName : undefined}
         alertCycleSeconds={directorConfig.alertCycleSeconds}
         directorOn={!!director?.active}
+        viewer={viewer}
       />
       {/* When the broadcast chrome is on, the on-air detail lives inside the event
           reticle, so the separate lower-left card is suppressed to avoid duplication. */}

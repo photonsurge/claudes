@@ -58,9 +58,13 @@ export interface BroadcastBedProps {
   segment?: Segment | null;
   /** Latest weather at the on-air location (mood: hats, brightness, rain/wind beds, shimmer). */
   weather?: BedWeather | null;
+  /** A viewer's `:skip` — each bump moves to the next tune at the next bar. */
+  skipEpoch?: number;
+  /** A viewer's `:shuffle` — a new value reseeds the arrangement at the next phrase. */
+  seed?: number;
 }
 
-export default function BroadcastBed({ audio, segment, weather }: BroadcastBedProps) {
+export default function BroadcastBed({ audio, segment, weather, skipEpoch, seed }: BroadcastBedProps) {
   const bedRef = useRef<AuroraBed | null>(null);
   const [blocked, setBlocked] = useState(false);
 
@@ -113,6 +117,21 @@ export default function BroadcastBed({ audio, segment, weather }: BroadcastBedPr
   useEffect(() => {
     bedRef.current?.setSeverity(kind ? KIND_SEVERITY[kind] ?? 0.3 : IDLE_SEVERITY);
   }, [kind]);
+
+  // Viewer :skip / :shuffle. The first value seen is the state we joined in,
+  // not a request, so only a CHANGE acts.
+  const lastSkip = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (skipEpoch === undefined) return;
+    if (lastSkip.current !== undefined && skipEpoch !== lastSkip.current) bedRef.current?.skip();
+    lastSkip.current = skipEpoch;
+  }, [skipEpoch]);
+  const lastSeed = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (seed === undefined) return;
+    if (lastSeed.current !== undefined && seed !== lastSeed.current && seed > 0) bedRef.current?.reseed(seed);
+    lastSeed.current = seed;
+  }, [seed]);
 
   // Weather mood: re-applied after enable too, since the graph is built lazily.
   useEffect(() => {

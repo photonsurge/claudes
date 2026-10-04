@@ -92,6 +92,12 @@ describe("DirectorSettings", () => {
     expect(screen.getByText("Playing a script")).toBeInTheDocument();
   });
 
+  it("offers templates and copy-from above the content", () => {
+    renderInDraft(<DirectorSettings />);
+    expect(screen.getByRole("combobox", { name: "Apply template" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy from channel…" })).toBeInTheDocument();
+  });
+
   it("a preset chip stages the preset's content bundle", () => {
     const d = renderInDraft(<DirectorSettings />);
     const preset = DIRECTOR_PRESETS.find((p) => p.id === "storms-only")!;

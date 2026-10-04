@@ -14,12 +14,15 @@ import {
   quakeHoldMs,
   stormHoldMs,
   volcanoHoldMs,
+  volcanoLevelForStatus,
   type DirectorConfig,
   type Segment,
   type SegmentKind,
   type SegmentSummaryStop,
 } from "@photonsurge/shared/director";
 import type { Candidate } from "@photonsurge/shared/director-select";
+import { DEFAULT_DIRECTOR_TOURS, segmentTempo, type DirectorTours } from "@photonsurge/shared/director-tuning";
+import { qualifiesAsBreakIn, type BreakInFacts, type BreakInFavourites } from "@photonsurge/shared/director-break-in";
 import { DEFAULT_WIND_SETTINGS } from "@photonsurge/shared/control";
 import type { iRegionCity } from "@photonsurge/shared/db/region-model";
 import { PRESETS, ROUNDUP_MARKERS, GLOBAL_VIEW } from "@photonsurge/shared/director-rois";
@@ -84,36 +87,44 @@ export const make = (
       camera: { center, zoom },
     },
     holdMs,
+    // The channel's within-shot pacing rides the cut, so /watch never needs the
+    // config (see SegmentTempo).
+    tempo: segmentTempo(cfg.tempo, cfg.tours),
   };
 };
 
-/**
- * How recent a quake/storm has to be to jump the priority-preempt tier
- * (`selectPriority`). `db.quakes.list`/`db.alerts.list` return the top N by
- * magnitude/severity with no time cutoff, so right after a session starts (or
- * the worker restarts) most of that backlog is "unaired" — without this window
- * every one of them would preempt fair rotation in turn, and the show would
- * play nothing but quakes/storms until the whole backlog finally airs once.
+/*
+ * Per-channel numbers that used to be constants here come from the config
+ * (shared/director-tuning.ts), defaults unchanged: `tours.countryStops` (8),
+ * `tours.regionStops` (10), `tours.stopDwellS` (40), `tours.roundupStops` (6),
+ * `tours.roundupWordsPerMin` (170), `tours.roundupMaxHoldS` (60) and
+ * `tours.volcanoZoom` (5, mirroring the manual click-to-select framing in
+ * public/lib/select-segment.ts).
+ *
+ * Which events count as BREAKING is the channel's `breakIn` config, applied by
+ * `stampBreakIn`. `db.quakes.list`/`db.alerts.list` return the top N by
+ * magnitude/severity with no time cutoff, so right after a session starts most
+ * of that backlog is "unaired" — without the freshness window every one of
+ * them would preempt fair rotation in turn. Volcanoes keep a wider 6 h window
+ * on `statusChangedAt` (a weekly bulletin has no "it just happened" time).
  */
-const BREAKING_NEWS_WINDOW_MS = 20 * 60 * 1000;
 
-/**
- * Volcanoes get their own, much wider breaking-news window: the source is a
- * *weekly* bulletin (polled every 30 min), so there's no per-event "it just
- * happened" timestamp the way a quake or alert has — the best signal available
- * is `statusChangedAt`, when OUR cache last saw the status actually flip (see
- * volcano-repo.ts's pipeline-update upsert). A few hours gives that transition
- * room to surface across a couple of poll cycles without staying "breaking"
- * for the volcano's entire multi-week eruption.
- */
-const VOLCANO_BREAKING_WINDOW_MS = 6 * 60 * 60 * 1000;
+/** The channel's favourite places, as the break-in check wants them. */
+function favouritesOf(cfg: DirectorConfig): BreakInFavourites {
+  return { countries: new Set(cfg.countries), regions: new Set(cfg.regions) };
+}
 
-/** Frame zoom mirrors the manual click-to-select path (see public/lib/select-segment.ts). */
-const VOLCANO_ZOOM = 5;
+/** Stamp `candidate.breakIn` when the event qualifies on this channel. */
+function stampBreakIn(candidate: Candidate, ev: BreakInFacts, cfg: DirectorConfig, now: number): Candidate {
+  if (qualifiesAsBreakIn(ev, cfg.breakIn, favouritesOf(cfg), now)) {
+    candidate.breakIn = { reason: ev.reason, at: ev.at };
+  }
+  return candidate;
+}
 
-/** How many stops a country spotlight tours at most (the establishing centre
- *  shot + one city per compass sector). Sized so the hold stays a few minutes. */
-const COUNTRY_TOUR_STOPS = 8;
+/** Camera dwell per tour stop, ms — the client parks this long on each stop
+ *  (it reads the same number off `segment.tempo.stopDwellMs`). */
+const stopDwellMs = (cfg: DirectorConfig) => Math.round(cfg.tours.stopDwellS * 1000);
 
 /**
  * The camera stops a `country` spotlight tours — the country's OWN cities, from
@@ -125,7 +136,7 @@ const COUNTRY_TOUR_STOPS = 8;
  * spotlight instead. The whole country glows throughout (activeCountryIso keys
  * `country` shots off the curated ISO), so stops don't need per-stop glow.
  */
-function countryTourStops(doc: iCountryModel, shot: CountryShot): SegmentSummaryStop[] {
+function countryTourStops(doc: iCountryModel, shot: CountryShot, maxStops: number): SegmentSummaryStop[] {
   const cities = doc.tourCities ?? [];
   if (!cities.length) return [];
   const iso2 = shot.iso2 || doc.iso2 || undefined;
@@ -141,7 +152,7 @@ function countryTourStops(doc: iCountryModel, shot: CountryShot): SegmentSummary
       iso2,
     });
   }
-  for (const c of cities.slice(0, COUNTRY_TOUR_STOPS - stops.length)) {
+  for (const c of cities.slice(0, Math.max(0, maxStops - stops.length))) {
     stops.push({ label: c.name, subtitle: shot.name, lng: c.lng, lat: c.lat, iso2 });
   }
   return stops;
@@ -175,14 +186,14 @@ export async function countryCandidate(db: AppDb, shot: CountryShot, cfg: Direct
   } catch {
     doc = null;
   }
-  const stops = doc ? countryTourStops(doc, shot) : [];
+  const stops = doc ? countryTourStops(doc, shot, cfg.tours.countryStops) : [];
   // Frame on the computed tour frame when we have one, else the curated shot.
   const center = doc?.tourFrame?.center ?? shot.center;
   const zoom = doc?.tourFrame?.zoom ?? shot.zoom;
   // Size the hold to fly every stop (flight + dwell), floored by the operator's
   // per-kind minimum — no cap, or the tour cuts away mid-way (as region does).
   const holdMs = stops.length
-    ? Math.max(kindHoldMs(cfg, "country"), stops.length * (transitionMs + SUMMARY_STOP_DWELL_MS))
+    ? Math.max(kindHoldMs(cfg, "country"), stops.length * (transitionMs + stopDwellMs(cfg)))
     : kindHoldMs(cfg, "country");
   const seg = make("country", shot.id, shot.name, countrySubtitle(stops.length > 0), center, zoom, holdMs, cfg);
   seg.icon = shot.flag;
@@ -202,11 +213,6 @@ export function worldSpinCandidate(cfg: DirectorConfig): Candidate {
   };
 }
 
-/** How many COUNTRIES an area tour visits at most. The region hold is sized to
- *  cover every stop (unlike a round-up, which caps toured stops at
- *  SUMMARY_MAX_TOUR_STOPS). */
-const REGION_TOUR_STOPS = 10;
-
 /**
  * The camera stops an area tour visits: the area's TOP COUNTRIES — never cities.
  * Derived from the CURATED `topCities` dossier on the Region doc
@@ -217,14 +223,14 @@ const REGION_TOUR_STOPS = 10;
  * stop per country — captioned by the COUNTRY, framed on the country's main
  * population centre (its biggest in-region city's coords, since the dossier
  * carries no country centroid), and tagged with the ISO so the globe glows that
- * exact country. Capped at REGION_TOUR_STOPS countries, biggest-presence first.
+ * exact country. Capped at `tours.regionStops` countries, biggest-presence first.
  *
  * A single-country area (the UK, a US band) has no "top countries" to fly, so it
  * returns [] and the caller airs it as one framed whole-area spotlight rather than
  * zooming into a lone city. Also [] when the region has no cached cities (not yet
  * enriched).
  */
-async function regionTourStops(db: AppDb, regionId: string): Promise<SegmentSummaryStop[]> {
+async function regionTourStops(db: AppDb, regionId: string, maxStops: number): Promise<SegmentSummaryStop[]> {
   const region = await db.regions.get(regionId);
   const cities = region?.topCities ?? [];
   if (!cities.length) return [];
@@ -243,7 +249,7 @@ async function regionTourStops(db: AppDb, regionId: string): Promise<SegmentSumm
   const countries = [...byCountry.values()].sort((a, b) => sumPop(b) - sumPop(a));
   // Single-country area → no country tour to fly; air it as one framed spotlight.
   if (countries.length <= 1) return [];
-  return countries.slice(0, REGION_TOUR_STOPS).map((list): SegmentSummaryStop => {
+  return countries.slice(0, maxStops).map((list): SegmentSummaryStop => {
     const c = list[0];
     return {
       label: c.country || (c.cc ? c.cc.toUpperCase() : c.name),
@@ -262,12 +268,12 @@ async function regionTourStops(db: AppDb, regionId: string): Promise<SegmentSumm
  */
 export async function regionCandidate(db: AppDb, shot: RegionShot, cfg: DirectorConfig): Promise<Candidate> {
   const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
-  const stops = await regionTourStops(db, shot.id);
+  const stops = await regionTourStops(db, shot.id, cfg.tours.regionStops);
   // Size the hold to fly EVERY city (flight + dwell each), floored by the
-  // operator's per-kind minimum — no SUMMARY_MAX_TOUR_STOPS cap here, or the
+  // operator's per-kind minimum — no round-up stop cap here, or the
   // tour would cut away mid-way through the later cities.
   const holdMs = stops.length
-    ? Math.max(kindHoldMs(cfg, "region"), stops.length * (transitionMs + SUMMARY_STOP_DWELL_MS))
+    ? Math.max(kindHoldMs(cfg, "region"), stops.length * (transitionMs + stopDwellMs(cfg)))
     : kindHoldMs(cfg, "region");
   const seg = make("region", shot.id, shot.name, regionSubtitle(stops.length > 0), shot.center, shot.zoom, holdMs, cfg);
   if (stops.length) seg.tourStops = stops;
@@ -280,42 +286,35 @@ export const SUMMARY_PERIODS: { period: SummaryPeriod; label: string; staleAfter
   { period: "daily", label: "Daily round-up", staleAfterMs: 3 * 24 * 60 * 60 * 1000 },
 ];
 
-/** Ticker reading speed — scrolling text reads faster than spoken narration. */
-const SUMMARY_WORDS_PER_MIN = 170;
-/** Narration-length cap for a STOP-LESS round-up (nothing to tour → just read). */
-const SUMMARY_MAX_HOLD_MS = 60_000;
 /**
- * Dwell per toured stop — MUST track `SUMMARY_STOP_DWELL_MS` in
- * public/src/lib/director.ts, which parks the camera on each stop ~40s to play
- * that country's left-column package (nation → forecast → alerts → cities →
- * stats). The hold below sizes the segment to cover the tour so it isn't cut
- * mid-package.
+ * The DEFAULT dwell per toured stop (`tours.stopDwellS`), ms — the client parks
+ * the camera on each stop this long to play that country's left-column package
+ * (nation → forecast → alerts → cities → stats). Each cut carries its channel's
+ * own number in `segment.tempo.stopDwellMs`; this is for callers sizing a tour
+ * before they have a channel (scripted-short templates).
  */
-export const SUMMARY_STOP_DWELL_MS = 40_000;
-/**
- * Editorial segment-length guardrail: at ~40s/country, size the hold to cover at
- * most this many stops so one round-up can't monopolise the channel for many
- * minutes. Tunable. (A dedupe-by-country pass would make each slot a distinct
- * nation; today the stops are hotspots-then-top-events, already fairly spread.)
- */
-const SUMMARY_MAX_TOUR_STOPS = 6;
+export const SUMMARY_STOP_DWELL_MS = DEFAULT_DIRECTOR_TOURS.stopDwellS * 1000;
 
 /**
  * How long a round-up holds on air. With geocoded stops it DWELLS — the camera
  * parks on each for ~(flight + dwell), playing that country's package deck — so
  * the hold must clear the whole tour, NOT the ≤60s narration cap (which would
  * cut the tour off after the first country). A stop-less round-up keeps the
- * old narration-length hold, floored by the operator's per-kind minimum.
+ * narration-length hold, floored by the operator's per-kind minimum and capped
+ * at `tours.roundupMaxHoldS`. `tours.roundupStops` is the editorial guardrail:
+ * the hold covers at most that many stops, so one round-up can't monopolise the
+ * channel for many minutes.
  */
 export function summaryTourHoldMs(
   stopCount: number,
   transitionMs: number,
   narrationMs: number,
   floorMs: number,
+  tours: DirectorTours = DEFAULT_DIRECTOR_TOURS,
 ): number {
-  if (stopCount <= 0) return Math.min(SUMMARY_MAX_HOLD_MS, Math.max(floorMs, narrationMs));
-  const toured = Math.min(stopCount, SUMMARY_MAX_TOUR_STOPS);
-  return Math.max(floorMs, narrationMs, toured * (transitionMs + SUMMARY_STOP_DWELL_MS));
+  if (stopCount <= 0) return Math.min(tours.roundupMaxHoldS * 1000, Math.max(floorMs, narrationMs));
+  const toured = Math.min(stopCount, tours.roundupStops);
+  return Math.max(floorMs, narrationMs, toured * (transitionMs + tours.stopDwellS * 1000));
 }
 
 /**
@@ -356,10 +355,10 @@ export function summaryCandidate(doc: iEventSummaryModel, period: SummaryPeriod,
   if (doc.narrativeStatus !== "ok" || !doc.narrative.trim()) return null;
   const label = SUMMARY_PERIODS.find((p) => p.period === period)?.label ?? "";
   const words = doc.narrative.trim().split(/\s+/).length;
-  const narrationMs = Math.round((words / SUMMARY_WORDS_PER_MIN) * 60_000);
+  const narrationMs = Math.round((words / cfg.tours.roundupWordsPerMin) * 60_000);
   const stops = summaryStops(doc);
   const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
-  const holdMs = summaryTourHoldMs(stops.length, transitionMs, narrationMs, kindHoldMs(cfg, "global"));
+  const holdMs = summaryTourHoldMs(stops.length, transitionMs, narrationMs, kindHoldMs(cfg, "global"), cfg.tours);
   // The round-up rides a `global` spin (id → `global:<docid>`) with the
   // event markers layered on so the story's quakes/alerts/volcanoes show.
   const seg = make("global", doc.id, "Global Round-Up", label, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, holdMs, cfg, ROUNDUP_MARKERS);
@@ -394,8 +393,8 @@ export function quakeCandidate(q: iQuakeModel, cfg: DirectorConfig, now: number)
   seg.tsunami = tsunami;
   seg.quake = { mag: q.mag, depthKm: q.depthKm };
   seg.details = c.details;
-  const breaking = q.time ? now - q.time.getTime() <= BREAKING_NEWS_WINDOW_MS : false;
-  return { score: 40 + q.mag * 10, segment: seg, breaking };
+  const at = q.time ? new Date(q.time).getTime() : NaN;
+  return stampBreakIn({ score: 40 + q.mag * 10, segment: seg }, { reason: "quake", at, mag: q.mag }, cfg, now);
 }
 
 /** One volcano, or null when it's dormant — dormant carries no headline. */
@@ -403,13 +402,17 @@ export function volcanoCandidate(v: Volcano, cfg: DirectorConfig, now: number): 
   if (v.status === "dormant") return null;
   const c = volcanoSegmentContent(v);
   const sev = volcanoStatusToSeverity(v.status);
-  const seg = make("volcano", v.id, c.title, c.subtitle, [v.lng, v.lat], VOLCANO_ZOOM, volcanoHoldMs(cfg, v.status), cfg);
+  const seg = make("volcano", v.id, c.title, c.subtitle, [v.lng, v.lat], cfg.tours.volcanoZoom, volcanoHoldMs(cfg, v.status), cfg);
   seg.icon = c.icon;
   seg.details = c.details;
   // Same TrackInfo the manual click path builds — see segments.ts#volcanoTrackInfo.
   seg.trackInfo = volcanoTrackInfo(v);
-  const breaking = v.status === "erupting" && now - v.statusChangedAt <= VOLCANO_BREAKING_WINDOW_MS;
-  return { score: 50 + sev * 12, segment: seg, breaking };
+  return stampBreakIn(
+    { score: 50 + sev * 12, segment: seg },
+    { reason: "volcano", at: v.statusChangedAt, volcanoLevel: volcanoLevelForStatus(v.status) },
+    cfg,
+    now,
+  );
 }
 
 /**
@@ -460,11 +463,46 @@ export function stormCandidate(a: any, info: any, area: any, cfg: DirectorConfig
   seg.hazard = hazard;
   seg.icon = c.icon;
   seg.details = c.details;
-  const breaking = !Number.isNaN(firstSeenMs) && now - firstSeenMs <= BREAKING_NEWS_WINDOW_MS;
-  return {
-    score: 50 + sev * 12,
-    segment: seg,
-    breaking,
-    areaKey: countryCode ? `country:${countryCode}` : undefined,
-  };
+  return stampBreakIn(
+    { score: 50 + sev * 12, segment: seg, areaKey: countryCode ? `country:${countryCode}` : undefined },
+    { reason: "storm", at: firstSeenMs, severityRank: sev },
+    cfg,
+    now,
+  );
+}
+
+/** Zoom a requested city is framed at. */
+const CITY_ZOOM = 7;
+
+/**
+ * A city as a shot ("Go to London"): the sandbox `point` kind — a real
+ * location with a tucked card and no reticle.
+ */
+export function pointCandidate(
+  city: { name: string; country?: string; lng: number; lat: number; id?: string },
+  cfg: DirectorConfig,
+): Candidate {
+  const subject = city.id ?? `${city.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}@${city.lng.toFixed(2)},${city.lat.toFixed(2)}`;
+  const seg = make("point", subject, city.name, city.country, [city.lng, city.lat], CITY_ZOOM, kindHoldMs(cfg, "point"), cfg);
+  return { score: 6, segment: seg };
+}
+
+/**
+ * The freshest world round-up with a real narrative (hourly, 12-hour or daily,
+ * whichever was generated last), ignoring the session's "already aired" rule —
+ * someone asked for it.
+ */
+export async function latestWorldRoundup(db: AppDb, cfg: DirectorConfig): Promise<Candidate | null> {
+  let best: { doc: iEventSummaryModel; period: SummaryPeriod } | null = null;
+  for (const { period } of SUMMARY_PERIODS) {
+    let doc: iEventSummaryModel | null = null;
+    try {
+      doc = await db.eventSummaries.latest(period);
+    } catch {
+      continue;
+    }
+    if (!doc || doc.narrativeStatus !== "ok" || !doc.narrative.trim()) continue;
+    if (!best || new Date(doc.generatedAt).getTime() > new Date(best.doc.generatedAt).getTime()) best = { doc, period };
+  }
+  return best ? summaryCandidate(best.doc, best.period, cfg) : null;
 }

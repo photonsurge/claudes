@@ -34,6 +34,13 @@ jest.mock("../youtube/quota", () => ({
 const mockCommandReplies = jest.fn();
 jest.mock("./chat-commands", () => ({
   commandReplies: (...a: unknown[]) => mockCommandReplies(...a),
+  MAX_REPLIES_PER_BATCH: 2,
+}));
+
+const mockHandle = jest.fn(async () => ({ replies: [] as string[], replyInChat: false, changed: false }));
+jest.mock("./chat-handler", () => ({
+  handleChatBatch: (...a: unknown[]) => (mockHandle as any)(...a),
+  defaultHandlerDeps: async () => ({}),
 }));
 
 const mockGetRun = jest.fn();
@@ -72,6 +79,7 @@ beforeEach(() => {
   mockSendChat.mockReset().mockResolvedValue(undefined);
   mockCommandReplies.mockReset().mockResolvedValue([]);
   mockPacing.mockReset().mockResolvedValue({ floorMs: 0 });
+  mockHandle.mockReset().mockResolvedValue({ replies: [], replyInChat: false, changed: false });
   stopChatPoll("r1"); // clear any page token left by a previous test
   stopChatPoll("r2");
   startChatPoll("r1");
@@ -208,4 +216,25 @@ describe("quota pacing", () => {
     await tick();
     expect(log.mock.calls.filter((c: string[]) => /poll error/.test(c[1])).length).toBe(2);
   });
+});
+
+it("hands fresh messages to the viewer handler, and posts its replies only when the channel replies in chat", async () => {
+  mockGetRun.mockResolvedValue(liveRun);
+  mockPacing.mockResolvedValue({ floorMs: 0 });
+  mockCommandReplies.mockResolvedValue([]);
+  mockListChat.mockResolvedValueOnce(page(["m1"], "t1")).mockResolvedValueOnce(page(["m2"], "t2")).mockResolvedValueOnce(page(["m3"], "t3"));
+  startChatPoll("r1");
+  const tick = monitors.get("chat:r1")!;
+  await tick(); // backlog page: never answered
+  expect(mockHandle).not.toHaveBeenCalled();
+
+  mockHandle.mockResolvedValueOnce({ replies: ["@ann → Deep for 5 min"], replyInChat: false, changed: true });
+  await tick();
+  expect((mockHandle.mock.calls[0] as unknown[])[0]).toBe("main");
+  expect(mockSendChat).not.toHaveBeenCalled();
+
+  mockHandle.mockResolvedValueOnce({ replies: ["@ann → Deep for 5 min"], replyInChat: true, changed: true });
+  await tick();
+  expect(mockSendChat).toHaveBeenCalledWith({}, "chat-1", "@ann → Deep for 5 min");
+  stopChatPoll("r1");
 });

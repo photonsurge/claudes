@@ -22,8 +22,9 @@ import { listCities, type City } from "../../../lib/cities";
 import { useRegionCities } from "../../../lib/useRegionCities";
 import { useSceneState, listScenes } from "../../../lib/scenes";
 import { retryUntil } from "../../../lib/retry";
-import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../../lib/director";
+import { cutMapTypeIds, useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../../lib/director";
 import WatchSurface from "../../../components/WatchSurface";
+import { useViewerState } from "../../../lib/viewer";
 import ViewingOverlay from "../../../components/ViewingOverlay";
 import { UI_SANS } from "../../../lib/fonts";
 
@@ -45,6 +46,8 @@ function SceneWatchPageInner() {
   // camera + layer patch over the scene's manual baseline. We only re-apply on a
   // new cut (seq change) so heartbeats don't retrigger the camera fly.
   const director = useDirector(sceneId);
+  // Viewers' chat picks (music, palette), layered over the channel by WatchSurface.
+  const viewer = useViewerState(sceneId, token);
   // Read-only here — this page never edits the director config, just respects
   // the operator's enabled map-type tours (e.g. which basemaps a quake cycles through).
   const { config: directorConfig } = useDirectorConfig(sceneId);
@@ -63,7 +66,7 @@ function SceneWatchPageInner() {
   const { patch: cutPatch, segment: onAir, focus } = useDirectorCut(
     cut,
     manifest,
-    cut ? directorConfig.mapTypes[cut.kind] : undefined,
+    cutMapTypeIds(cut, directorConfig),
   );
   const shown = useMemo(
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),
@@ -83,7 +86,7 @@ function SceneWatchPageInner() {
   // is unchanged: every director heartbeat re-renders this page, and fresh
   // little arrays here would defeat the memoised WatchSurface below (the whole
   // broadcast chrome would re-diff its thousands of inline styles per beat).
-  const pulseAt = useStableJson(eventPulse(director));
+  const pulseAt = useStableJson(useEventPulse(director));
   const glowRegionBbox = useStableJson(activeRegionBbox(director, shown.camera));
   const upNext = useStableJson(director?.active ? director.upNext : NO_UP_NEXT);
 
@@ -169,6 +172,7 @@ function SceneWatchPageInner() {
         slideName={director?.active ? slideName : undefined}
         alertCycleSeconds={directorConfig.alertCycleSeconds}
         directorOn={!!director?.active}
+        viewer={viewer}
       />
       {/* Chrome-on: the on-air detail lives in the event reticle, so the separate
           lower-left card is suppressed to avoid duplication. */}

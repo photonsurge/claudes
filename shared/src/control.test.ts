@@ -1,3 +1,4 @@
+import { DEFAULT_CHAT_COMMAND_SETTINGS } from "./chat-policy";
 import {
   DEFAULT_CONTROL_STATE,
   DEFAULT_BASEMAP_COLORS,
@@ -138,7 +139,18 @@ describe("mergeControlState", () => {
       },
       youtube: { title: "Atlantic Wind %d/%m", description: "Gusts on %A", thumbnailUrl: "/thumbs/wind.png" },
       audio: { enabled: true, mode: "deep", volume: 0.45, muted: true },
-      chat: { enabled: true, promoteToTicker: true },
+      chat: {
+        enabled: true,
+        promoteToTicker: true,
+        commands: {
+          ...DEFAULT_CHAT_COMMAND_SETTINGS,
+          enabled: true,
+          allowFrom: "mods",
+          music: { ...DEFAULT_CHAT_COMMAND_SETTINGS.music, allowed: ["deep", "chill"], holdS: 120 },
+          theme: { ...DEFAULT_CHAT_COMMAND_SETTINGS.theme, palettes: [{ id: "night", label: "Night", broadcastTheme: "storm" }] },
+          director: { ...DEFAULT_CHAT_COMMAND_SETTINGS.director, enabled: true, places: { countries: true, regions: false, cities: true } },
+        },
+      },
       startAt: 1732000000000,
     };
     // Deep-equal proves no key was dropped or altered by the merge.
@@ -289,7 +301,7 @@ describe("mergeControlState", () => {
     expect(next.chat.enabled).toBe(true);
     expect(next.chat.promoteToTicker).toBe(base.chat.promoteToTicker);
     const legacy = { ...DEFAULT_CONTROL_STATE, chat: undefined as any };
-    expect(mergeControlState(legacy, {}).chat).toEqual({ enabled: false, promoteToTicker: false });
+    expect(mergeControlState(legacy, {}).chat).toEqual({ enabled: false, promoteToTicker: false, commands: DEFAULT_CHAT_COMMAND_SETTINGS });
   });
 
   it("clamps idle-motion amounts and backfills when the base predates them", () => {

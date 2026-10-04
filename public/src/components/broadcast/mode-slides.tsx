@@ -27,7 +27,8 @@ import type { City } from "../../lib/cities";
 import type { CountryAt } from "../../lib/countries";
 import type { Cam } from "../../lib/cams/types";
 import type { BroadcastTheme } from "./config";
-import { applySlidePrefs, type SlideId } from "@photonsurge/shared/broadcast-slides";
+import { applySlidePrefs, baseSlideId, type SlideId } from "@photonsurge/shared/broadcast-slides";
+import BreakInItemsPanel from "./BreakInItemsPanel";
 import type { DeckSlide } from "./SlideDeck";
 import { KIND_COLOR, isTargetedEvent } from "./kinds";
 import OnAirCard from "./OnAirCard";
@@ -344,22 +345,25 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
   return segment.leadSlide === "roundup" ? leadWithRoundup(deck) : deck;
 }
 
-/** The place round-up's slides (its "state of the place" page and, on a region,
- *  the NEXT 24 HOURS page split off it). */
-const PLACE_ROUNDUP_SLIDES = new Set(["place-roundup", "place-roundup-24h"]);
+/** Slides that ARE a round-up: the place round-up's "state of the place" page
+ *  and, on a region, the NEXT 24 HOURS page split off it, plus the world
+ *  round-up slide. */
+const ROUNDUP_SLIDES = new Set(["place-roundup", "place-roundup-24h", "roundup"]);
 
 /**
  * `Segment.leadSlide: "roundup"` — the round-up IS the story (a scripted
- * round-up video's opener), so its slides lead the deck, ahead of even the
- * on-air lede (the card's header still names the place), with everything else
- * following in its usual order. Applied after the channel's prefs so a
- * channel's ranking can't push it back down; a channel that hides the round-up
- * still doesn't get it. No round-up content → the deck is unchanged.
+ * round-up video's opener, a round-up break-in, a `:roundup uk` request), so
+ * its slides lead the deck, ahead of even the on-air lede (the card's header
+ * still names the place), with everything else following in its usual order.
+ * Applied after the channel's prefs so a channel's ranking can't push it back
+ * down; a channel that hides the round-up still doesn't get it. No round-up
+ * content → the deck is unchanged.
  */
-function leadWithRoundup(deck: DeckSlide[]): DeckSlide[] {
-  const lead = deck.filter((s) => PLACE_ROUNDUP_SLIDES.has(s.id));
-  if (!lead.length) return deck;
-  return [...lead, ...deck.filter((s) => !PLACE_ROUNDUP_SLIDES.has(s.id))];
+export function leadWithRoundup<T extends { id: string }>(deck: T[]): T[] {
+  const isRoundup = (s: T) => ROUNDUP_SLIDES.has(baseSlideId(s.id));
+  const lead = deck.filter(isRoundup);
+  if (!lead.length || lead.every((s, i) => deck[i] === s)) return deck;
+  return [...lead, ...deck.filter((s) => !isRoundup(s))];
 }
 
 /** Builds the mode's natural, content-filtered deck (before channel prefs). */
@@ -394,6 +398,12 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
       />
     ),
   });
+
+  // A grouped break-in (a burst of warnings aired as one cut) names every
+  // member straight after the lede — the list IS the story.
+  if ((segment.breakIn?.items?.length ?? 0) > 1) {
+    slides.push({ id: "break-in-items", node: <BreakInItemsPanel segment={segment} color={color} theme={ctx.theme} /> });
+  }
 
   // Notable aircraft / ship / volcano — the rich Track Info card after the lede,
   // plus the two extra volcano pages whenever they carry content.
