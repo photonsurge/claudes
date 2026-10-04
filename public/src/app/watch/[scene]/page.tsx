@@ -22,7 +22,7 @@ import { listCities, type City } from "../../../lib/cities";
 import { useRegionCities } from "../../../lib/useRegionCities";
 import { useSceneState, listScenes } from "../../../lib/scenes";
 import { retryUntil } from "../../../lib/retry";
-import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../../lib/director";
+import { useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../../lib/director";
 import WatchSurface from "../../../components/WatchSurface";
 import ViewingOverlay from "../../../components/ViewingOverlay";
 import { UI_SANS } from "../../../lib/fonts";
@@ -83,7 +83,7 @@ function SceneWatchPageInner() {
   // is unchanged: every director heartbeat re-renders this page, and fresh
   // little arrays here would defeat the memoised WatchSurface below (the whole
   // broadcast chrome would re-diff its thousands of inline styles per beat).
-  const pulseAt = useStableJson(eventPulse(director));
+  const pulseAt = useStableJson(useEventPulse(director));
   const glowRegionBbox = useStableJson(activeRegionBbox(director, shown.camera));
   const upNext = useStableJson(director?.active ? director.upNext : NO_UP_NEXT);
 

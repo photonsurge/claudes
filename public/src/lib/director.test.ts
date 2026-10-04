@@ -41,6 +41,15 @@ const director = (over: Partial<DirectorState> = {}): DirectorState => ({
 });
 
 describe("eventPulse", () => {
+  it("holds the pulse during a breaking cut's INCOMING pre-roll and fires it on lock", () => {
+    const T = Date.UTC(2026, 9, 4, 12);
+    const d = director({
+      segment: segment({ id: "quake:x", kind: "quake", camera: { center: [140, 38], zoom: 5 }, patch: { spinEpoch: T }, incomingMs: 4000 }),
+    });
+    expect(eventPulse(d, T + 1000)).toBeNull();
+    expect(eventPulse(d, T + 4000)).toEqual([140, 38]);
+  });
+
   it("is null when the director is idle or has no segment", () => {
     expect(eventPulse(null)).toBeNull();
     expect(eventPulse(director({ active: false }))).toBeNull();

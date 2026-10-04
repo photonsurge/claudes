@@ -12,6 +12,7 @@
  * never intercepts the capture surface, and derives entirely from data the watch
  * surface already has (alerts, quakes, tracks, the active variable's legend).
  */
+import { useIncomingPhase, type IncomingPhase } from "../../lib/incoming";
 import FittedColumn from "./FittedColumn";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
@@ -106,7 +107,7 @@ import SlideDeck from "./SlideDeck";
 import FadeSwap from "./FadeSwap";
 import { useSegmentTransition } from "./useSegmentTransition";
 import { modeSlides } from "./mode-slides";
-import { hasRealLocation, isTargetedEvent, KIND_COLOR, KIND_LABEL as KIND_BADGE } from "./kinds";
+import { BREAK_IN_LABEL, hasRealLocation, isTargetedEvent, KIND_COLOR, KIND_LABEL as KIND_BADGE } from "./kinds";
 
 /** Design-stage layout constants (in 1080p reference pixels). */
 const TICKER_H = 34;
@@ -158,6 +159,20 @@ const CONDITION_LABEL: Record<string, string> = {
   snow: "Snow",
   storm: "Storm",
 };
+
+/**
+ * The deck's badge. A break-in on a targeted kind is announced by the reticle;
+ * on a wide shot the badge says it instead: the reason with a spinning ring
+ * while INCOMING, then a static ⚡ beside the kind for the rest of the shot.
+ */
+export function deckBadge(segment: Segment, phase: IncomingPhase | null): { badge: string; acquiring?: boolean } {
+  const kind = KIND_BADGE[segment.kind] ?? segment.kind;
+  if (!segment.breakIn || isTargetedEvent(segment.kind)) return { badge: kind };
+  if (phase === "incoming") {
+    return { badge: segment.breakIn.reason === "roundup" ? BREAK_IN_LABEL.roundup : "BREAKING", acquiring: true };
+  }
+  return { badge: `⚡ ${kind}` };
+}
 
 export default function BroadcastFrame({
   state,
@@ -235,6 +250,9 @@ export default function BroadcastFrame({
 }) {
   useFontWarmup();
   const scale = useStageScale();
+  // A breaking cut on a WIDE shot (a country / area / world round-up) has no
+  // reticle, so the deck badge carries the INCOMING treatment instead.
+  const incomingPhase = useIncomingPhase(onAirSegment);
   // While the director cuts to the next shot the globe flies for
   // `state.cutTransitionMs`; hide the bottom-left deck for that window so it
   // doesn't sit frozen on the old card (or flash the new one) mid-flight, then
@@ -888,7 +906,7 @@ export default function BroadcastFrame({
                 resetKey={onAirSegment.id}
                 dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
                 chrome={{
-                  badge: KIND_BADGE[onAirSegment.kind] ?? onAirSegment.kind,
+                  ...deckBadge(onAirSegment, incomingPhase),
                   badgeColor: KIND_COLOR[onAirSegment.kind],
                   title: onAirSegment.title,
                   accent: KIND_COLOR[onAirSegment.kind],

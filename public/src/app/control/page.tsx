@@ -21,7 +21,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../lib/socket-provider";
 import { fetchManifest } from "../../lib/manifest";
 import { listScenes, fetchSceneState, useSceneEmitter } from "../../lib/scenes";
-import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
+import { useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
 import { listCities, type City } from "../../lib/cities";
 import { useRegionCities } from "../../lib/useRegionCities";
 import { useTracks } from "../../lib/tracks/useTracks";
@@ -92,6 +92,7 @@ export default function ControlPage() {
   }, [directorAuto]);
   const directorFormOpen = !directorAuto || directorShowSettings;
   const showControlPanel = !(directorFormOpen && directorTab === "director");
+  const pulse = useEventPulse(director);
   const [cut, setCut] = useState<Segment | null>(null);
   // Click-to-select: the operator can click an event/quake while the director is
   // idle to pin its info box (same card the director shows on air).
@@ -237,7 +238,7 @@ export default function ControlPage() {
           volcanoes={volcanoes}
           geomag={geomag}
           interactive
-          pulseAt={eventPulse(director)}
+          pulseAt={pulse}
           glowCountryIso={activeCountryIso(director, shown.camera.center)}
           glowRegionBbox={activeRegionBbox(director, shown.camera)}
           // Click-to-select works while the director drives too: the SELECTED

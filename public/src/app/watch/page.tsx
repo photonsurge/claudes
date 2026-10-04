@@ -34,7 +34,7 @@ const NO_UP_NEXT: never[] = [];
 import { listCities, type City } from "../../lib/cities";
 import { retryUntil } from "../../lib/retry";
 import { useRegionCities } from "../../lib/useRegionCities";
-import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
+import { useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
 import WatchSurface from "../../components/WatchSurface";
 import ViewingOverlay from "../../components/ViewingOverlay";
 import { UI_SANS } from "../../lib/fonts";
@@ -90,7 +90,7 @@ function WatchPageInner() {
   // Director-derived props for the surface, identity-stable while their VALUE
   // is unchanged: every director heartbeat re-renders this page, and fresh
   // little arrays here would defeat the memoised WatchSurface below.
-  const pulseAt = useStableJson(eventPulse(director));
+  const pulseAt = useStableJson(useEventPulse(director));
   const glowRegionBbox = useStableJson(activeRegionBbox(director, shown.camera));
   const upNext = useStableJson(director?.active ? director.upNext : NO_UP_NEXT);
 

@@ -15,7 +15,9 @@
 import { render, screen } from "@testing-library/react";
 import { DEFAULT_CONTROL_STATE, type ControlState } from "@photonsurge/shared/control";
 import { WIDGET_IDS, type WidgetId } from "@photonsurge/shared/broadcast-widgets";
-import BroadcastFrame from "./BroadcastFrame";
+import BroadcastFrame, { deckBadge } from "./BroadcastFrame";
+import { KIND_LABEL } from "./kinds";
+import type { Segment } from "@photonsurge/shared/director";
 
 jest.mock("../../lib/focus/focus-client", () => ({
   useFocusRegion: () => null,
@@ -333,5 +335,26 @@ describe("BroadcastFrame — per-channel crawl content (tickerKindsOff)", () => 
     const items = crawlItems({ tickerHazardsOff: ["tsunami"] });
     expect(items).not.toContain("Tsunami Watch");
     expect(items).toContain("SEISMIC");
+  });
+});
+
+describe("deckBadge", () => {
+  const wide = (over: Partial<Segment> = {}): Segment =>
+    ({ id: "country:uk", kind: "country", title: "UK", camera: { center: [0, 0], zoom: 4 }, patch: {}, holdMs: 1, ...over }) as Segment;
+
+  it("is the plain kind badge off a break-in", () => {
+    expect(deckBadge(wide(), null)).toEqual({ badge: KIND_LABEL.country });
+  });
+
+  it("announces a wide break-in while INCOMING, then keeps a ⚡ for the shot", () => {
+    const roundup = wide({ breakIn: { reason: "roundup", interrupted: true } });
+    expect(deckBadge(roundup, "incoming")).toEqual({ badge: "NEW ROUND-UP", acquiring: true });
+    expect(deckBadge(wide({ breakIn: { reason: "storm", interrupted: false } }), "incoming")).toEqual({ badge: "BREAKING", acquiring: true });
+    expect(deckBadge(roundup, "locked")).toEqual({ badge: `⚡ ${KIND_LABEL.country}` });
+  });
+
+  it("leaves a targeted break-in to the reticle", () => {
+    const quake = wide({ id: "quake:a", kind: "quake", breakIn: { reason: "quake", interrupted: true } });
+    expect(deckBadge(quake, "incoming")).toEqual({ badge: KIND_LABEL.quake });
   });
 });

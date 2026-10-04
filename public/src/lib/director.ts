@@ -11,6 +11,7 @@
  */
 "use client";
 
+import { incomingPhaseAt, useIncomingPhase } from "./incoming";
 import { useEffect, useMemo, useState } from "react";
 import type { ControlState } from "@photonsurge/shared/control";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
@@ -283,10 +284,21 @@ function useMapStep(cut: Segment | null, avail: MapTypeAvailability, mapTypeIds?
 /** Event kinds worth pulse-highlighting on the globe (a fixed point of interest). */
 const PULSE_KINDS = new Set<SegmentKind>(["storm", "quake", "volcano"]);
 
-/** The [lng,lat] to pulse-highlight for the current shot, or null. */
-export function eventPulse(director: DirectorState | null): [number, number] | null {
+/**
+ * The [lng,lat] to pulse-highlight for the current shot, or null. During a
+ * breaking cut's INCOMING pre-roll there is no pulse yet: it fires on lock, so
+ * the ring reads as "acquired".
+ */
+export function eventPulse(director: DirectorState | null, now: number = Date.now()): [number, number] | null {
   if (!director?.active || !director.segment) return null;
+  if (incomingPhaseAt(director.segment, now) === "incoming") return null;
   return PULSE_KINDS.has(director.segment.kind) ? director.segment.camera.center : null;
+}
+
+/** `eventPulse`, re-rendered at the INCOMING → locked flip. */
+export function useEventPulse(director: DirectorState | null): [number, number] | null {
+  useIncomingPhase(director?.active ? director.segment : null);
+  return eventPulse(director);
 }
 
 /** ISO-3166 alpha-2 of the on-air country spotlight to glow-highlight on the
