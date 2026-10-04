@@ -41,6 +41,7 @@ export type SlideId =
   | "alert-media"
   | "event-timeline"
   | "event-media"
+  | "break-in-items"
   | "nearby"
   | "quake"
   | "volcano-facts"
@@ -85,6 +86,7 @@ export const BROADCAST_SLIDES: readonly BroadcastSlide[] = [
   { id: "alert-media", group: "event", label: "Alert media" },
   { id: "event-timeline", group: "event", label: "Event timeline" },
   { id: "event-media", group: "event", label: "Event media" },
+  { id: "break-in-items", group: "event", label: "Break-in list" },
   { id: "nearby", group: "event", label: "Near this event" },
   // Quake.
   { id: "quake", group: "quake", label: "Quake report" },

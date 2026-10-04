@@ -49,6 +49,8 @@ export async function airLogCut(
       icon: next.icon,
       breaking: opts.breaking,
       ...(opts.command ? { command: opts.command } : {}),
+      ...(next.breakIn ? { breakIn: { reason: next.breakIn.reason, interrupted: next.breakIn.interrupted } } : {}),
+      ...(next.breakIn?.items?.length ? { breakInItems: next.breakIn.items } : {}),
       timesShown: r.timesShown ?? 1,
       center: next.camera.center,
       zoom: next.camera.zoom,

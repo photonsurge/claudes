@@ -99,4 +99,33 @@ describe("RunTimelineEntry", () => {
     expect(screen.getByText(/Southern Europe/)).toBeInTheDocument();
     expect(screen.getByText(/Bay of Bengal/)).toBeInTheDocument();
   });
+
+  it("names a break-in's reason, and says when it cut the previous shot short", () => {
+    render(<RunTimelineEntry entry={entry({ breaking: true, breakIn: { reason: "storm", interrupted: true } })} isLast />);
+    expect(screen.getByText("⚡ break-in · new warning · interrupted")).toBeInTheDocument();
+    expect(screen.queryByText("⚡ breaking")).not.toBeInTheDocument();
+  });
+
+  it("lists every member of a grouped break-in", () => {
+    render(
+      <RunTimelineEntry
+        entry={entry({
+          breakIn: { reason: "storm", interrupted: false },
+          breakInItems: [
+            { segmentId: "storm:a", title: "Storm warning", subtitle: "Bavaria" },
+            { segmentId: "storm:b", title: "Flood warning" },
+          ],
+        })}
+        isLast
+      />,
+    );
+    expect(screen.getByLabelText("Break-in members")).toHaveTextContent("⚡ Storm warning · Bavaria⚡ Flood warning");
+  });
+
+  it("credits a commanded cut to the viewer or the desk", () => {
+    const { rerender } = render(<RunTimelineEntry entry={entry({ command: { source: "viewer", author: "ann" } })} isLast />);
+    expect(screen.getByText("💬 @ann")).toBeInTheDocument();
+    rerender(<RunTimelineEntry entry={entry({ command: { source: "operator", author: "op@x" } })} isLast />);
+    expect(screen.getByText("👤 operator")).toBeInTheDocument();
+  });
 });

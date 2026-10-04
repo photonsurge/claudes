@@ -45,7 +45,7 @@ import {
   type DirectorTours,
   type SegmentTempo,
 } from "./director-tuning";
-import { DEFAULT_BREAK_IN, mergeBreakIn, type BreakInConfig } from "./director-break-in";
+import { DEFAULT_BREAK_IN, mergeBreakIn, type BreakInConfig, type BreakInReason } from "./director-break-in";
 
 /** Socket event: worker → every browser. The current on-air segment + queue. */
 export const DIRECTOR_STATE = "director:state" as const;
@@ -202,6 +202,19 @@ export interface Segment {
    * a cut from an older worker — the client falls back to its built-in defaults.
    */
   tempo?: SegmentTempo;
+  /**
+   * Why this cut jumped the queue — absent on an ordinary rotation cut.
+   * `interrupted` = it cut the previous shot short (immediate mode). `items` is
+   * present on a GROUP cut: every event a burst cut covers, so the deck can
+   * list them and the as-run log records all of them.
+   */
+  breakIn?: {
+    reason: BreakInReason;
+    interrupted: boolean;
+    items?: { segmentId: string; title: string; subtitle?: string }[];
+  };
+  /** On-air INCOMING pre-roll length, ms, clocked from `patch.spinEpoch`. Absent/0 = none. */
+  incomingMs?: number;
 }
 
 /**
@@ -366,6 +379,10 @@ export interface DirectorState {
   paused?: { since: number; until?: number };
   /** Operator readout: the first few commands waiting in the queue. */
   queued?: { id: string; label: string; source: "operator" | "viewer" | "system" }[];
+  /** Operator readout: breaking events waiting their turn (immediate mode). */
+  breakInQueue?: { reason: BreakInReason; title: string; at: number }[];
+  /** Operator readout: when this channel last broke in. */
+  lastBreakInAt?: number;
 }
 
 export type UpNextItem = DirectorState["upNext"][number];

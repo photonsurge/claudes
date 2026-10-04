@@ -285,6 +285,8 @@ AlertSchema.index({ active: 1, maxSeverityRank: -1, sent: -1 }, { name: "alert_a
 AlertSchema.index({ sent: -1, maxSeverityRank: -1 }, { name: "alert_sent_sev_ix" });
 // Per-source sweeps (expiry, supersede, deactivate-missing).
 AlertSchema.index({ source: 1, active: 1 }, { name: "alert_source_active_ix" });
+// The director's fresh-event watch: "first seen after T" (createdSince).
+AlertSchema.index({ created: 1 }, { name: "alert_created_ix" });
 // Cross-source merge: find every source reporting one national CAP message.
 // Sparse — GDACS has no capId, and WMO's is null until its capurl is resolved.
 AlertSchema.index({ capId: 1, active: 1 }, { name: "alert_capid_ix", sparse: true });

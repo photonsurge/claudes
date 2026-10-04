@@ -28,6 +28,7 @@ import type { CountryAt } from "../../lib/countries";
 import type { Cam } from "../../lib/cams/types";
 import type { BroadcastTheme } from "./config";
 import { applySlidePrefs, type SlideId } from "@photonsurge/shared/broadcast-slides";
+import BreakInItemsPanel from "./BreakInItemsPanel";
 import type { DeckSlide } from "./SlideDeck";
 import { KIND_COLOR, isTargetedEvent } from "./kinds";
 import OnAirCard from "./OnAirCard";
@@ -375,6 +376,12 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
       />
     ),
   });
+
+  // A grouped break-in (a burst of warnings aired as one cut) names every
+  // member straight after the lede — the list IS the story.
+  if ((segment.breakIn?.items?.length ?? 0) > 1) {
+    slides.push({ id: "break-in-items", node: <BreakInItemsPanel segment={segment} color={color} theme={ctx.theme} /> });
+  }
 
   // Notable aircraft / ship / volcano — the rich Track Info card after the lede,
   // plus the two extra volcano pages whenever they carry content.

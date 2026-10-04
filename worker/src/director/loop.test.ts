@@ -4,6 +4,7 @@ import { DEFAULT_DIRECTOR_CONFIG, mergeDirectorConfig, type DirectorConfig, type
 import type { Candidate } from "@photonsurge/shared/director-select";
 import type { AppDb } from "@photonsurge/shared/db/index";
 import type { DirectorCommand, DirectorOp } from "@photonsurge/shared/director-commands";
+import type { FreshEvent } from "@photonsurge/shared/director-break-in";
 import { pickAtBoundary, stepScene, type StepDeps } from "./loop";
 import { newRunner, type SceneRunner } from "./runner";
 
@@ -34,10 +35,10 @@ describe("pickAtBoundary", () => {
     expect(out.breaking).toBe(false);
   });
 
-  it("takes a breaking candidate after the opener", async () => {
+  it("takes a breaking candidate after the opener, saying why on air", async () => {
     const r = { ...newRunner("s1"), seq: 3 };
-    const out = await pickAtBoundary(db, config(), r, builder([country, breakingQuake]));
-    expect(out).toMatchObject({ next: { id: "quake:new" }, breaking: true });
+    const out = await pickAtBoundary(db, config(), r, builder([country, { ...breakingQuake, segment: seg("quake:new") }]));
+    expect(out).toMatchObject({ next: { id: "quake:new", breakIn: { reason: "quake", interrupted: false } }, breaking: true });
   });
 
   it("skips the tier when the channel turns break-ins off", async () => {
@@ -130,6 +131,7 @@ describe("stepScene", () => {
       }) as any,
       resolve: jest.fn(async () => (resolved ? { segment: resolved } : { refused: "no quake in the pool" })) as any,
       emit: jest.fn(),
+      fresh: { ensureStarted: jest.fn(), since: () => [] },
     };
     return { queue, fake, deps, cutCalls };
   };
@@ -255,5 +257,140 @@ describe("stepScene", () => {
     const { fake, deps, cutCalls } = setup([v]);
     await stepScene(fake, config(), { ...onAir(), endsAt: NOW }, NOW, deps);
     expect(cutCalls[0].meta.command).toEqual({ source: "viewer", author: "ann" });
+  });
+});
+
+describe("stepScene — break-ins", () => {
+  const NOW = 20_000_000;
+  const immediate = (over: Record<string, unknown> = {}) =>
+    config({ breakIn: { interrupt: "immediate", guardSeconds: 6, cooldownSeconds: 120, clusterMin: 3, ...over } });
+  let n = 0;
+  const fresh = (over: Partial<FreshEvent> = {}): FreshEvent => {
+    const id = `storm:nws:b${++n}`;
+    return { reason: "storm", at: NOW - 30_000, severityRank: 4, segmentId: id, key: id, score: 98, title: id, ...over };
+  };
+  const onAir = (): SceneRunner => ({
+    ...newRunner("s1"),
+    seq: 4,
+    runId: "run-1",
+    current: seg("country:uk"),
+    startedAt: NOW - 20_000,
+    endsAt: NOW + 30_000,
+  });
+  const setup = (ring: FreshEvent[]) => {
+    const cutCalls: { next: Segment; meta: any }[] = [];
+    const fake = {
+      directorCommands: memoryQueue([]),
+      airLog: { addQueueDrops: jest.fn(async () => undefined) },
+    } as unknown as AppDb;
+    const deps: StepDeps = {
+      pick: jest.fn(async () => ({ next: seg("ocean:rotation"), pool: [], breaking: false })),
+      cut: jest.fn(async (r: SceneRunner, next: Segment, meta: any) => {
+        cutCalls.push({ next, meta });
+        r.seq += 1;
+        r.current = next;
+        r.startedAt = meta.now;
+        r.endsAt = meta.now + next.holdMs;
+        r.lastCutWasPriority = meta.breaking;
+        if (next.breakIn) r.lastBreakInAt = meta.now;
+        r.seen.set(next.id, { count: 1, last: meta.now });
+      }) as any,
+      resolve: jest.fn(async (_db: unknown, _cfg: unknown, _r: unknown, t: any) => ({ segment: seg(t.id ?? `${t.kind}:picked`) })) as any,
+      emit: jest.fn(),
+      fresh: { ensureStarted: jest.fn(), since: () => ring },
+    };
+    return { fake, deps, cutCalls };
+  };
+
+  it("leaves the watch alone in boundary mode", async () => {
+    const { fake, deps } = setup([fresh()]);
+    await stepScene(fake, config(), onAir(), NOW, deps);
+    expect(deps.fresh.ensureStarted).not.toHaveBeenCalled();
+    expect(deps.cut).not.toHaveBeenCalled();
+  });
+
+  it("interrupts the running shot for a qualifying fresh event, with the INCOMING pre-roll", async () => {
+    const ev = fresh();
+    const { fake, deps, cutCalls } = setup([ev]);
+    const r = onAir();
+    await stepScene(fake, immediate(), r, NOW, deps);
+    expect(deps.fresh.ensureStarted).toHaveBeenCalled();
+    expect(cutCalls).toHaveLength(1);
+    expect(cutCalls[0].next).toMatchObject({ id: ev.segmentId, breakIn: { reason: "storm", interrupted: true }, incomingMs: 4000 });
+    expect(cutCalls[0].meta).toMatchObject({ breaking: true, skipRequested: true });
+    expect(r.handled.has(ev.key)).toBe(true);
+    expect(r.pending).toEqual([]);
+  });
+
+  it("queues a burst below the group size and drains it, never dropping one", async () => {
+    const a = fresh({ score: 99 });
+    const b = fresh({ score: 98 });
+    const { fake, deps, cutCalls } = setup([a, b]);
+    const r = onAir();
+    await stepScene(fake, immediate(), r, NOW, deps);
+    expect(cutCalls.map((c) => c.next.id)).toEqual([a.segmentId]);
+    expect(r.pending.map((p) => p.key)).toEqual([b.key]);
+    // Mid-shot, inside the cooldown: no second interrupt.
+    await stepScene(fake, immediate(), r, NOW + 10_000, deps);
+    expect(cutCalls).toHaveLength(1);
+    // One normal cut first (the priority cooldown), then the next shot change drains it.
+    r.endsAt = NOW + 20_000;
+    await stepScene(fake, immediate(), r, NOW + 20_000, deps);
+    expect(cutCalls.map((c) => c.next.id)).toEqual([a.segmentId, "ocean:rotation"]);
+    r.endsAt = NOW + 40_000;
+    await stepScene(fake, immediate(), r, NOW + 40_000, deps);
+    expect(cutCalls[2].next).toMatchObject({ id: b.segmentId, breakIn: { interrupted: false } });
+    expect(r.pending).toEqual([]);
+  });
+
+  it("airs a burst of the group size as one cut naming them all", async () => {
+    const burst = [fresh(), fresh(), fresh()];
+    const { fake, deps, cutCalls } = setup(burst);
+    await stepScene(fake, immediate(), onAir(), NOW, deps);
+    expect(cutCalls).toHaveLength(1);
+    expect(cutCalls[0].next.breakIn?.items).toHaveLength(3);
+    expect(cutCalls[0].next.title).toBe("3 NEW EXTREME WARNINGS");
+  });
+
+  it("doesn't break in while paused", async () => {
+    const { fake, deps } = setup([fresh()]);
+    const r = { ...onAir(), paused: { since: NOW - 1, remainingMs: 5_000 } };
+    await stepScene(fake, immediate(), r, NOW, deps);
+    expect(deps.cut).not.toHaveBeenCalled();
+  });
+
+  it("records events that leave the queue without airing", async () => {
+    const { fake, deps } = setup([]);
+    const r = onAir();
+    r.pending = [{ ...fresh({ at: NOW - 30 * 60_000 }), queuedAt: NOW - 30 * 60_000 }];
+    const key = r.pending[0].key;
+    await stepScene(fake, immediate(), r, NOW, deps);
+    expect(r.pending).toEqual([]);
+    expect(r.handled.has(key)).toBe(true);
+    expect((fake.airLog as any).addQueueDrops).toHaveBeenCalledWith("run-1", 1);
+  });
+
+  it("an operator's queued request beats a break-in at the shot change; a viewer's waits behind it", async () => {
+    const ev = fresh();
+    const { fake, deps, cutCalls } = setup([ev]);
+    const viewer = {
+      id: "v1",
+      sceneId: "s1",
+      source: { kind: "viewer" as const, platform: "youtube" as const, author: "ann" },
+      cmd: { op: "queue" as const, target: { type: "kind" as const, kind: "volcano" as const } },
+      status: "queued" as const,
+      createdAt: NOW - 1,
+      expiresAt: NOW + 600_000,
+    };
+    (fake as any).directorCommands = memoryQueue([viewer]);
+    const r = { ...onAir(), startedAt: NOW - 1_000, endsAt: NOW };
+    await stepScene(fake, immediate(), r, NOW, deps);
+    expect(cutCalls[0].next.id).toBe(ev.segmentId);
+
+    const op = { ...viewer, id: "o1", source: { kind: "operator" as const, user: "op" } };
+    const second = setup([fresh()]);
+    (second.fake as any).directorCommands = memoryQueue([op]);
+    await stepScene(second.fake, immediate(), { ...onAir(), endsAt: NOW }, NOW, second.deps);
+    expect(second.cutCalls[0].meta.command).toEqual({ source: "operator", author: "op" });
   });
 });

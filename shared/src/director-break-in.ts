@@ -15,7 +15,7 @@
  * See docs/director-programme-plan.md §3.2 and §3.5.
  */
 import type { SeverityRank } from "./db/alert-model";
-import type { VolcanoLevel } from "./director";
+import type { SegmentKind, VolcanoLevel } from "./director";
 
 export type BreakInReason = "quake" | "storm" | "volcano" | "roundup";
 
@@ -144,11 +144,10 @@ export function mergeBreakIn(base: BreakInConfig, patch: unknown, pool: PoolBar)
 }
 
 /**
- * A fresh event as the break-in check sees it. The candidate builders fill in
- * the fields for their own reason; the fresh-event watch (immediate mode) adds
- * the rest.
+ * The facts the break-in check needs about one event. The candidate builders
+ * fill in the fields for their own reason.
  */
-export interface FreshEvent {
+export interface BreakInFacts {
   reason: BreakInReason;
   /** When it happened: quake time, alert first-seen, volcano status flip, round-up generatedAt. Ms epoch; NaN = unknown. */
   at: number;
@@ -159,6 +158,31 @@ export interface FreshEvent {
   /** Round-ups: which place the round-up is for. */
   placeKind?: "country" | "region" | "world";
   placeId?: string;
+}
+
+/**
+ * A fresh event from the worker's fresh-event watch: the facts plus what the
+ * queue needs to identify, rank and label it.
+ */
+export interface FreshEvent extends BreakInFacts {
+  /** The segment id it airs as ("quake:us7000abcd", "storm:nws:x", "country:uk"). */
+  segmentId: string;
+  /** Dedupe key. Differs from segmentId for round-ups ("roundup:<docId>"), so a
+   *  country that already aired can still break in with a NEW round-up. */
+  key: string;
+  /** Same scoring as the candidate pool. */
+  score: number;
+  /** For the operator readout ("3 more warnings waiting"). */
+  title: string;
+  /** "country:XX" — the same-area guard. */
+  areaKey?: string;
+  /** Where it is, for grouped framing. */
+  center?: [number, number];
+}
+
+/** One qualified, not-yet-aired event waiting its turn — the channel's break-in queue. */
+export interface PendingBreakIn extends FreshEvent {
+  queuedAt: number;
 }
 
 export interface BreakInFavourites {
@@ -174,7 +198,7 @@ export interface BreakInFavourites {
  * the priority tier (see `selectPriority`).
  */
 export function qualifiesAsBreakIn(
-  ev: FreshEvent,
+  ev: BreakInFacts,
   cfg: BreakInConfig,
   favourites: BreakInFavourites,
   now: number,
@@ -198,4 +222,121 @@ export function qualifiesAsBreakIn(
       if (ev.placeKind === "region") return !!ev.placeId && favourites.regions.has(ev.placeId);
       return false;
   }
+}
+
+/** What the queue decisions need to know about the runner. */
+export interface BreakInRunnerView {
+  now: number;
+  current: { id: string; kind: SegmentKind; startedAt: number; areaKey?: string } | null;
+  /** Segment ids aired this session. */
+  seen: ReadonlySet<string>;
+  /** Keys already dealt with: aired, covered by a group, aged out, or dropped
+   *  off a full queue. Never "another one was picked this tick". */
+  handled: ReadonlySet<string>;
+  lastBreakInAt: number;
+  lastRoundupBreakInAt: number;
+  favourites: BreakInFavourites;
+  paused: boolean;
+}
+
+/** Event reasons air a SEGMENT that may already have aired; round-ups are keyed by doc. */
+const isEventReason = (r: BreakInReason) => r !== "roundup";
+
+/**
+ * Pure: fold this tick's fresh events into the queue. New events must qualify
+ * on this channel and not be handled or already aired; queued ones that no
+ * longer qualify (aged past the window, reason switched off) come out as
+ * `aged`; the queue is ranked by score and trimmed to `maxPending`, with the
+ * lowest scores coming out as `dropped` — a magnitude 7 must never be pushed
+ * off the end by a dozen moderate warnings. Nothing is lost silently: every
+ * removal is returned so the caller can record it.
+ */
+export function reconcilePending(
+  pending: readonly PendingBreakIn[],
+  fresh: readonly FreshEvent[],
+  cfg: BreakInConfig,
+  r: BreakInRunnerView,
+): { pending: PendingBreakIn[]; aged: PendingBreakIn[]; dropped: PendingBreakIn[] } {
+  const aged: PendingBreakIn[] = [];
+  const kept: PendingBreakIn[] = [];
+  const keys = new Set<string>();
+  for (const p of pending) {
+    if (r.handled.has(p.key) || keys.has(p.key)) continue;
+    if (isEventReason(p.reason) && r.seen.has(p.segmentId)) continue; // aired through rotation meanwhile
+    if (!qualifiesAsBreakIn(p, cfg, r.favourites, r.now)) {
+      aged.push(p);
+      continue;
+    }
+    keys.add(p.key);
+    kept.push(p);
+  }
+  for (const ev of fresh) {
+    if (keys.has(ev.key) || r.handled.has(ev.key)) continue;
+    if (isEventReason(ev.reason) && r.seen.has(ev.segmentId)) continue;
+    if (!qualifiesAsBreakIn(ev, cfg, r.favourites, r.now)) continue;
+    keys.add(ev.key);
+    kept.push({ ...ev, queuedAt: r.now });
+  }
+  // Highest score first; earlier event first on a tie, so the order is stable.
+  kept.sort((a, b) => b.score - a.score || a.at - b.at);
+  return { pending: kept.slice(0, cfg.maxPending), aged, dropped: kept.slice(cfg.maxPending) };
+}
+
+export type BreakInPick =
+  | { type: "single"; reason: BreakInReason; items: [PendingBreakIn] }
+  | { type: "group"; reason: BreakInReason; items: PendingBreakIn[] };
+
+/**
+ * Pure: what breaks in now — one event, or a GROUP when a burst of one reason
+ * is waiting. Null when no gate is satisfied; the queue is never changed here.
+ *
+ * `atBoundary`: the current shot is ending anyway, so the interrupt-only gates
+ * (guard, event cooldown, never-interrupt-an-ad, same-area) don't apply. That
+ * is how a burst keeps draining at the following shot changes.
+ */
+export function selectBreakIn(
+  pending: readonly PendingBreakIn[],
+  cfg: BreakInConfig,
+  r: BreakInRunnerView,
+  opts: { atBoundary?: boolean } = {},
+): BreakInPick | null {
+  if (!cfg.enabled || cfg.interrupt !== "immediate" || r.paused) return null;
+  const boundary = !!opts.atBoundary;
+  if (!boundary) {
+    if (!r.current || r.current.kind === "ad") return null;
+    if (r.now - r.current.startedAt < cfg.guardSeconds * 1000) return null;
+  }
+  const eventCooling = !boundary && r.now - r.lastBreakInAt < cfg.cooldownSeconds * 1000;
+  const roundupCooling = r.now - r.lastRoundupBreakInAt < cfg.roundupCooldownMinutes * 60_000;
+
+  const eligible = pending.filter((p) => {
+    if (r.handled.has(p.key)) return false;
+    if (p.reason === "roundup") return !roundupCooling;
+    if (eventCooling) return false;
+    if (r.seen.has(p.segmentId)) return false;
+    if (r.current && p.segmentId === r.current.id) return false;
+    // Don't interrupt Japan-the-country for a Japan quake the deck already shows.
+    if (!boundary && p.areaKey && r.current?.areaKey === p.areaKey) return false;
+    return true;
+  });
+
+  for (const reason of BREAK_IN_REASONS) {
+    const ofReason = eligible.filter((p) => p.reason === reason).sort((a, b) => b.score - a.score || a.at - b.at);
+    if (!ofReason.length) continue;
+    if (cfg.clusterMin > 0 && ofReason.length >= cfg.clusterMin) {
+      // The largest set of this reason whose times all fall inside the window.
+      const byTime = [...ofReason].sort((a, b) => a.at - b.at);
+      let best: PendingBreakIn[] = [];
+      for (let i = 0; i < byTime.length; i++) {
+        const span = byTime.filter((p) => p.at >= byTime[i].at && p.at - byTime[i].at <= cfg.clusterWindowSeconds * 1000);
+        if (span.length > best.length) best = span;
+      }
+      if (best.length >= cfg.clusterMin) {
+        const items = best.sort((a, b) => b.score - a.score || a.at - b.at).slice(0, cfg.clusterMin * 2);
+        return { type: "group", reason, items };
+      }
+    }
+    return { type: "single", reason, items: [ofReason[0]] };
+  }
+  return null;
 }

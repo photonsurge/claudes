@@ -47,3 +47,22 @@ it("lists the command queue, marking viewer requests", () => {
   );
   expect(screen.getByLabelText("Command queue")).toHaveTextContent("Queued: Next: a quakeTake Japan (viewer)");
 });
+
+it("flags a break-in that interrupted the previous shot, the waiting queue and the last break-in", () => {
+  render(
+    <DirectorOnAirReadout
+      auto
+      live={live({
+        segment: { ...live({}).segment!, breakIn: { reason: "storm", interrupted: true } },
+        breakInQueue: [
+          { reason: "storm", title: "Flood · Gulf", at: NOW },
+          { reason: "quake", title: "M6 Chile", at: NOW },
+        ],
+        lastBreakInAt: NOW - 5 * 60_000,
+      })}
+    />,
+  );
+  expect(screen.getByText("⚡ BREAK-IN · interrupted the previous shot")).toBeInTheDocument();
+  expect(screen.getByLabelText("Break-in queue")).toHaveTextContent("2 breaking events waiting: Flood · Gulf · M6 Chile");
+  expect(screen.getByText("Last break-in 5m ago")).toBeInTheDocument();
+});

@@ -26,6 +26,7 @@ import { frameLuma, isDarkFrame, pickEvenly, buildTimelapseWebp, planCamThinning
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
+import { freshEvents } from "../director/fresh";
 import { parseReportFacts } from "../volcanoes/parseReport";
 import { fetchAvoCameraRegistry } from "../volcano/media/avo";
 import { fetchUsgsAshcam, fetchUsgsVolcanoWebcams, USGS_ASHCAM_API, USGS_VHP_WEBCAMS } from "../volcano/media/usgs";
@@ -144,6 +145,7 @@ export async function snapshot(_job: Job) {
     blogInfo(TAG, `volcanoes snapshot: ${volcanoes.length} active`, result, "volcanoes", "snapshot");
     // Live push so the overlay refetches the instant a snapshot lands.
     emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: volcanoes.length } });
+    freshEvents.nudge();
     return result;
   } catch (err) {
     log(TAG, `volcanoes snapshot failed`, summarizeForLog(err));

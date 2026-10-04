@@ -1,4 +1,4 @@
-import { fmtDuration, kindColor, runDurationMs, runIsLive, type AirRun } from "./airlog";
+import { fmtDuration, kindColor, runCountsLine, runDurationMs, runIsLive, type AirRun } from "./airlog";
 
 const NOW = new Date("2026-07-08T12:00:00Z").getTime();
 
@@ -53,5 +53,14 @@ describe("kindColor", () => {
   it("gives every known kind its own colour and unknown kinds the fallback", () => {
     expect(kindColor("quake")).not.toBe(kindColor("storm"));
     expect(kindColor("not-a-kind")).toBe("#8b95a7");
+  });
+});
+
+describe("runCountsLine", () => {
+  it("names only the counts a run has", () => {
+    expect(runCountsLine({ cuts: 1 })).toBe("1 cut");
+    expect(runCountsLine({ cuts: 47, breakIns: 6, grouped: 1, commands: 5, viewerRequests: 3, queueDropped: 2 })).toBe(
+      "47 cuts · 6 break-ins · 1 grouped · 2 operator cuts · 3 viewer requests · 2 breaking not aired",
+    );
   });
 });

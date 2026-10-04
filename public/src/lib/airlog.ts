@@ -30,6 +30,19 @@ export function runDurationMs(run: AirRun, nowMs = Date.now()): number {
   return Math.max(0, end - new Date(run.startedAt).getTime());
 }
 
+/** "47 cuts · 6 break-ins · 3 viewer requests" — the run header line; zero counts are left out. */
+export function runCountsLine(run: Pick<AirRun, "cuts" | "breakIns" | "grouped" | "commands" | "viewerRequests" | "queueDropped">): string {
+  const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  const parts = [plural(run.cuts, "cut")];
+  if (run.breakIns) parts.push(plural(run.breakIns, "break-in"));
+  if (run.grouped) parts.push(`${run.grouped} grouped`);
+  const operator = (run.commands ?? 0) - (run.viewerRequests ?? 0);
+  if (operator > 0) parts.push(plural(operator, "operator cut"));
+  if (run.viewerRequests) parts.push(plural(run.viewerRequests, "viewer request"));
+  if (run.queueDropped) parts.push(`${run.queueDropped} breaking not aired`);
+  return parts.join(" · ");
+}
+
 /** "1h 04m" / "12m 05s" / "45s" — compact duration for run/entry readouts. */
 export function fmtDuration(ms: number): string {
   const s = Math.round(ms / 1000);

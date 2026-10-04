@@ -28,6 +28,7 @@ import {
 import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "../socket";
 import { airLogCut } from "./airlog";
+import type { PendingBreakIn } from "@photonsurge/shared/director-break-in";
 
 const TAG = "director";
 /** How many recent segment ids to remember for cooldown/variety. */
@@ -76,6 +77,12 @@ export interface SceneRunner {
   paused?: { since: number; until?: number; remainingMs: number };
   /** The first few commands waiting in the queue, for the operator readout. */
   queued: NonNullable<DirectorState["queued"]>;
+  /** Breaking events waiting their turn (immediate mode) — never collapsed to one. */
+  pending: PendingBreakIn[];
+  /** Break-in keys already dealt with (aired, grouped, aged out, dropped). */
+  handled: Set<string>;
+  lastBreakInAt: number;
+  lastRoundupBreakInAt: number;
 }
 
 export const newRunner = (sceneId: string): SceneRunner => ({
@@ -94,7 +101,19 @@ export const newRunner = (sceneId: string): SceneRunner => ({
   lastSkipNonce: 0,
   lastEmit: 0,
   queued: [],
+  pending: [],
+  handled: new Set(),
+  lastBreakInAt: 0,
+  lastRoundupBreakInAt: 0,
 });
+
+/** Remember break-in keys as dealt with, capped like the airing tally. */
+export function markHandled(r: SceneRunner, keys: Iterable<string>): void {
+  for (const k of keys) {
+    r.handled.add(k);
+    if (r.handled.size > SEEN_CAP) r.handled.delete(r.handled.values().next().value as string);
+  }
+}
 
 /** Per-segment airing counts BEFORE a cut (id → times shown). */
 export function countsOf(r: SceneRunner): Map<string, number> {
@@ -212,6 +231,8 @@ export function emitState(r: SceneRunner, now: number): void {
     timesShown: r.timesShown,
     ...(r.paused ? { paused: { since: r.paused.since, until: r.paused.until } } : {}),
     queued: r.queued,
+    breakInQueue: r.pending.slice(0, 5).map((p) => ({ reason: p.reason, title: p.title, at: p.at })),
+    ...(r.lastBreakInAt ? { lastBreakInAt: r.lastBreakInAt } : {}),
   };
   emitWorkerEvent({ type: DIRECTOR_STATE, data: state });
   r.lastEmit = now;
@@ -258,6 +279,10 @@ export async function performCut(
   const prevStartedAt = r.startedAt;
 
   r.lastCutWasPriority = meta.breaking;
+  if (next.breakIn) {
+    if (next.breakIn.reason === "roundup") r.lastRoundupBreakInAt = now;
+    else r.lastBreakInAt = now;
+  }
   if (next.kind === "ad") r.pendingAd = false;
   // Anchor ALL camera motion to the cut instant so /control and /watch
   // compute it in phase — the preset's spin/orbit/push-in AND a channel's

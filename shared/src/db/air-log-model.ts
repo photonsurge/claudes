@@ -30,6 +30,15 @@ export interface iAirRun extends iGeneralModel {
   endReason?: AirRunEndReason;
   /** Total cuts recorded so far. */
   cuts: number;
+  /** Cuts that came through the break-in tier. */
+  breakIns?: number;
+  /** Break-ins that aired a burst as one grouped cut. */
+  grouped?: number;
+  /** Cuts ordered through the command queue, and how many of those by viewers. */
+  commands?: number;
+  viewerRequests?: number;
+  /** Breaking events that left the queue without airing (aged out or dropped). */
+  queueDropped?: number;
   /** Airing tally per segment kind, e.g. { quake: 4, country: 2 }. */
   kindCounts: Record<string, number>;
   lastCutAt?: Date;
@@ -56,6 +65,10 @@ export interface iAirEntry extends iGeneralModel {
   icon?: string;
   /** Cut was picked by the breaking-news priority tier, not fair rotation. */
   breaking: boolean;
+  /** Why it jumped the queue (detail beside the coarse `breaking` flag). */
+  breakIn?: { reason: "quake" | "storm" | "volcano" | "roundup"; interrupted: boolean };
+  /** Every event a grouped break-in covered. */
+  breakInItems?: { segmentId: string; title: string; subtitle?: string }[];
   /** Who ordered this cut through the director command queue, if anyone. */
   command?: { source: "operator" | "viewer" | "system"; author?: string };
   /** Nth airing of this exact segment in the session (1 = first time). */
@@ -89,7 +102,7 @@ export interface iAirEntryModel extends iAirEntry {
   _id: string;
 }
 
-const AirRunSchema = new mongoose.Schema<iAirRunModel>(
+export const AirRunSchema = new mongoose.Schema<iAirRunModel>(
   {
     id: { type: String, required: true, unique: true, default: () => uuidv4() },
     sceneId: { type: String, required: true },
@@ -97,6 +110,11 @@ const AirRunSchema = new mongoose.Schema<iAirRunModel>(
     endedAt: { type: Date, required: false },
     endReason: { type: String, required: false, enum: ["auto-off", "stale"] },
     cuts: { type: Number, required: true, default: 0 },
+    breakIns: { type: Number, required: false, default: 0 },
+    grouped: { type: Number, required: false, default: 0 },
+    commands: { type: Number, required: false, default: 0 },
+    viewerRequests: { type: Number, required: false, default: 0 },
+    queueDropped: { type: Number, required: false, default: 0 },
     kindCounts: { type: mongoose.Schema.Types.Mixed, default: {} },
     lastCutAt: { type: Date, required: false },
   },
@@ -129,6 +147,26 @@ export const AirEntrySchema = new mongoose.Schema<iAirEntryModel>(
     subtitle: { type: String, required: false },
     icon: { type: String, required: false },
     breaking: { type: Boolean, required: true, default: false },
+    breakIn: {
+      type: new mongoose.Schema(
+        {
+          reason: { type: String, required: true, enum: ["quake", "storm", "volcano", "roundup"] },
+          interrupted: { type: Boolean, required: true, default: false },
+        },
+        { _id: false },
+      ),
+      required: false,
+    },
+    breakInItems: {
+      type: [
+        new mongoose.Schema(
+          { segmentId: { type: String, required: true }, title: { type: String, required: true }, subtitle: { type: String, required: false } },
+          { _id: false },
+        ),
+      ],
+      required: false,
+      default: undefined,
+    },
     command: {
       type: new mongoose.Schema(
         { source: { type: String, required: true, enum: ["operator", "viewer", "system"] }, author: { type: String, required: false } },

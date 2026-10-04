@@ -177,6 +177,19 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
       return docs.map(strip);
     },
 
+    /**
+     * Volcanoes whose status changed to erupting / unrest after `sinceMs` — the
+     * director's fresh-event watch.
+     */
+    async statusChangedSince(sinceMs: number): Promise<Volcano[]> {
+      const docs = await model
+        .find({ status: { $in: ["erupting", "unrest"] }, statusChangedAt: { $gt: new Date(sinceMs) } })
+        .sort({ statusChangedAt: 1 })
+        .lean()
+        .exec();
+      return docs.map(strip);
+    },
+
     /** A single volcano by its source id (the admin detail read), or null. */
     async get(volcanoId: string): Promise<Volcano | null> {
       const doc = await model.findOne({ volcanoId }).lean().exec();

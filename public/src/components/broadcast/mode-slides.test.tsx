@@ -57,6 +57,27 @@ describe("modeSlides", () => {
     expect(ids(seg({ kind: "point" }), ctx())).toEqual(["onair"]);
   });
 
+  it("a grouped break-in leads with the list of everything it covers", () => {
+    const items = [
+      { segmentId: "storm:a", title: "A" },
+      { segmentId: "storm:b", title: "B" },
+    ];
+    expect(ids(seg({ kind: "point", breakIn: { reason: "storm", interrupted: true, items } }), ctx()).slice(0, 2)).toEqual([
+      "onair",
+      "break-in-items",
+    ]);
+    // A single break-in has nothing to list.
+    expect(ids(seg({ kind: "point", breakIn: { reason: "storm", interrupted: true } }), ctx())).toEqual(["onair"]);
+  });
+
+  it("a channel can hide the break-in list like any other slide", () => {
+    const items = [
+      { segmentId: "storm:a", title: "A" },
+      { segmentId: "storm:b", title: "B" },
+    ];
+    expect(ids(seg({ kind: "point", breakIn: { reason: "storm", interrupted: true, items } }), ctx({ slidesOff: ["break-in-items"] }))).toEqual(["onair"]);
+  });
+
   it("a country spotlight folds its place round-up in as the second slide when it has one", () => {
     const bbox: [number, number, number, number] = [-1, -1, 1, 1];
     const roundup = {

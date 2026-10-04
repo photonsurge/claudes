@@ -20,6 +20,10 @@ import { airLogSceneOff } from "./airlog";
 import { countsOf, emitState, newRunner, performCut, type SceneRunner } from "./runner";
 import { arbitrate, describeOp, isControlOp, type DirectorCommand } from "@photonsurge/shared/director-commands";
 import { applyControl, holdPaused, resolveTarget, withHold } from "./commands";
+import { reconcilePending, selectBreakIn } from "@photonsurge/shared/director-break-in";
+import { breakInView, buildBreakInSegment, stampIncoming } from "./breakin";
+import { freshEvents, type FreshEventWatch } from "./fresh";
+import { markHandled } from "./runner";
 
 const TAG = "director";
 const TICK_MS = 1000;
@@ -94,7 +98,12 @@ export async function pickAtBoundary(
   // Breaking news preempts random rotation on every cut but the very first
   // (which always opens on the intro).
   if (!priority && r.seq > 0) priority = selectPriority(pool, counts, priorityOpts);
-  if (priority) return { next: priority, pool, breaking: true };
+  if (priority) {
+    // Say on air WHY it jumped the queue (same treatment as an interrupt).
+    const reason = pool.find((c) => c.segment.id === priority!.id)?.breakIn?.reason;
+    if (reason) priority.breakIn = { reason, interrupted: false };
+    return { next: priority, pool, breaking: true };
+  }
   const next = selectNext(pool, {
     history: r.history,
     recentCenters: r.recentCenters,
@@ -113,8 +122,15 @@ export interface StepDeps {
   cut: typeof performCut;
   resolve: typeof resolveTarget;
   emit: typeof emitState;
+  fresh: Pick<FreshEventWatch, "ensureStarted" | "since">;
 }
-const STEP_DEPS: StepDeps = { pick: pickAtBoundary, cut: performCut, resolve: resolveTarget, emit: emitState };
+const STEP_DEPS: StepDeps = {
+  pick: pickAtBoundary,
+  cut: performCut,
+  resolve: resolveTarget,
+  emit: emitState,
+  fresh: freshEvents,
+};
 
 /** How many waiting commands the operator readout lists. */
 const QUEUED_READOUT = 5;
@@ -156,7 +172,7 @@ export async function stepScene(
 
   let skipByCommand = false;
   let cleared = false;
-  let changed = arb.expired.length > 0;
+  let changed = arb.expired.length > 0 as boolean;
   for (const c of arb.control) {
     if (!isControlOp(c.cmd)) continue;
     const effect = applyControl(r, c as DirectorCommand & { cmd: typeof c.cmd }, now);
@@ -167,6 +183,14 @@ export async function stepScene(
   }
   if (cleared) await db.directorCommands.clearQueued(r.sceneId, now);
 
+  /** Every cut goes through here: INCOMING stamp, the cut, and a paused
+   *  director staying paused on the new shot for its full hold. */
+  const cut = async (next: Segment, meta: { pool: Candidate[]; skipRequested: boolean; breaking: boolean; command?: ReturnType<typeof commandMeta> }) => {
+    stampIncoming(next, cfg);
+    await deps.cut(r, next, { db, cfg, now, ...meta });
+    if (r.paused) r.paused.remainingMs = next.holdMs;
+  };
+
   /** Put a command's target on air; false when it was refused. */
   const air = async (c: DirectorCommand, boundary: boolean): Promise<boolean> => {
     if (c.cmd.op !== "cut" && c.cmd.op !== "queue") return false;
@@ -176,17 +200,12 @@ export async function stepScene(
       return false;
     }
     const next = withHold(res.segment, c.cmd.holdS);
-    await deps.cut(r, next, {
-      db,
-      cfg,
+    await cut(next, {
       pool: [],
-      now,
       skipRequested: boundary ? skipRequested || skipByCommand : true,
       breaking: false,
       command: commandMeta(c),
     });
-    // A paused director stays paused — on the new shot, for its full hold.
-    if (r.paused) r.paused.remainingMs = next.holdMs;
     await settle(c, "applied", {
       appliedAt: now,
       appliedSeq: r.seq,
@@ -215,15 +234,59 @@ export async function stepScene(
   const boundary = skipRequested || skipByCommand || !r.current || (!paused && now >= r.endsAt);
   refreshQueued();
 
+  // Break-ins (immediate mode): keep the channel's queue of fresh events up to
+  // date every tick, whether or not anything airs, so a burst that lands during
+  // a long shot is all still waiting when the shot ends.
+  const immediate = cfg.breakIn.enabled && cfg.breakIn.interrupt === "immediate";
+  if (immediate) {
+    deps.fresh.ensureStarted(db);
+    const view = breakInView(r, cfg, now);
+    const { pending: queue, aged, dropped } = reconcilePending(r.pending, deps.fresh.since(), cfg.breakIn, view);
+    r.pending = queue;
+    const gone = [...aged, ...dropped];
+    if (gone.length) {
+      markHandled(r, gone.map((p) => p.key));
+      log(TAG, "break-in queue drop", { sceneId: r.sceneId, aged: aged.map((p) => p.key), dropped: dropped.map((p) => p.key) });
+      if (r.runId) await db.airLog.addQueueDrops(r.runId, gone.length).catch(() => undefined);
+      changed = true;
+    }
+  }
+
+  /** Put a break-in pick on air; false when nothing could be built. */
+  const breakIn = async (atBoundary: boolean): Promise<boolean> => {
+    if (!immediate || paused) return false;
+    // At a shot change the usual one-normal-cut cooldown still applies, so a
+    // burst drains every other cut instead of monopolising the channel.
+    if (atBoundary && r.lastCutWasPriority) return false;
+    const pick = selectBreakIn(r.pending, cfg.breakIn, breakInView(r, cfg, now), { atBoundary });
+    if (!pick) return false;
+    const seg = await buildBreakInSegment(db, cfg, r, pick, now, { interrupted: !atBoundary, resolve: deps.resolve });
+    // Only what aired (or failed to build) leaves the queue.
+    markHandled(r, pick.items.map((p) => p.key));
+    r.pending = r.pending.filter((p) => !r.handled.has(p.key));
+    if (!seg) return false;
+    await cut(seg, { pool: [], skipRequested: true, breaking: true });
+    return true;
+  };
+
+  // Interrupt the running shot for breaking news.
+  if (!boundary && (await breakIn(false))) return;
+
   if (boundary) {
-    if (arb.atBoundary && !cleared && !settled.has(arb.atBoundary.id) && (await air(arb.atBoundary, true))) {
+    // operator > break-in > viewer > rotation.
+    const queued = arb.atBoundary && !cleared && !settled.has(arb.atBoundary.id) ? arb.atBoundary : null;
+    if (queued?.source.kind === "operator" && (await air(queued, true))) {
+      refreshQueued();
+      return;
+    }
+    if (await breakIn(true)) return;
+    if (queued && queued.source.kind !== "operator" && (await air(queued, true))) {
       refreshQueued();
       return;
     }
     const { next, pool, breaking } = await deps.pick(db, cfg, r);
     if (next) {
-      await deps.cut(r, next, { db, cfg, pool, now, skipRequested: skipRequested || skipByCommand, breaking });
-      if (r.paused) r.paused.remainingMs = next.holdMs;
+      await cut(next, { pool, skipRequested: skipRequested || skipByCommand, breaking });
       return;
     }
   }

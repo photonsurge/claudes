@@ -21,6 +21,7 @@ import {
   fmtDuration,
   getRun,
   kindColor,
+  runCountsLine,
   runDurationMs,
   runIsLive,
   type AiredVideo,
@@ -81,7 +82,7 @@ export default function RunDetailPage() {
               </Box>
             ) : null}
             {fmtTime(run.startedAt)} → {run.endedAt ? fmtTime(run.endedAt) : "now"} ·{" "}
-            {fmtDuration(runDurationMs(run))} · {run.cuts} cuts
+            {fmtDuration(runDurationMs(run))} · {runCountsLine(run)}
             {run.endReason === "stale" ? " · orphaned (worker restarted mid-session)" : ""}
           </>
         ) : missing ? (

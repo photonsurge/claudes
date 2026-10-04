@@ -629,6 +629,24 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       await model.updateOne({ id: alertId }, { $set }).exec();
     },
 
+    /**
+     * Active alerts we FIRST saw after `sinceMs` (Mongoose-managed `created`,
+     * never re-stamped by a re-poll), at or above a severity — the director's
+     * fresh-event watch. Polygons and the raw payload are left out.
+     */
+    async createdSince(sinceMs: number, opts: { severityMin?: number; limit?: number } = {}): Promise<iAlertModel[]> {
+      const q: Record<string, unknown> = { active: true, created: { $gt: new Date(sinceMs) } };
+      if (typeof opts.severityMin === "number") q.maxSeverityRank = { $gte: opts.severityMin };
+      const docs = await model
+        .find(q)
+        .select({ raw: 0, cities: 0, "info.area.geometry.coordinates": 0, "info.description": 0 })
+        .sort({ created: 1 })
+        .limit(opts.limit ?? 200)
+        .lean()
+        .exec();
+      return docs.map(strip);
+    },
+
     /** One alert by its (source, identifier) pair — the subject of a `storm:` segment id. */
     async bySourceIdentifier(source: string, identifier: string): Promise<iAlertModel | null> {
       const doc = await model.findOne({ source, identifier }, { raw: 0 }).lean().exec();

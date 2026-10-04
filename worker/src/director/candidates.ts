@@ -23,7 +23,7 @@ import {
 } from "@photonsurge/shared/director";
 import { coarseGeoCell, type Candidate } from "@photonsurge/shared/director-select";
 import { DEFAULT_DIRECTOR_TOURS, segmentTempo, type DirectorTours } from "@photonsurge/shared/director-tuning";
-import { qualifiesAsBreakIn, type BreakInFavourites, type FreshEvent } from "@photonsurge/shared/director-break-in";
+import { qualifiesAsBreakIn, type BreakInFacts, type BreakInFavourites } from "@photonsurge/shared/director-break-in";
 import { DEFAULT_WIND_SETTINGS } from "@photonsurge/shared/control";
 import { vehicleId, vehicleLabel, type iVehicle } from "@photonsurge/shared/db/vehicle-model";
 import type { iRegionCity } from "@photonsurge/shared/db/region-model";
@@ -147,7 +147,7 @@ function favouritesOf(cfg: DirectorConfig): BreakInFavourites {
 }
 
 /** Stamp `candidate.breakIn` when the event qualifies on this channel. */
-function stampBreakIn(candidate: Candidate, ev: FreshEvent, cfg: DirectorConfig, now: number): Candidate {
+function stampBreakIn(candidate: Candidate, ev: BreakInFacts, cfg: DirectorConfig, now: number): Candidate {
   if (qualifiesAsBreakIn(ev, cfg.breakIn, favouritesOf(cfg), now)) {
     candidate.breakIn = { reason: ev.reason, at: ev.at };
   }

@@ -14,6 +14,7 @@ import { blogInfo, blogErr } from "../blog";
 import { ALERTS_UPDATED } from "@photonsurge/shared/control";
 import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
 import { emitWorkerEvent } from "../socket";
+import { freshEvents } from "../director/fresh";
 import { closeEndedAlertEvents, retireUnservableSchedules } from "../events/close";
 import { eventsUnifiedEnabled } from "../events/config";
 import { resyncAlertPopulations } from "../alerts/population";
@@ -71,6 +72,7 @@ export async function ingest(job: Job) {
   // finishes, instead of waiting out their 60s poll (mirrors TRACKS_UPDATED).
   const changed = results.reduce((n, r) => n + ("inserted" in r ? r.inserted + (r.expired ?? 0) : 0), 0);
   emitWorkerEvent({ type: ALERTS_UPDATED, data: { sources: results.length, changed } });
+  if (changed) freshEvents.nudge();
 
   // Onset snapshot: an alert that just escalated to severe+ gets an immediate
   // low-priority satellite frame, so it has imagery the moment it matters rather
