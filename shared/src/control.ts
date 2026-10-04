@@ -86,6 +86,34 @@ export interface SceneMeta {
    * Admin pickers still show it. Scene metadata beside `name`, not ControlState.
    */
   hidden?: boolean;
+  /**
+   * Which kind of channel this is (docs/crossword-mode-plan.md §3). Scene
+   * metadata like `hidden`, not ControlState. Missing means "globe".
+   */
+  surface?: SceneSurface;
+}
+
+/** The kind of channel a scene is: the weather globe or the crossword game. */
+export type SceneSurface = "globe" | "crossword";
+export const SCENE_SURFACES: readonly SceneSurface[] = ["globe", "crossword"];
+
+export function isSceneSurface(v: unknown): v is SceneSurface {
+  return v === "globe" || v === "crossword";
+}
+
+/** A scene's surface, defaulting a missing or unknown value to "globe". */
+export function sceneSurface(scene: { surface?: unknown } | null | undefined): SceneSurface {
+  return isSceneSurface(scene?.surface) ? scene!.surface : "globe";
+}
+
+/**
+ * "/watch/<id>" for a globe channel, "/watch/crossword/<id>" for a crossword
+ * one. The one place that knows the mapping: the Channels list, the Access
+ * page, the launcher and the worker's watchUrlForScene all call it. No token.
+ */
+export function watchPath(scene: { id: string; surface?: unknown }): string {
+  const id = encodeURIComponent(scene.id);
+  return sceneSurface(scene) === "crossword" ? `/watch/crossword/${id}` : `/watch/${id}`;
 }
 
 /**

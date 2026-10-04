@@ -31,6 +31,7 @@ describe("createDb wiring", () => {
       "cables", "faults", "aurora", "satimg", "fires", "volcanoes", "countries", "regions",
       "areaWeatherReports", "geomag", "cams", "seaPoints", "shortScripts", "ads", "aircraftMeta", "vehicles",
       "logs", "airLog", "users", "broadcastState", "directorConfig",
+      "crosswordConfig", "crosswordPuzzles", "crosswordGames", "crosswordSolves", "crosswordPlayers", "crosswordBank",
     ] as const;
     for (const key of repos) expect(db[key]).toBeDefined();
   });
@@ -249,6 +250,45 @@ describe("scenes", () => {
     expect((upsertByID.mock.calls[0] as any[])[1]).toMatchObject({ name: "Shorts", hidden: true });
     await db.createScene("studio-b", "Studio B", {});
     expect((upsertByID.mock.calls[1] as any[])[1]).not.toHaveProperty("hidden");
+  });
+
+  it("listScenes reports surface, globe unless the doc says crossword", async () => {
+    const db = freshDb();
+    const docs = [{ id: MAIN_SCENE_ID, name: "Main" }, { id: "words", name: "Words", surface: "crossword" }];
+    (db.broadcastState as any).getAll = jest.fn(async () => ok(docs));
+    const scenes = await db.listScenes();
+    expect(scenes.map((s) => [s.id, s.surface])).toEqual([[MAIN_SCENE_ID, "globe"], ["words", "crossword"]]);
+  });
+
+  it("createScene writes surface only when given a valid one", async () => {
+    const db = freshDb();
+    const upsertByID = jest.fn(async () => ok({ id: "words" }));
+    (db.broadcastState as any).upsertByID = upsertByID;
+    await db.createScene("words", "Words", {}, { surface: "crossword" });
+    expect((upsertByID.mock.calls[0] as any[])[1]).toMatchObject({ surface: "crossword" });
+    await db.createScene("studio-b", "Studio B", {}, { surface: "bogus" as any });
+    expect((upsertByID.mock.calls[1] as any[])[1]).not.toHaveProperty("surface");
+  });
+
+  it("crosswordScenes lists the scenes whose surface is crossword", async () => {
+    const db = freshDb();
+    const getAll = jest.fn(async () => ok([{ id: "words" }]));
+    (db.broadcastState as any).getAll = getAll;
+    expect(await db.crosswordScenes()).toEqual(["words"]);
+    expect(getAll).toHaveBeenCalledWith({ surface: "crossword" }, { limit: 0 });
+  });
+
+  it("crossword config merges over defaults and saves the merge", async () => {
+    const db = freshDb();
+    (db.crosswordConfig as any).getByID = jest.fn(async () => ok({ id: "words", enabled: true, clueS: 45 }));
+    const upsertByID = jest.fn(async () => ok({}));
+    (db.crosswordConfig as any).upsertByID = upsertByID;
+    const cfg = await db.getOrInitCrosswordConfig("words");
+    expect(cfg).toMatchObject({ enabled: true, clueS: 45, introS: 12 });
+    expect(cfg).not.toHaveProperty("id");
+    const saved = await db.saveCrosswordConfig("words", { clueS: 90, junk: 1 });
+    expect(saved.clueS).toBe(90);
+    expect((upsertByID.mock.calls[0] as any[])[1]).not.toHaveProperty("junk");
   });
 
   it("setSceneHidden flips only the flag on an existing scene", async () => {

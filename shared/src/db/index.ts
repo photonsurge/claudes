@@ -117,6 +117,17 @@ import { getSeaPointModel } from "./sea-point-model";
 import { makeSeaPointRepo } from "./sea-point-repo";
 import { getShortScriptModel } from "./short-script-model";
 import { makeShortScriptRepo } from "./short-script-repo";
+import { getCrosswordConfigModel } from "./crossword-config-model";
+import { getCrosswordPuzzleModel } from "./crossword-puzzle-model";
+import { makeCrosswordPuzzleRepo } from "./crossword-puzzle-repo";
+import { getCrosswordGameModel } from "./crossword-game-model";
+import { makeCrosswordGameRepo } from "./crossword-game-repo";
+import { getCrosswordSolveModel } from "./crossword-solve-model";
+import { makeCrosswordSolveRepo } from "./crossword-solve-repo";
+import { getCrosswordPlayerModel } from "./crossword-player-model";
+import { makeCrosswordPlayerRepo } from "./crossword-player-repo";
+import { makeCrosswordBankRepo } from "./crossword-bank-repo";
+import { DEFAULT_CROSSWORD_CONFIG, mergeCrosswordConfig, type CrosswordConfig } from "../crossword";
 import { getAdModel } from "./ad-model";
 import { makeAdRepo } from "./ad-repo";
 import { getAdExposureModel } from "./ad-exposure-model";
@@ -145,7 +156,7 @@ import { makeViewerStateRepo } from "./viewer-state-repo";
 import { getStreamEncoderModel, iStreamEncoderModel } from "./stream-encoder-model";
 import { getStreamSlotModel, iStreamSlotModel } from "./stream-slot-model";
 import { getYoutubeAccountModel, iYoutubeAccountModel } from "./youtube-account-model";
-import { DEFAULT_CONTROL_STATE, MAIN_SCENE_ID } from "../control";
+import { DEFAULT_CONTROL_STATE, MAIN_SCENE_ID, isSceneSurface, sceneSurface, type SceneSurface } from "../control";
 import { DEFAULT_DIRECTOR_CONFIG, mergeDirectorConfig } from "../director";
 import { encoderKeyForRun, runIsActive, type Run, type StreamEncoder, type StreamSlot } from "../runs";
 
@@ -187,6 +198,7 @@ export function createDb(conn: Connection) {
   const weatherRuns = mongoCrud<iWeatherRunModel>(getWeatherRunModel(conn));
   const broadcastState = mongoCrud(getBroadcastStateModel(conn));
   const directorConfig = mongoCrud(getDirectorConfigModel(conn));
+  const crosswordConfig = mongoCrud(getCrosswordConfigModel(conn));
   const streamRuns = mongoCrud<iRunModel>(getRunModel(conn));
   const streamEncoders = mongoCrud<iStreamEncoderModel>(getStreamEncoderModel(conn));
   const streamSlots = mongoCrud<iStreamSlotModel>(getStreamSlotModel(conn));
@@ -304,6 +316,13 @@ export function createDb(conn: Connection) {
     cams: makeCamRepo(getCamModel(conn)),
     seaPoints: makeSeaPointRepo(getSeaPointModel(conn)),
     shortScripts: makeShortScriptRepo(getShortScriptModel(conn)),
+    // Crossword channel (docs/crossword-mode-plan.md §9).
+    crosswordConfig,
+    crosswordPuzzles: makeCrosswordPuzzleRepo(getCrosswordPuzzleModel(conn)),
+    crosswordGames: makeCrosswordGameRepo(getCrosswordGameModel(conn)),
+    crosswordSolves: makeCrosswordSolveRepo(getCrosswordSolveModel(conn)),
+    crosswordPlayers: makeCrosswordPlayerRepo(getCrosswordPlayerModel(conn)),
+    crosswordBank: makeCrosswordBankRepo(conn),
     ads: makeAdRepo(getAdModel(conn), blobs.ad),
     adExposures: makeAdExposureRepo(getAdExposureModel(conn)),
     adminImages: makeAdminImageRepo(getAdminImageModel(conn), blobs.adminImage),
@@ -415,6 +434,32 @@ export function createDb(conn: Connection) {
       return !!res.success;
     },
 
+    /** A scene's crossword config merged over the defaults (not persisted until saved). */
+    async getOrInitCrosswordConfig(sceneId: string): Promise<CrosswordConfig> {
+      const existing = await crosswordConfig.getByID(sceneId);
+      return mergeCrosswordConfig(DEFAULT_CROSSWORD_CONFIG, existing.success && existing.data ? (existing.data as any) : null);
+    },
+
+    /** Persist a merged crossword-config patch for a scene; returns the merged config. */
+    async saveCrosswordConfig(sceneId: string, patch: Record<string, unknown>): Promise<CrosswordConfig> {
+      const merged = mergeCrosswordConfig(await this.getOrInitCrosswordConfig(sceneId), patch as any);
+      await crosswordConfig.upsertByID(sceneId, merged as any);
+      return merged;
+    },
+
+    /** Remove a scene's crossword config and game (scene-deletion cleanup). */
+    async deleteCrosswordScene(sceneId: string): Promise<void> {
+      await crosswordConfig.deleteByID(sceneId);
+      await this.crosswordGames.remove(sceneId);
+    },
+
+    /** Ids of scenes whose surface is "crossword". */
+    async crosswordScenes(): Promise<string[]> {
+      const res = await broadcastState.getAll({ surface: "crossword" } as any, { limit: 0 });
+      const rows = (res.success && res.data ? res.data : []) as { id: string }[];
+      return rows.map((r) => r.id);
+    },
+
     /** Scene ids that currently have the director set to "auto". */
     async autoDirectorScenes(): Promise<string[]> {
       const res = await directorConfig.getAll({ mode: "auto" }, { limit: 0 });
@@ -431,7 +476,7 @@ export function createDb(conn: Connection) {
 
     /**
      * All broadcast scenes (the "default" main scene + named ones), as SceneMeta
-     * `{ id, name, updatedAt, watchToken, hidden }` sorted with main first then
+     * `{ id, name, updatedAt, watchToken, hidden, surface }` sorted with main first then
      * by name. Hidden scenes ARE listed (admin pickers need them); viewer-facing
      * lists filter on `hidden`.
      */
@@ -445,6 +490,7 @@ export function createDb(conn: Connection) {
           updatedAt: d.updated ?? d.updatedAt,
           watchToken: d.watchToken as string | undefined,
           hidden: d.hidden === true,
+          surface: sceneSurface(d),
         }))
         .sort((a: { id: string; name: string }, b: { id: string; name: string }) =>
           a.id === MAIN_SCENE_ID ? -1 : b.id === MAIN_SCENE_ID ? 1 : a.name.localeCompare(b.name),
@@ -477,7 +523,7 @@ export function createDb(conn: Connection) {
       id: string,
       name: string,
       seed?: Partial<typeof DEFAULT_CONTROL_STATE>,
-      opts: { hidden?: boolean } = {},
+      opts: { hidden?: boolean; surface?: SceneSurface } = {},
     ) {
       const base = seed ?? DEFAULT_CONTROL_STATE;
       const created = await broadcastState.upsertByID(id, {
@@ -485,6 +531,7 @@ export function createDb(conn: Connection) {
         ...base,
         name,
         ...(typeof opts.hidden === "boolean" ? { hidden: opts.hidden } : {}),
+        ...(isSceneSurface(opts.surface) ? { surface: opts.surface } : {}),
       } as any);
       return created.data ?? null;
     },

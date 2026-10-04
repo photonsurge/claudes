@@ -14,12 +14,17 @@ describe("BroadcastStateSchema", () => {
 
   // Scene metadata lives on the same doc beside ControlState — the same strict
   // schema drops it just as silently.
-  it("persists the scene metadata fields (name, watchToken, hidden)", () => {
+  it("persists the scene metadata fields (name, watchToken, hidden, surface)", () => {
     const persisted = new Set(Object.keys(BroadcastStateSchema.paths));
-    expect(["name", "watchToken", "hidden"].filter((k) => !persisted.has(k))).toEqual([]);
+    expect(["name", "watchToken", "hidden", "surface"].filter((k) => !persisted.has(k))).toEqual([]);
   });
 
-  it("keeps hidden out of ControlState (it is scene metadata, not broadcast state)", () => {
+  it("keeps hidden and surface out of ControlState (scene metadata, not broadcast state)", () => {
     expect(DEFAULT_CONTROL_STATE).not.toHaveProperty("hidden");
+    expect(DEFAULT_CONTROL_STATE).not.toHaveProperty("surface");
+  });
+
+  it("surface has no default, so a legacy doc reads as globe", () => {
+    expect((BroadcastStateSchema.path("surface") as any).defaultValue).toBeUndefined();
   });
 });

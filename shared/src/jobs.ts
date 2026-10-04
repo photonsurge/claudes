@@ -169,6 +169,34 @@ const SHORT_VIDEO_JOBS: TriggerableJob[] = [
   },
 ];
 
+/**
+ * Crossword channel (docs/crossword-mode-plan.md §7). The bank index is built
+ * once after the operator imports the word bank; top-up builds a puzzle for
+ * every enabled crossword scene that is short of stock.
+ */
+const CROSSWORD_JOBS: TriggerableJob[] = [
+  {
+    id: "crossword-bank-index",
+    label: "Index the crossword word bank",
+    description:
+      "Build the indexes on the imported word bank (crosswordbankwords, crosswordbankclues). Run once after each import; safe to re-run. Takes a while on a million words.",
+    domain: "crossword",
+    type: "crossword",
+    event: "bankIndex",
+    group: "Crosswords",
+  },
+  {
+    id: "crossword-top-up",
+    label: "Top up crossword puzzles",
+    description:
+      "Build one puzzle for each enabled crossword channel whose unplayed stock is below its target. Also runs every 30 minutes on its own.",
+    domain: "crossword",
+    type: "crossword",
+    event: "topUp",
+    group: "Crosswords",
+  },
+];
+
 export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   {
     id: "weather-check",
@@ -951,6 +979,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Countries & Regions",
   },
   ...SHORT_VIDEO_JOBS,
+  ...CROSSWORD_JOBS,
 ];
 
 export const getTriggerableJob = (id: string): TriggerableJob | undefined =>

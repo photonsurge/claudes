@@ -2,7 +2,7 @@ import mongoose, { Connection } from "mongoose";
 import { randomBytes } from "node:crypto";
 import { iGeneralModel, mongoTimestamps } from "../interfaces/iGeneralModel";
 import { getModel } from "../utill/getModel";
-import type { ControlState } from "../control";
+import type { ControlState, SceneSurface } from "../control";
 import {
   AUDIO_MODES,
   DEFAULT_IDLE_ORBIT_DEG,
@@ -46,6 +46,8 @@ export interface iBroadcastStateModel extends iBroadcastState {
   watchToken?: string;
   /** Kept off viewer-facing scene lists (SceneMeta.hidden). Not part of ControlState. */
   hidden?: boolean;
+  /** Which kind of channel (SceneMeta.surface). Missing means "globe". Not part of ControlState. */
+  surface?: SceneSurface;
 }
 
 export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
@@ -57,6 +59,8 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     watchToken: { type: String, required: false, default: () => randomBytes(24).toString("hex") },
     /** Production scene (the short-video scenes): off the public home page and launcher. */
     hidden: { type: Boolean, required: false, default: false },
+    /** Channel kind (docs/crossword-mode-plan.md §3). No default: missing reads as "globe". */
+    surface: { type: String, required: false, enum: ["globe", "crossword"] },
     activeVariable: { type: String, required: false, default: "temp" },
     fhr: { type: Number, required: true, default: 0 },
     basemap: { type: String, required: true, default: "dark" },
