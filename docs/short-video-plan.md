@@ -454,7 +454,13 @@ the video reaches the front.
   the main areas video and not on a single-place one.
 - **Quota:** about 400 units a video (create, bind, two transitions, thumbnail,
   description, privacy), of 10,000 a day.
-- Chat is off and nothing is announced.
+- **No chat.** A video is not a live show, even though it is made through a broadcast.
+  The run is created with `chat` off, so the worker never polls or posts to chat, and
+  chat commands can't steer the director. Nothing is announced (`announce` off, no
+  hydra post). The broadcast's live chat on YouTube itself also needs to be off, so the
+  video has no chat replay. That is set on the broadcast if the API allows it, and
+  otherwise in YouTube Studio's live defaults for the account. Check this on the first
+  render.
 
 ### 6.4 Changes the run pipeline needs
 
@@ -979,7 +985,8 @@ first real render should check.
 
 **YouTube quota at 07:00 London (affects WP9, §8.1).** The quota day resets at
 midnight Pacific, which is 08:00 London. A 07:00 batch runs in the last hour of the
-quota day, after the live channels' chat polling has spent most of it. The meter keeps
+quota day, after the always-on live channels' chat polling has spent most of it (the
+videos themselves poll no chat, §6.3). The meter keeps
 `YOUTUBE_QUOTA_RESERVE` (1,500) for go-live and end, and that reserve is shared with
 the live channels' own recycles. Three videos at about 400 units each take 1,200 of it.
 Options: schedule the batch after 08:00 London, raise the reserve, or have the queue
