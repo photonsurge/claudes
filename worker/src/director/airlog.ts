@@ -29,7 +29,12 @@ export async function airLogCut(
   db: AppDb,
   r: AirLogRunnerRef,
   next: Segment,
-  opts: { skipRequested: boolean; breaking: boolean; now: number },
+  opts: {
+    skipRequested: boolean;
+    breaking: boolean;
+    now: number;
+    command?: { source: "operator" | "viewer" | "system"; author?: string };
+  },
 ): Promise<void> {
   try {
     if (!r.runId) r.runId = await db.airLog.startRun(r.sceneId, new Date(opts.now));
@@ -43,6 +48,7 @@ export async function airLogCut(
       subtitle: next.subtitle,
       icon: next.icon,
       breaking: opts.breaking,
+      ...(opts.command ? { command: opts.command } : {}),
       timesShown: r.timesShown ?? 1,
       center: next.camera.center,
       zoom: next.camera.zoom,

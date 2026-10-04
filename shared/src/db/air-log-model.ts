@@ -56,6 +56,8 @@ export interface iAirEntry extends iGeneralModel {
   icon?: string;
   /** Cut was picked by the breaking-news priority tier, not fair rotation. */
   breaking: boolean;
+  /** Who ordered this cut through the director command queue, if anyone. */
+  command?: { source: "operator" | "viewer" | "system"; author?: string };
   /** Nth airing of this exact segment in the session (1 = first time). */
   timesShown: number;
   /** Camera frame: [lng, lat] + zoom (the globe view for global kinds). */
@@ -115,7 +117,7 @@ const AirEntryStopSchema = new mongoose.Schema<iAirEntryStop>(
   { _id: false },
 );
 
-const AirEntrySchema = new mongoose.Schema<iAirEntryModel>(
+export const AirEntrySchema = new mongoose.Schema<iAirEntryModel>(
   {
     id: { type: String, required: true, unique: true, default: () => uuidv4() },
     runId: { type: String, required: true },
@@ -127,6 +129,13 @@ const AirEntrySchema = new mongoose.Schema<iAirEntryModel>(
     subtitle: { type: String, required: false },
     icon: { type: String, required: false },
     breaking: { type: Boolean, required: true, default: false },
+    command: {
+      type: new mongoose.Schema(
+        { source: { type: String, required: true, enum: ["operator", "viewer", "system"] }, author: { type: String, required: false } },
+        { _id: false },
+      ),
+      required: false,
+    },
     timesShown: { type: Number, required: true, default: 1 },
     center: { type: [Number], required: true },
     zoom: { type: Number, required: true },

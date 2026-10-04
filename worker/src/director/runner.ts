@@ -71,6 +71,11 @@ export interface SceneRunner {
   /** The open AirRun (as-run log) for this session — set on the first cut.
    *  A worker crash leaves it dangling; the next session's startRun closes it. */
   runId?: string;
+  /** Set while a Pause command freezes the current shot: the time it had left
+   *  is banked and handed back on resume (see commands.ts). */
+  paused?: { since: number; until?: number; remainingMs: number };
+  /** The first few commands waiting in the queue, for the operator readout. */
+  queued: NonNullable<DirectorState["queued"]>;
 }
 
 export const newRunner = (sceneId: string): SceneRunner => ({
@@ -88,6 +93,7 @@ export const newRunner = (sceneId: string): SceneRunner => ({
   lastCutWasPriority: false,
   lastSkipNonce: 0,
   lastEmit: 0,
+  queued: [],
 });
 
 /** Per-segment airing counts BEFORE a cut (id → times shown). */
@@ -204,6 +210,8 @@ export function emitState(r: SceneRunner, now: number): void {
     upNext: r.upNext,
     lastShownAt: r.lastShownAt,
     timesShown: r.timesShown,
+    ...(r.paused ? { paused: { since: r.paused.since, until: r.paused.until } } : {}),
+    queued: r.queued,
   };
   emitWorkerEvent({ type: DIRECTOR_STATE, data: state });
   r.lastEmit = now;
@@ -220,6 +228,8 @@ export interface CutMeta {
   skipRequested: boolean;
   /** The incoming pick came via the break-in (priority) tier. */
   breaking: boolean;
+  /** The cut was ordered through the command queue — recorded on the as-run log. */
+  command?: { source: "operator" | "viewer" | "system"; author?: string };
 }
 
 /** Side effects, injectable for tests. */
@@ -321,7 +331,12 @@ export async function performCut(
 
   // As-run log: persist the cut (and close the outgoing entry) for
   // /admin/runs review. Best-effort — airLogCut never throws.
-  await deps.airLogCut(db, r, next, { skipRequested: meta.skipRequested, breaking: meta.breaking, now });
+  await deps.airLogCut(db, r, next, {
+    skipRequested: meta.skipRequested,
+    breaking: meta.breaking,
+    now,
+    ...(meta.command ? { command: meta.command } : {}),
+  });
 
   log(TAG, `cut`, { sceneId: r.sceneId, seq: r.seq, kind: next.kind, id: next.id, times: r.timesShown });
 }

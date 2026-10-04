@@ -39,6 +39,7 @@ import DirectorHolds from "./DirectorHolds";
 import DirectorTuning from "./DirectorTuning";
 import DirectorMapTypes from "./DirectorMapTypes";
 import DirectorSlides from "./DirectorSlides";
+import DirectorCommandBar from "./DirectorCommandBar";
 import { box } from "./panelBox";
 
 const TABS = [
@@ -112,6 +113,7 @@ export default function DirectorPanel({
       />
 
       <DirectorOnAirReadout auto={auto} live={live} />
+      {auto && !showSettings ? <DirectorCommandBar sceneId={sceneId} live={live} kinds={config.kinds} /> : null}
       <DirectorRecentlyAired sceneId={sceneId} live={live} visible={auto && !showSettings} />
 
       {showForm ? (

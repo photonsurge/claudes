@@ -18,9 +18,12 @@ export default function DirectorOnAirReadout({ auto, live }: { auto: boolean; li
   if (!live?.segment) return <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 12 }}>Starting up…</div>;
 
   const remaining = live.endsAt ? Math.max(0, Math.round((live.endsAt - now) / 1000)) : 0;
+  const status = live.paused
+    ? `ON AIR · PAUSED${live.paused.until ? ` · resumes in ${Math.max(0, Math.round((live.paused.until - now) / 1000))}s` : ""}`
+    : `ON AIR · ${remaining}s`;
   return (
     <div style={{ ...box, marginBottom: 12, padding: 10, borderColor: "#3a4a66" }}>
-      <div style={{ fontSize: 11, color: "#ff6a6a", fontWeight: 700, letterSpacing: 1 }}>ON AIR · {remaining}s</div>
+      <div style={{ fontSize: 11, color: live.paused ? "#ffb454" : "#ff6a6a", fontWeight: 700, letterSpacing: 1 }}>{status}</div>
       <div style={{ fontSize: 15, fontWeight: 700, marginTop: 2 }}>{live.segment.title}</div>
       {live.segment.subtitle ? <div style={{ fontSize: 12, opacity: 0.8 }}>{live.segment.subtitle}</div> : null}
       {live.upNext.length ? (
@@ -29,6 +32,17 @@ export default function DirectorOnAirReadout({ auto, live }: { auto: boolean; li
             <div key={i}>
               {i === 0 ? "Up next: " : ""}
               {upNextLabel(u)}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {live.queued?.length ? (
+        <div style={{ fontSize: 11, color: "#7fb3ff", marginTop: 6 }} aria-label="Command queue">
+          {live.queued.map((q, i) => (
+            <div key={q.id}>
+              {i === 0 ? "Queued: " : ""}
+              {q.label}
+              {q.source === "viewer" ? " (viewer)" : ""}
             </div>
           ))}
         </div>

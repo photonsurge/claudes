@@ -134,6 +134,8 @@ import { getDirectorConfigModel } from "./director-config-model";
 import { getRunModel, iRunModel } from "./run-model";
 import { getChatLogMessageModel } from "./chat-log-model";
 import { makeChatLogRepo } from "./chat-log-repo";
+import { getDirectorCommandModel } from "./director-command-model";
+import { makeDirectorCommandRepo } from "./director-command-repo";
 import { getStreamEncoderModel, iStreamEncoderModel } from "./stream-encoder-model";
 import { getStreamSlotModel, iStreamSlotModel } from "./stream-slot-model";
 import { getYoutubeAccountModel, iYoutubeAccountModel } from "./youtube-account-model";
@@ -303,6 +305,7 @@ export function createDb(conn: Connection) {
     logs: mongoCrud(getLogModel(conn)),
     airLog: makeAirLogRepo(getAirRunModel(conn), getAirEntryModel(conn)),
     chatLog: makeChatLogRepo(getChatLogMessageModel(conn)),
+    directorCommands: makeDirectorCommandRepo(getDirectorCommandModel(conn)),
     users: makeUserRepo(getUserModel(conn)),
     broadcastState,
     directorConfig,

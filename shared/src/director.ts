@@ -361,6 +361,11 @@ export interface DirectorState {
   lastShownAt?: number;
   /** How many times this exact segment has aired this session (incl. now). */
   timesShown?: number;
+  /** Operator readout: the director is frozen on the current shot by a Pause
+   *  command (`until` absent = until Resume). Nothing expires or breaks in. */
+  paused?: { since: number; until?: number };
+  /** Operator readout: the first few commands waiting in the queue. */
+  queued?: { id: string; label: string; source: "operator" | "viewer" | "system" }[];
 }
 
 export type UpNextItem = DirectorState["upNext"][number];

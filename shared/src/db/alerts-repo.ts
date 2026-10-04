@@ -629,6 +629,12 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       await model.updateOne({ id: alertId }, { $set }).exec();
     },
 
+    /** One alert by its (source, identifier) pair — the subject of a `storm:` segment id. */
+    async bySourceIdentifier(source: string, identifier: string): Promise<iAlertModel | null> {
+      const doc = await model.findOne({ source, identifier }, { raw: 0 }).lean().exec();
+      return doc ? strip(doc) : null;
+    },
+
     /** One alert by id, full doc (including `raw` — the detail page shows it). */
     async getById(id: string): Promise<iAlertModel | null> {
       const doc = await model.findOne({ id }).lean().exec();

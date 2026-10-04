@@ -41,6 +41,7 @@ import ControlPanel from "../../components/ControlPanel";
 import DirectorPanel, { type TabId as DirectorTabId } from "../../components/DirectorPanel";
 import StreamPanel from "../../components/StreamPanel";
 import ViewingOverlay from "../../components/ViewingOverlay";
+import TakeToAir from "../../components/TakeToAir";
 import QuakeReport from "../../components/broadcast/QuakeReport";
 import TrackInfoPanel from "../../components/broadcast/TrackInfoPanel";
 import AlertLegend from "../../components/AlertLegend";
@@ -100,7 +101,9 @@ export default function ControlPage() {
     if (director?.active && director.segment && director.seq !== lastSeq.current) {
       lastSeq.current = director.seq;
       setCut(director.segment);
-      setSelected(null); // the director owns the card while it's driving
+      // A selection the operator just took to air is done; any other stays
+      // pinned so it can still be taken (or dismissed) while the show runs.
+      setSelected((sel) => (sel && sel.id === director.segment?.id ? null : sel));
       globe.current?.flyTo(director.segment.camera.center, director.segment.camera.zoom);
     } else if (!director?.active && lastSeq.current !== -1) {
       lastSeq.current = -1;
@@ -237,9 +240,9 @@ export default function ControlPage() {
           pulseAt={eventPulse(director)}
           glowCountryIso={activeCountryIso(director, shown.camera.center)}
           glowRegionBbox={activeRegionBbox(director, shown.camera)}
-          // Click-to-select is only live while the director is idle — a cut owns
-          // the on-air card, so manual selection is suppressed during playback.
-          onSelect={cut ? undefined : setSelected}
+          // Click-to-select works while the director drives too: the SELECTED
+          // card then offers Take to air (a director command).
+          onSelect={setSelected}
           // While a director cut is on air it owns the camera (imperative flyTo);
           // don't persist those frames or the operator's manual baseline drifts.
           // MUST merge functionally: while spinning, camera ticks arrive every
@@ -260,18 +263,7 @@ export default function ControlPage() {
         {shown.showAlerts || shown.showSeismic || shown.showAurora || shown.showMagneticField ? (
           <AlertLegend alerts={alerts} activeHazard={alertStep?.hazard ?? null} quakes={quakes} aurora={aurora} geomag={geomag} />
         ) : null}
-        {director?.active && onAir ? (
-          <ViewingOverlay
-            segment={onAir}
-            variable={shown.activeVariable}
-            state={shown}
-            upNext={director.upNext}
-            lastShownAt={director.lastShownAt}
-            timesShown={director.timesShown}
-            draggable
-            manifest={manifest}
-          />
-        ) : selected ? (
+        {selected ? (
           <ViewingOverlay
             segment={selected}
             variable={shown.activeVariable}
@@ -282,6 +274,18 @@ export default function ControlPage() {
             accent="#38bdf8"
             onClose={() => setSelected(null)}
             manifest={manifest}
+            footer={directorAuto ? <TakeToAir sceneId={sceneId} segment={selected} /> : undefined}
+          />
+        ) : director?.active && onAir ? (
+          <ViewingOverlay
+            segment={onAir}
+            variable={shown.activeVariable}
+            state={shown}
+            upNext={director.upNext}
+            lastShownAt={director.lastShownAt}
+            timesShown={director.timesShown}
+            draggable
+            manifest={manifest}
           />
         ) : null}
 
@@ -290,7 +294,7 @@ export default function ControlPage() {
             blurb) for the clicked volcano/notable track. Top-right, clear of the
             top-left legend and the bottom-left "now viewing" card. */}
         {(() => {
-          const seg = director?.active && onAir ? onAir : selected;
+          const seg = selected ?? (director?.active && onAir ? onAir : null);
           if (!seg) return null;
           if (seg.trackInfo) {
             return (
