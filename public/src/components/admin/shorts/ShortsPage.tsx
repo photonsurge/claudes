@@ -8,8 +8,9 @@
  * duplicate, delete; each format's editor is /admin/shorts/formats/:id), and
  * the Renders section (§6.7): Render on a script row or from the generate form
  * opens the Render form (§6.1); the section lists every queue and recent
- * render with its controls. No timeline editing or scheduling yet — those join
- * this page as their own sections.
+ * render with its controls, and the Schedules section (§8): repeating batches,
+ * Run batch now, each row linking its last batch in the Renders section. No
+ * timeline editing yet.
  *
  * Renders update live from the socket run events (useStreams, the same
  * run:state / run:status the streams page uses) plus a poll of
@@ -35,6 +36,7 @@ import PreviewPane from "./PreviewPane";
 import ScriptsTable from "./ScriptsTable";
 import RenderDialog, { type RenderTarget } from "./RenderDialog";
 import RendersSection from "./RendersSection";
+import SchedulesSection from "./SchedulesSection";
 import { renderIsActive } from "@photonsurge/shared/short-render";
 import { controlRender, useRenders, type RenderAction } from "../../../lib/renders";
 import { useStreams, useYoutubeVideoStats } from "../../../lib/stream";
@@ -55,6 +57,12 @@ export default function ShortsPage() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [renderTarget, setRenderTarget] = useState<RenderTarget | null>(null);
+  // A schedule batch the Renders section is narrowed to (§8: the row links its last batch).
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const showBatch = useCallback((id: string) => {
+    setBatchId(id);
+    document.getElementById("renders")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  }, []);
   const { data: renders, error: rendersError, refresh: refreshRenders } = useRenders();
   const { snapshot, health } = useStreams();
 
@@ -223,6 +231,18 @@ export default function ShortsPage() {
           youtubeStats={youtubeStats}
           statsError={statsError}
           onAction={onRenderAction}
+          batchId={batchId}
+          onClearBatch={() => setBatchId(null)}
+        />
+
+        <SchedulesSection
+          formats={data?.formats ?? []}
+          scripts={scripts}
+          onShowBatch={showBatch}
+          onQueued={(r) => {
+            refreshRenders();
+            showBatch(r.batchId);
+          }}
         />
 
         <FormatsSection onChanged={refresh} />

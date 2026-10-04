@@ -130,3 +130,19 @@ it("says how to start when nothing has rendered", () => {
   setup({ queues: [], renders: [] });
   expect(screen.getByText(/Assign an OBS encoder to videos/)).toBeInTheDocument();
 });
+
+it("narrows to one schedule batch (a schedule row's Show its renders, §8), and clears", () => {
+  const onClearBatch = jest.fn();
+  const data: RendersResponse = {
+    ...DATA,
+    renders: [...DATA.renders, row("b1", { batchId: "b-42", scheduleId: "sch1" }), row("b2", { batchId: "b-42", status: "done", endedAt: 9 })],
+  };
+  setup(data, { batchId: "b-42", onClearBatch });
+  expect(screen.getByTestId("batch-filter")).toHaveTextContent("2 videos");
+  expect(screen.getByTestId("render-b1")).toBeInTheDocument();
+  expect(screen.getByTestId("render-b2")).toBeInTheDocument();
+  expect(screen.queryByTestId("render-q1")).toBeNull();
+  expect(screen.queryByTestId("render-live1")).toBeNull();
+  fireEvent.click(within(screen.getByTestId("batch-filter")).getByRole("button", { name: "Close" }));
+  expect(onClearBatch).toHaveBeenCalled();
+});
