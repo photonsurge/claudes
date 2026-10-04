@@ -28,6 +28,7 @@ export const ADMIN_LINKS: AdminLink[] = [
   { group: "Broadcast", href: "/watch", title: "Watch", desc: "The output view that goes to stream.", ready: true },
   { group: "Broadcast", href: "/admin/scenes", title: "Channels", desc: "Broadcast channels — each a named /watch/:id globe with its own controls & stream.", ready: true },
   { group: "Broadcast", href: "/admin/streams", title: "Live streams", desc: "Constant streams, encoders and one-off YouTube+OBS runs per channel.", ready: true },
+  { group: "Broadcast", href: "/admin/crosswords", title: "Crosswords", desc: "Crossword channels' word bank, puzzle stock and players.", ready: true },
   { group: "Broadcast", href: "/admin/shorts", title: "Short videos", desc: "Generate round-up video scripts and preview them on the preview scene.", ready: true },
   { group: "Broadcast", href: "/admin/youtube", title: "YouTube accounts", desc: "Connect streaming channels + check OAuth/OBS wiring.", ready: true },
   { group: "Broadcast", href: "/admin/access", title: "Access", desc: "Tokened OBS/YouTube URLs per channel — copy, rotate.", ready: true },
