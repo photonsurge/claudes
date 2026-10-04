@@ -8,10 +8,9 @@ dist/
 !.env.sample
 heapdump/
 *.heap*
-logs/
-# ...but not the /admin/logs page or its API route, which are code.
-!public/src/app/admin/logs/
-!public/src/app/api/admin/logs/
+# Log output only: a top-level logs/ folder and *.log files. A bare logs/ would
+# also hide code folders such as public/src/app/admin/logs/.
+/logs/
 *.log
 blobs/
 .DS_Store
