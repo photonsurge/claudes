@@ -1,0 +1,375 @@
+{
+  "chapter_number": 5,
+  "chapter_title": "Revelations",
+  "summary": "In a tense confrontation, Inspector Crowe gathers all suspects in the study, revealing the truth behind Edgar's murder and unmasking Beatrice as the killer. The aftermath leaves the family in shambles as secrets are laid bare.",
+  "runtime_target_sec": 1800,
+  "continuity": {
+    "must_reference_clues": [],
+    "must_not_reveal": [],
+    "state_in": {
+      "location": "Ravenhurst Manor",
+      "known_facts": [
+        "Inspector Crowe has gathered all suspects in the study.",
+        "Tension is high as secrets are about to be revealed."
+      ]
+    },
+    "state_out": {
+      "location": "Ravenhurst Manor",
+      "new_facts": [
+        "Beatrice's true motive and method are revealed.",
+        "The family dynamics are irrevocably changed."
+      ]
+    }
+  },
+  "scenes": [
+    {
+      "scene_id": "ch_05_scene_01",
+      "order": 1,
+      "location": "Study, Ravenhurst Manor",
+      "time": "11:45 PM",
+      "mood": "Tense and revealing",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Dim, flickering lights",
+        "bg_sfx": [
+          "Thunder rumbling",
+          "Clock ticking ominously",
+          "Rain lashing against the windows"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_05_beat_01",
+          "order": 1,
+          "type": "action",
+          "actor": "Inspector Alistair Crowe",
+          "speaker": "null",
+          "text": "Crowe stands at the head of the table, surveying the tense faces of the suspects.",
+          "line": null,
+          "emotion": "Determined",
+          "pace_wpm": null,
+          "duration_sec": 5,
+          "shot_hint": "Wide shot of the study, focusing on Crowe's authoritative stance.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_05_beat_02",
+          "order": 2,
+          "type": "dialogue",
+          "actor": "Inspector Crowe",
+          "speaker": "Crowe",
+          "text": "Ladies and gentlemen, the truth behind Edgar Blackwood's murder is more twisted than any of you could imagine.",
+          "line": null,
+          "emotion": "Confident",
+          "pace_wpm": 100,
+          "duration_sec": 10,
+          "shot_hint": "Medium shot of Crowe, his eyes scanning the room.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_03",
+            "style": "assertive",
+            "prosody": "steady"
+          },
+          "subtext": "Crowe's tone commands attention."
+        },
+        {
+          "beat_id": "ch_05_beat_03",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Beatrice Blackwood",
+          "speaker": "Beatrice",
+          "text": "You can't possibly believe I had anything to do with it, Inspector!",
+          "line": null,
+          "emotion": "Defensive",
+          "pace_wpm": 90,
+          "duration_sec": 8,
+          "shot_hint": "Close-up on Beatrice, her eyes wide with disbelief.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "female_01",
+            "style": "defensive",
+            "prosody": "fast"
+          },
+          "subtext": "Her defensiveness hints at deeper fears."
+        },
+        {
+          "beat_id": "ch_05_beat_04",
+          "order": 4,
+          "type": "dialogue",
+          "actor": "Inspector Crowe",
+          "speaker": "Crowe",
+          "text": "But you did, Beatrice. You wanted your freedom from Edgar's control, didn't you?",
+          "line": null,
+          "emotion": "Accusatory",
+          "pace_wpm": 100,
+          "duration_sec": 9,
+          "shot_hint": "Medium shot of Crowe, stepping closer to Beatrice.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_03",
+            "style": "accusatory",
+            "prosody": "intense"
+          },
+          "subtext": "Crowe's words cut deep."
+        },
+        {
+          "beat_id": "ch_05_beat_05",
+          "order": 5,
+          "type": "action",
+          "actor": "Beatrice Blackwood",
+          "speaker": "null",
+          "text": "Beatrice's face pales as the realization sinks in.",
+          "line": null,
+          "emotion": "Fearful",
+          "pace_wpm": null,
+          "duration_sec": 6,
+          "shot_hint": "Close-up on Beatrice, a mixture of fear and anger.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        }
+      ],
+      "transitions": {
+        "in": "Fade in from black.",
+        "out": "Cut to a close-up of Beatrice's face."
+      }
+    },
+    {
+      "scene_id": "ch_05_scene_02",
+      "order": 2,
+      "location": "Study, Ravenhurst Manor",
+      "time": "11:50 PM",
+      "mood": "Dramatic and tense",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Dim, flickering lights",
+        "bg_sfx": [
+          "Thunder crashing",
+          "Wind howling",
+          "Clock ticking loudly"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_05_beat_06",
+          "order": 1,
+          "type": "dialogue",
+          "actor": "Julian Blackwood",
+          "speaker": "Julian",
+          "text": "Mother, you can't let him frame you for this! We need to come up with a story.",
+          "line": null,
+          "emotion": "Panicked",
+          "pace_wpm": 100,
+          "duration_sec": 8,
+          "shot_hint": "Close-up on Julian, desperation in his eyes.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_01",
+            "style": "urgent",
+            "prosody": "fast"
+          },
+          "subtext": "Julian's panic is palpable."
+        },
+        {
+          "beat_id": "ch_05_beat_07",
+          "order": 2,
+          "type": "dialogue",
+          "actor": "Beatrice Blackwood",
+          "speaker": "Beatrice",
+          "text": "You think I wanted this? I wanted to be free, not a murderer!",
+          "line": null,
+          "emotion": "Anguished",
+          "pace_wpm": 90,
+          "duration_sec": 9,
+          "shot_hint": "Medium shot of Beatrice, her hands trembling.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "female_01",
+            "style": "emotional",
+            "prosody": "slow"
+          },
+          "subtext": "Her anguish reveals her true feelings."
+        },
+        {
+          "beat_id": "ch_05_beat_08",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Inspector Crowe",
+          "speaker": "Crowe",
+          "text": "You locked the door after you poisoned him, didn’t you? You thought you could hide the truth.",
+          "line": null,
+          "emotion": "Revealing",
+          "pace_wpm": 100,
+          "duration_sec": 10,
+          "shot_hint": "Close-up on Crowe, his gaze piercing.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_03",
+            "style": "revealing",
+            "prosody": "steady"
+          },
+          "subtext": "Crowe's deduction is chilling."
+        },
+        {
+          "beat_id": "ch_05_beat_09",
+          "order": 4,
+          "type": "action",
+          "actor": "Clara Finch",
+          "speaker": "null",
+          "text": "Clara gasps, stepping back as the realization hits her.",
+          "line": null,
+          "emotion": "Shocked",
+          "pace_wpm": null,
+          "duration_sec": 5,
+          "shot_hint": "Medium shot of Clara, her face pale.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        }
+      ],
+      "transitions": {
+        "in": "Cut back to the study.",
+        "out": "Fade to black."
+      }
+    },
+    {
+      "scene_id": "ch_05_scene_03",
+      "order": 3,
+      "location": "Study, Ravenhurst Manor",
+      "time": "11:55 PM",
+      "mood": "Climactic and revealing",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Dim, shadows deepening",
+        "bg_sfx": [
+          "Thunder crashing",
+          "Wind howling",
+          "Clock ticking loudly"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_05_beat_10",
+          "order": 1,
+          "type": "dialogue",
+          "actor": "Inspector Crowe",
+          "speaker": "Crowe",
+          "text": "Beatrice Blackwood, you are under arrest for the murder of Edgar Blackwood.",
+          "line": null,
+          "emotion": "Resolute",
+          "pace_wpm": 100,
+          "duration_sec": 10,
+          "shot_hint": "Wide shot of the study, Crowe standing tall.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_03",
+            "style": "firm",
+            "prosody": "steady"
+          },
+          "subtext": "The finality of Crowe's words hangs in the air."
+        },
+        {
+          "beat_id": "ch_05_beat_11",
+          "order": 2,
+          "type": "action",
+          "actor": "Beatrice Blackwood",
+          "speaker": "null",
+          "text": "Beatrice collapses into a chair, tears streaming down her face.",
+          "line": null,
+          "emotion": "Devastated",
+          "pace_wpm": null,
+          "duration_sec": 6,
+          "shot_hint": "Close-up on Beatrice, her world crumbling.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_05_beat_12",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Julian Blackwood",
+          "speaker": "Julian",
+          "text": "Mother, no! This can't be happening!",
+          "line": null,
+          "emotion": "Desperate",
+          "pace_wpm": 100,
+          "duration_sec": 9,
+          "shot_hint": "Medium shot of Julian, anguish written on his face.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_01",
+            "style": "urgent",
+            "prosody": "fast"
+          },
+          "subtext": "Julian's despair is palpable."
+        },
+        {
+          "beat_id": "ch_05_beat_13",
+          "order": 4,
+          "type": "action",
+          "actor": "Clara Finch",
+          "speaker": "null",
+          "text": "Clara steps forward, her face a mask of shock and sympathy.",
+          "line": null,
+          "emotion": "Sympathetic",
+          "pace_wpm": null,
+          "duration_sec": 5,
+          "shot_hint": "Medium shot of Clara, reaching out to Beatrice.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        }
+      ],
+      "transitions": {
+        "in": "Fade in from black.",
+        "out": "Cut to black."
+      }
+    }
+  ],
+  "chapter_audio_plan": {
+    "music_cues": [
+      {
+        "cue_id": "ch_05_music_01",
+        "track": "Dramatic Tension",
+        "start_sec": 0,
+        "duck_under_dialogue": true
+      },
+      {
+        "cue_id": "ch_05_music_02",
+        "track": "Heartbreak Strings",
+        "start_sec": 600,
+        "duck_under_dialogue": true
+      }
+    ],
+    "sfx_cues": [
+      {
+        "cue_id": "ch_05_sfx_01",
+        "name": "Thunder Crash",
+        "start_sec": 0,
+        "gain_db": -5
+      },
+      {
+        "cue_id": "ch_05_sfx_02",
+        "name": "Clock Ticking",
+        "start_sec": 600,
+        "gain_db": -3
+      }
+    ]
+  }
+}

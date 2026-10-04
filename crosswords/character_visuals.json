@@ -1,0 +1,183 @@
+{
+  "image_model": "gpt-image-1",
+  "image_size": "1024x1024",
+  "output_dir": "character_images",
+  "characters": [
+    {
+      "character_name": "Beatrice Blackwood",
+      "options": [
+        {
+          "option_id": "opt_01",
+          "label": "Classic Inked",
+          "style_tags": [
+            "cartoon",
+            "clean line art",
+            "flat colors",
+            "transparent background"
+          ],
+          "image_path": "character_images/beatrice-blackwood-opt_01.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Beatrice Blackwood\n- Role: Widow\n- Appearance: Pale, angular features, severe posture.\n- Portrait brief: A woman of poise, hiding her true feelings behind a mask of mourning.\n- Signature item: Cameo brooch.\n- Palette: charcoal, ivory, muted silver\n\nArt direction:\n- Classic cartoon ink line art with flat colors only.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        },
+        {
+          "option_id": "opt_02",
+          "label": "Graphic Flat",
+          "style_tags": [
+            "cartoon",
+            "graphic flat",
+            "bold outlines",
+            "transparent background"
+          ],
+          "image_path": "character_images/beatrice-blackwood-opt_02.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Beatrice Blackwood\n- Role: Widow\n- Appearance: Pale, angular features, severe posture.\n- Portrait brief: A woman of poise, hiding her true feelings behind a mask of mourning.\n- Signature item: Cameo brooch.\n- Palette: charcoal, ivory, muted silver\n\nArt direction:\n- Graphic flat cartoon style with bold outlines and simple fills.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        },
+        {
+          "option_id": "opt_03",
+          "label": "Minimal Toon",
+          "style_tags": [
+            "cartoon",
+            "minimal toon",
+            "clean silhouette",
+            "transparent background"
+          ],
+          "image_path": "character_images/beatrice-blackwood-opt_03.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Beatrice Blackwood\n- Role: Widow\n- Appearance: Pale, angular features, severe posture.\n- Portrait brief: A woman of poise, hiding her true feelings behind a mask of mourning.\n- Signature item: Cameo brooch.\n- Palette: charcoal, ivory, muted silver\n\nArt direction:\n- Minimal toon style with clean silhouette and controlled palette.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        }
+      ]
+    },
+    {
+      "character_name": "Julian Blackwood",
+      "options": [
+        {
+          "option_id": "opt_01",
+          "label": "Classic Inked",
+          "style_tags": [
+            "cartoon",
+            "clean line art",
+            "flat colors",
+            "transparent background"
+          ],
+          "image_path": "character_images/julian-blackwood-opt_01.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Julian Blackwood\n- Role: Son\n- Appearance: Handsome but tired eyes, restless smile.\n- Portrait brief: A young man caught between charm and desperation.\n- Signature item: Signet ring.\n- Palette: burgundy, navy, brass\n\nArt direction:\n- Classic cartoon ink line art with flat colors only.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        },
+        {
+          "option_id": "opt_02",
+          "label": "Graphic Flat",
+          "style_tags": [
+            "cartoon",
+            "graphic flat",
+            "bold outlines",
+            "transparent background"
+          ],
+          "image_path": "character_images/julian-blackwood-opt_02.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Julian Blackwood\n- Role: Son\n- Appearance: Handsome but tired eyes, restless smile.\n- Portrait brief: A young man caught between charm and desperation.\n- Signature item: Signet ring.\n- Palette: burgundy, navy, brass\n\nArt direction:\n- Graphic flat cartoon style with bold outlines and simple fills.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        },
+        {
+          "option_id": "opt_03",
+          "label": "Minimal Toon",
+          "style_tags": [
+            "cartoon",
+            "minimal toon",
+            "clean silhouette",
+            "transparent background"
+          ],
+          "image_path": "character_images/julian-blackwood-opt_03.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Julian Blackwood\n- Role: Son\n- Appearance: Handsome but tired eyes, restless smile.\n- Portrait brief: A young man caught between charm and desperation.\n- Signature item: Signet ring.\n- Palette: burgundy, navy, brass\n\nArt direction:\n- Minimal toon style with clean silhouette and controlled palette.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        }
+      ]
+    },
+    {
+      "character_name": "Clara Finch",
+      "options": [
+        {
+          "option_id": "opt_01",
+          "label": "Classic Inked",
+          "style_tags": [
+            "cartoon",
+            "clean line art",
+            "flat colors",
+            "transparent background"
+          ],
+          "image_path": "character_images/clara-finch-opt_01.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Clara Finch\n- Role: Secretary\n- Appearance: Sharp gaze, ink-stained fingertips.\n- Portrait brief: A woman of sharp intellect, burdened by secrets.\n- Signature item: Wire spectacles.\n- Palette: olive, cream, slate\n\nArt direction:\n- Classic cartoon ink line art with flat colors only.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        },
+        {
+          "option_id": "opt_02",
+          "label": "Graphic Flat",
+          "style_tags": [
+            "cartoon",
+            "graphic flat",
+            "bold outlines",
+            "transparent background"
+          ],
+          "image_path": "character_images/clara-finch-opt_02.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Clara Finch\n- Role: Secretary\n- Appearance: Sharp gaze, ink-stained fingertips.\n- Portrait brief: A woman of sharp intellect, burdened by secrets.\n- Signature item: Wire spectacles.\n- Palette: olive, cream, slate\n\nArt direction:\n- Graphic flat cartoon style with bold outlines and simple fills.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        },
+        {
+          "option_id": "opt_03",
+          "label": "Minimal Toon",
+          "style_tags": [
+            "cartoon",
+            "minimal toon",
+            "clean silhouette",
+            "transparent background"
+          ],
+          "image_path": "character_images/clara-finch-opt_03.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Clara Finch\n- Role: Secretary\n- Appearance: Sharp gaze, ink-stained fingertips.\n- Portrait brief: A woman of sharp intellect, burdened by secrets.\n- Signature item: Wire spectacles.\n- Palette: olive, cream, slate\n\nArt direction:\n- Minimal toon style with clean silhouette and controlled palette.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        }
+      ]
+    },
+    {
+      "character_name": "Dr. Samuel Hargreaves",
+      "options": [
+        {
+          "option_id": "opt_01",
+          "label": "Classic Inked",
+          "style_tags": [
+            "cartoon",
+            "clean line art",
+            "flat colors",
+            "transparent background"
+          ],
+          "image_path": "character_images/dr-samuel-hargreaves-opt_01.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Dr. Samuel Hargreaves\n- Role: Family physician\n- Appearance: Neatly trimmed beard, clinical composure.\n- Portrait brief: A man of science, torn between duty and desire.\n- Signature item: Leather satchel.\n- Palette: forest green, black, tan\n\nArt direction:\n- Classic cartoon ink line art with flat colors only.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        },
+        {
+          "option_id": "opt_02",
+          "label": "Graphic Flat",
+          "style_tags": [
+            "cartoon",
+            "graphic flat",
+            "bold outlines",
+            "transparent background"
+          ],
+          "image_path": "character_images/dr-samuel-hargreaves-opt_02.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Dr. Samuel Hargreaves\n- Role: Family physician\n- Appearance: Neatly trimmed beard, clinical composure.\n- Portrait brief: A man of science, torn between duty and desire.\n- Signature item: Leather satchel.\n- Palette: forest green, black, tan\n\nArt direction:\n- Graphic flat cartoon style with bold outlines and simple fills.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        },
+        {
+          "option_id": "opt_03",
+          "label": "Minimal Toon",
+          "style_tags": [
+            "cartoon",
+            "minimal toon",
+            "clean silhouette",
+            "transparent background"
+          ],
+          "image_path": "character_images/dr-samuel-hargreaves-opt_03.png",
+          "image_mime_type": "image/png",
+          "prompt": "Create a single-character cartoon portrait.\n\nCharacter:\n- Name: Dr. Samuel Hargreaves\n- Role: Family physician\n- Appearance: Neatly trimmed beard, clinical composure.\n- Portrait brief: A man of science, torn between duty and desire.\n- Signature item: Leather satchel.\n- Palette: forest green, black, tan\n\nArt direction:\n- Minimal toon style with clean silhouette and controlled palette.\n- Bust or half-body framing only\n- Centered subject\n- Transparent background (alpha). No background elements at all.\n- No shadows, glows, texture overlays, particles, lens effects, or atmospheric effects.\n- No text, no watermark, no logo\n- No extra people\n- Keep identity and costume details consistent with this story world"
+        }
+      ]
+    }
+  ]
+}

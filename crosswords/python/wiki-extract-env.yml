@@ -1,0 +1,30 @@
+name: wiki-extract
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11.14
+  - pip=26.0.1
+  - setuptools<81
+    # NEW: database + HTTP
+  - pymongo=4.6.3        # MongoDB client (stable, pure Python)
+  - requests=2.32.3     # simple HTTP fallback if needed
+  - certifi             # TLS sanity (avoids weird SSL issues)
+
+  # Optional but recommended
+  - python-dotenv=1.0.1 # env vars without exporting shell state
+
+  - pip:
+      - click==8.3.1
+      - dateparser==1.3.0
+      - joblib==1.5.3
+      - lru-dict==1.4.1
+      - lupa==2.6
+      - nltk==3.9.2
+      - python-levenshtein==0.27.3
+      - regex==2026.1.15
+      - tqdm==4.67.3
+      - tzlocal==5.3.1
+      - wikitextprocessor==0.4.96
+      - wiktextract==1.99.7
+      # --- NEW: OpenAI-compatible client for vLLM ---
+      - openai==1.60.1

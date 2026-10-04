@@ -1,0 +1,322 @@
+{
+  "chapter_number": 2,
+  "chapter_title": "The Body in the Study",
+  "summary": "As the storm rages on, the guests of Ravenhurst Manor discover Edgar Blackwood's lifeless body in his study. Inspector Crowe arrives to investigate, and initial alibis are presented, revealing the tension among the family members.",
+  "runtime_target_sec": 1800,
+  "continuity": {
+    "must_reference_clues": [
+      "A missing key",
+      "A misfiled ledger"
+    ],
+    "must_not_reveal": [],
+    "state_in": {
+      "location": "Ravenhurst Manor",
+      "known_facts": [
+        "Edgar Blackwood has been found dead.",
+        "The storm continues to rage outside."
+      ]
+    },
+    "state_out": {
+      "location": "Ravenhurst Manor",
+      "new_facts": [
+        "A key piece of evidence is missing."
+      ]
+    }
+  },
+  "scenes": [
+    {
+      "scene_id": "ch_02_scene_01",
+      "order": 1,
+      "location": "Study, Ravenhurst Manor",
+      "time": "9:45 PM",
+      "mood": "Dark and tense",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Dim, flickering lights",
+        "bg_sfx": [
+          "Thunder rumbling",
+          "Rain pelting the windows",
+          "Footsteps echoing"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_02_beat_01",
+          "order": 1,
+          "type": "action",
+          "actor": "null",
+          "speaker": "null",
+          "text": "The guests stand in shock as Edgar's body lies motionless on the floor.",
+          "line": null,
+          "emotion": null,
+          "pace_wpm": null,
+          "duration_sec": 10,
+          "shot_hint": "Wide shot of the study, guests gathered around the body.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_02_beat_02",
+          "order": 2,
+          "type": "dialogue",
+          "actor": "Beatrice Blackwood",
+          "speaker": "Beatrice",
+          "text": "Oh, Edgar! What has happened?!",
+          "line": null,
+          "emotion": "Horrified",
+          "pace_wpm": 100,
+          "duration_sec": 5,
+          "shot_hint": "Close-up on Beatrice, tears in her eyes.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "female_01",
+            "style": "dramatic",
+            "prosody": "sorrowful"
+          },
+          "subtext": "Her grief is tinged with something darker."
+        },
+        {
+          "beat_id": "ch_02_beat_03",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Julian Blackwood",
+          "speaker": "Julian",
+          "text": "We need to call the authorities immediately!",
+          "line": null,
+          "emotion": "Urgent",
+          "pace_wpm": 120,
+          "duration_sec": 5,
+          "shot_hint": "Medium shot of Julian, looking frantic.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_01",
+            "style": "urgent",
+            "prosody": "fast"
+          },
+          "subtext": "His charm is replaced by panic."
+        },
+        {
+          "beat_id": "ch_02_beat_04",
+          "order": 4,
+          "type": "action",
+          "actor": "Clara Finch",
+          "speaker": "null",
+          "text": "Clara rushes to the desk, searching for a phone.",
+          "line": null,
+          "emotion": "Determined",
+          "pace_wpm": null,
+          "duration_sec": 5,
+          "shot_hint": "Tracking shot following Clara as she moves.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        }
+      ],
+      "transitions": {
+        "in": "Fade in from black.",
+        "out": "Cut to Inspector Crowe arriving."
+      }
+    },
+    {
+      "scene_id": "ch_02_scene_02",
+      "order": 2,
+      "location": "Entrance Hall, Ravenhurst Manor",
+      "time": "10:00 PM",
+      "mood": "Sombre and serious",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Dim, flickering lights",
+        "bg_sfx": [
+          "Thunder crashing",
+          "Footsteps on the wooden floor"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_02_beat_05",
+          "order": 1,
+          "type": "action",
+          "actor": "Inspector Alistair Crowe",
+          "speaker": "null",
+          "text": "Inspector Crowe arrives, his expression calm yet commanding.",
+          "line": null,
+          "emotion": "Composed",
+          "pace_wpm": null,
+          "duration_sec": 5,
+          "shot_hint": "Wide shot of Inspector Crowe entering the manor.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_02_beat_06",
+          "order": 2,
+          "type": "dialogue",
+          "actor": "Inspector Crowe",
+          "speaker": "Crowe",
+          "text": "I need to speak to each of you immediately.",
+          "line": null,
+          "emotion": "Authoritative",
+          "pace_wpm": 100,
+          "duration_sec": 5,
+          "shot_hint": "Close-up on Crowe, eyes scanning the room.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_03",
+            "style": "authoritative",
+            "prosody": "steady"
+          },
+          "subtext": "His presence commands attention."
+        },
+        {
+          "beat_id": "ch_02_beat_07",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Beatrice Blackwood",
+          "speaker": "Beatrice",
+          "text": "Inspector, we are all in shock. Please, be gentle.",
+          "line": null,
+          "emotion": "Pleading",
+          "pace_wpm": 90,
+          "duration_sec": 5,
+          "shot_hint": "Medium shot of Beatrice, hands clasped in front of her.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "female_01",
+            "style": "calm",
+            "prosody": "anxious"
+          },
+          "subtext": "Her plea hides her true feelings."
+        }
+      ],
+      "transitions": {
+        "in": "Cut to the entrance hall.",
+        "out": "Fade to black."
+      }
+    },
+    {
+      "scene_id": "ch_02_scene_03",
+      "order": 3,
+      "location": "Library, Ravenhurst Manor",
+      "time": "10:30 PM",
+      "mood": "Tense and anticipatory",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Dim, shadows creeping",
+        "bg_sfx": [
+          "Rain pattering",
+          "Clock ticking ominously"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_02_beat_08",
+          "order": 1,
+          "type": "action",
+          "actor": "null",
+          "speaker": "null",
+          "text": "The guests gather in the library, whispering among themselves.",
+          "line": null,
+          "emotion": null,
+          "pace_wpm": null,
+          "duration_sec": 10,
+          "shot_hint": "Wide shot of the library, guests in hushed discussion.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_02_beat_09",
+          "order": 2,
+          "type": "dialogue",
+          "actor": "Julian Blackwood",
+          "speaker": "Julian",
+          "text": "I can't believe he's gone. What if they suspect one of us?",
+          "line": null,
+          "emotion": "Fearful",
+          "pace_wpm": 120,
+          "duration_sec": 5,
+          "shot_hint": "Close-up on Julian, eyes wide with fear.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_01",
+            "style": "worried",
+            "prosody": "fast"
+          },
+          "subtext": "His fear betrays his guilt."
+        },
+        {
+          "beat_id": "ch_02_beat_10",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Clara Finch",
+          "speaker": "Clara",
+          "text": "We must stick together. No one can know our secrets.",
+          "line": null,
+          "emotion": "Resolute",
+          "pace_wpm": 110,
+          "duration_sec": 5,
+          "shot_hint": "Medium shot of Clara, determined expression.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "female_02",
+            "style": "determined",
+            "prosody": "steady"
+          },
+          "subtext": "Her resolve hides her true feelings for Julian."
+        }
+      ],
+      "transitions": {
+        "in": "Cut to the library.",
+        "out": "Fade to black."
+      }
+    }
+  ],
+  "chapter_audio_plan": {
+    "music_cues": [
+      {
+        "cue_id": "ch_02_music_01",
+        "track": "Mysterious Tension",
+        "start_sec": 0,
+        "duck_under_dialogue": true
+      },
+      {
+        "cue_id": "ch_02_music_02",
+        "track": "Gothic Suspense",
+        "start_sec": 600,
+        "duck_under_dialogue": true
+      }
+    ],
+    "sfx_cues": [
+      {
+        "cue_id": "ch_02_sfx_01",
+        "name": "Thunder Boom",
+        "start_sec": 0,
+        "gain_db": -5
+      },
+      {
+        "cue_id": "ch_02_sfx_02",
+        "name": "Footsteps",
+        "start_sec": 900,
+        "gain_db": -3
+      },
+      {
+        "cue_id": "ch_02_sfx_03",
+        "name": "Clock Ticking",
+        "start_sec": 1200,
+        "gain_db": -6
+      }
+    ]
+  }
+}

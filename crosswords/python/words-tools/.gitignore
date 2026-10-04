@@ -1,0 +1,6 @@
+out/
+dumps/
+kaikki/
+*.tar.gz
+*.gz
+*.bz2

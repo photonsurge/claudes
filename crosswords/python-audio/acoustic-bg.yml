@@ -1,0 +1,11 @@
+name: acoustic-bg
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy>=1.26
+  - portaudio
+  - pip
+  - pip:
+      - sounddevice>=0.4.6
+      - obsws-python>=1.7.0

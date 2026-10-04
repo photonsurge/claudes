@@ -1,0 +1,45 @@
+[
+  { "word": "space", "clue": "The region beyond Earth's atmosphere", "length": 5, "difficulty": "easy", "category": "astronomy_basics" },
+  { "word": "orbit", "clue": "Path a body follows around another", "length": 5, "difficulty": "easy", "category": "astronomy_basics" },
+  { "word": "equinox", "clue": "Day when day and night are nearly equal", "length": 7, "difficulty": "medium", "category": "astronomy_basics" },
+  { "word": "solstice", "clue": "Longest or shortest day of the year", "length": 8, "difficulty": "medium", "category": "astronomy_basics" },
+  { "word": "zenith", "clue": "Point in the sky directly overhead", "length": 6, "difficulty": "medium", "category": "astronomy_basics" },
+
+  { "word": "mars", "clue": "The red planet", "length": 4, "difficulty": "easy", "category": "solar_system" },
+  { "word": "venus", "clue": "Second planet from the sun", "length": 5, "difficulty": "easy", "category": "solar_system" },
+  { "word": "jupiter", "clue": "Largest planet in our solar system", "length": 7, "difficulty": "easy", "category": "solar_system" },
+  { "word": "saturn", "clue": "Ringed planet", "length": 6, "difficulty": "easy", "category": "solar_system" },
+  { "word": "neptune", "clue": "Blue ice giant", "length": 7, "difficulty": "medium", "category": "solar_system" },
+  { "word": "asteroid", "clue": "Rocky body orbiting the sun", "length": 8, "difficulty": "medium", "category": "solar_system" },
+  { "word": "meteoroid", "clue": "Small rock in space before it enters air", "length": 9, "difficulty": "hard", "category": "solar_system" },
+  { "word": "meteorite", "clue": "Space rock that reaches the ground", "length": 9, "difficulty": "medium", "category": "solar_system" },
+  { "word": "perihelion", "clue": "Closest point to the sun in an orbit", "length": 10, "difficulty": "hard", "category": "solar_system" },
+  { "word": "aphelion", "clue": "Farthest point from the sun in an orbit", "length": 8, "difficulty": "hard", "category": "solar_system" },
+
+  { "word": "nebula", "clue": "Cloud of gas and dust in space", "length": 6, "difficulty": "medium", "category": "stars_and_galaxies" },
+  { "word": "galaxy", "clue": "Huge system of stars", "length": 6, "difficulty": "easy", "category": "stars_and_galaxies" },
+  { "word": "milkyway", "clue": "Our home galaxy", "length": 8, "difficulty": "easy", "category": "stars_and_galaxies" },
+  { "word": "supernova", "clue": "Massive star explosion", "length": 9, "difficulty": "hard", "category": "stars_and_galaxies" },
+  { "word": "pulsar", "clue": "Rapidly spinning neutron star", "length": 6, "difficulty": "hard", "category": "stars_and_galaxies" },
+  { "word": "quasar", "clue": "Extremely bright galactic core", "length": 6, "difficulty": "hard", "category": "stars_and_galaxies" },
+
+  { "word": "gravity", "clue": "Force that attracts masses", "length": 7, "difficulty": "easy", "category": "space_physics" },
+  { "word": "spacetime", "clue": "The combined fabric of space and time", "length": 9, "difficulty": "hard", "category": "space_physics" },
+  { "word": "redshift", "clue": "Light stretched to longer wavelengths", "length": 8, "difficulty": "hard", "category": "space_physics" },
+  { "word": "darkmatter", "clue": "Unseen matter inferred by gravity", "length": 10, "difficulty": "hard", "category": "space_physics" },
+  { "word": "blackhole", "clue": "Region where gravity prevents escape", "length": 9, "difficulty": "hard", "category": "space_physics" },
+
+  { "word": "astronaut", "clue": "Space traveler", "length": 9, "difficulty": "easy", "category": "space_exploration" },
+  { "word": "cosmonaut", "clue": "Russian space traveler", "length": 10, "difficulty": "medium", "category": "space_exploration" },
+  { "word": "spacesuit", "clue": "Protective gear for spacewalks", "length": 9, "difficulty": "medium", "category": "space_exploration" },
+  { "word": "reentry", "clue": "Return through an atmosphere", "length": 7, "difficulty": "medium", "category": "space_exploration" },
+  { "word": "payload", "clue": "Cargo carried by a rocket", "length": 7, "difficulty": "easy", "category": "space_exploration" },
+
+  { "word": "orion", "clue": "Famous hunter constellation", "length": 5, "difficulty": "easy", "category": "constellations" },
+  { "word": "draco", "clue": "Dragon constellation", "length": 5, "difficulty": "medium", "category": "constellations" },
+  { "word": "cygnus", "clue": "Swan constellation", "length": 6, "difficulty": "medium", "category": "constellations" },
+
+  { "word": "warp", "clue": "Faster-than-light travel idea", "length": 4, "difficulty": "easy", "category": "sci_fi_space" },
+  { "word": "terraform", "clue": "Make a planet more Earth-like", "length": 9, "difficulty": "medium", "category": "sci_fi_space" },
+  { "word": "hyperspace", "clue": "Sci-fi realm for rapid travel", "length": 10, "difficulty": "medium", "category": "sci_fi_space" }
+]

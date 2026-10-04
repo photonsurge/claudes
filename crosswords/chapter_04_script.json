@@ -1,0 +1,349 @@
+{
+  "chapter_number": 4,
+  "chapter_title": "Confrontations",
+  "summary": "Inspector Crowe confronts the suspects, questioning Dr. Hargreaves about his relationship with Beatrice and Clara about her alibi, while Julian's desperation to resolve his debts intensifies.",
+  "runtime_target_sec": 1800,
+  "continuity": {
+    "must_reference_clues": [
+      "A stopped clock"
+    ],
+    "must_not_reveal": [],
+    "state_in": {
+      "location": "Ravenhurst Manor",
+      "known_facts": [
+        "Inspector Crowe is continuing his investigation.",
+        "Tensions among the suspects are at a breaking point."
+      ]
+    },
+    "state_out": {
+      "location": "Ravenhurst Manor",
+      "new_facts": [
+        "Crowe discovers a crucial clue linking Beatrice to the murder."
+      ]
+    }
+  },
+  "scenes": [
+    {
+      "scene_id": "ch_04_scene_01",
+      "order": 1,
+      "location": "Study, Ravenhurst Manor",
+      "time": "11:00 PM",
+      "mood": "Confrontational and tense",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Dim, with shadows dancing",
+        "bg_sfx": [
+          "Thunder rumbling",
+          "Clock ticking loudly",
+          "Wind howling outside"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_04_beat_01",
+          "order": 1,
+          "type": "action",
+          "actor": "Inspector Alistair Crowe",
+          "speaker": "null",
+          "text": "Crowe stands by the window, looking out into the storm, deep in thought.",
+          "line": null,
+          "emotion": "Pensive",
+          "pace_wpm": null,
+          "duration_sec": 5,
+          "shot_hint": "Close-up on Crowe's face, reflecting his determination.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_04_beat_02",
+          "order": 2,
+          "type": "dialogue",
+          "actor": "Inspector Crowe",
+          "speaker": "Crowe",
+          "text": "Dr. Hargreaves, your relationship with Beatrice raises many questions. What can you tell me?",
+          "line": null,
+          "emotion": "Inquisitive",
+          "pace_wpm": 100,
+          "duration_sec": 8,
+          "shot_hint": "Medium shot of Crowe, turning to face Hargreaves.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_03",
+            "style": "inquisitive",
+            "prosody": "steady"
+          },
+          "subtext": "His tone suggests he already suspects something."
+        },
+        {
+          "beat_id": "ch_04_beat_03",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Dr. Samuel Hargreaves",
+          "speaker": "Hargreaves",
+          "text": "Beatrice is a patient, nothing more. I cared for her when Edgar's cruelty became unbearable.",
+          "line": null,
+          "emotion": "Defensive",
+          "pace_wpm": 90,
+          "duration_sec": 9,
+          "shot_hint": "Close-up on Hargreaves, his eyes narrowing.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_02",
+            "style": "defensive",
+            "prosody": "strained"
+          },
+          "subtext": "His defensiveness hints at deeper feelings."
+        },
+        {
+          "beat_id": "ch_04_beat_04",
+          "order": 4,
+          "type": "action",
+          "actor": "null",
+          "speaker": "null",
+          "text": "Crowe steps closer, his expression serious.",
+          "line": null,
+          "emotion": null,
+          "pace_wpm": null,
+          "duration_sec": 4,
+          "shot_hint": "Wide shot of the study, tension palpable.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        }
+      ],
+      "transitions": {
+        "in": "Fade in from black.",
+        "out": "Cut to Clara entering the study."
+      }
+    },
+    {
+      "scene_id": "ch_04_scene_02",
+      "order": 2,
+      "location": "Study, Ravenhurst Manor",
+      "time": "11:15 PM",
+      "mood": "Anxious and revealing",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Dim, flickering lights",
+        "bg_sfx": [
+          "Rain tapping against the window",
+          "Clock ticking ominously"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_04_beat_05",
+          "order": 1,
+          "type": "action",
+          "actor": "Clara Finch",
+          "speaker": "null",
+          "text": "Clara enters the study, her expression tense.",
+          "line": null,
+          "emotion": "Nervous",
+          "pace_wpm": null,
+          "duration_sec": 5,
+          "shot_hint": "Medium shot of Clara, glancing around.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_04_beat_06",
+          "order": 2,
+          "type": "dialogue",
+          "actor": "Clara Finch",
+          "speaker": "Clara",
+          "text": "Inspector, I need you to believe me. I was in the study, organizing files the entire time.",
+          "line": null,
+          "emotion": "Desperate",
+          "pace_wpm": 100,
+          "duration_sec": 8,
+          "shot_hint": "Close-up on Clara, her eyes pleading.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "female_02",
+            "style": "urgent",
+            "prosody": "fast"
+          },
+          "subtext": "Her desperation is evident."
+        },
+        {
+          "beat_id": "ch_04_beat_07",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Inspector Crowe",
+          "speaker": "Crowe",
+          "text": "Clara, your alibi is shaky at best. Can anyone confirm your story?",
+          "line": null,
+          "emotion": "Skeptical",
+          "pace_wpm": 100,
+          "duration_sec": 7,
+          "shot_hint": "Medium shot of Crowe, arms crossed.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_03",
+            "style": "skeptical",
+            "prosody": "calm"
+          },
+          "subtext": "Crowe's doubt looms over Clara."
+        },
+        {
+          "beat_id": "ch_04_beat_08",
+          "order": 4,
+          "type": "action",
+          "actor": "null",
+          "speaker": "null",
+          "text": "Clara looks down, frustration evident on her face.",
+          "line": null,
+          "emotion": null,
+          "pace_wpm": null,
+          "duration_sec": 4,
+          "shot_hint": "Wide shot of the study, tension rising.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        }
+      ],
+      "transitions": {
+        "in": "Cut back to the study.",
+        "out": "Fade to black."
+      }
+    },
+    {
+      "scene_id": "ch_04_scene_03",
+      "order": 3,
+      "location": "Library, Ravenhurst Manor",
+      "time": "11:30 PM",
+      "mood": "Desperate and revealing",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Dim, shadows creeping",
+        "bg_sfx": [
+          "Rain pattering",
+          "Clock ticking ominously"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_04_beat_09",
+          "order": 1,
+          "type": "action",
+          "actor": "Julian Blackwood",
+          "speaker": "null",
+          "text": "Julian paces the library, visibly anxious.",
+          "line": null,
+          "emotion": "Frantic",
+          "pace_wpm": null,
+          "duration_sec": 5,
+          "shot_hint": "Close-up on Julian, beads of sweat on his forehead.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_04_beat_10",
+          "order": 2,
+          "type": "dialogue",
+          "actor": "Julian Blackwood",
+          "speaker": "Julian",
+          "text": "I can't keep living like this, Clara. They want their money now!",
+          "line": null,
+          "emotion": "Desperate",
+          "pace_wpm": 110,
+          "duration_sec": 8,
+          "shot_hint": "Medium shot of Julian, hands on his head.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_01",
+            "style": "urgent",
+            "prosody": "fast"
+          },
+          "subtext": "His desperation is palpable."
+        },
+        {
+          "beat_id": "ch_04_beat_11",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Clara Finch",
+          "speaker": "Clara",
+          "text": "Julian, you need to be careful. If they find out about the debts, it could ruin everything.",
+          "line": null,
+          "emotion": "Concerned",
+          "pace_wpm": 100,
+          "duration_sec": 8,
+          "shot_hint": "Close-up on Clara, worry etched on her face.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "female_02",
+            "style": "worried",
+            "prosody": "steady"
+          },
+          "subtext": "Her concern for Julian is evident."
+        },
+        {
+          "beat_id": "ch_04_beat_12",
+          "order": 4,
+          "type": "action",
+          "actor": "null",
+          "speaker": "null",
+          "text": "Julian runs a hand through his hair, frustration mounting.",
+          "line": null,
+          "emotion": null,
+          "pace_wpm": null,
+          "duration_sec": 5,
+          "shot_hint": "Wide shot of the library, tension rising.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        }
+      ],
+      "transitions": {
+        "in": "Cut to the library.",
+        "out": "Fade to black."
+      }
+    }
+  ],
+  "chapter_audio_plan": {
+    "music_cues": [
+      {
+        "cue_id": "ch_04_music_01",
+        "track": "Suspenseful Strings",
+        "start_sec": 0,
+        "duck_under_dialogue": true
+      },
+      {
+        "cue_id": "ch_04_music_02",
+        "track": "Dark Secrets",
+        "start_sec": 600,
+        "duck_under_dialogue": true
+      }
+    ],
+    "sfx_cues": [
+      {
+        "cue_id": "ch_04_sfx_01",
+        "name": "Thunder Boom",
+        "start_sec": 0,
+        "gain_db": -5
+      },
+      {
+        "cue_id": "ch_04_sfx_02",
+        "name": "Clock Ticking",
+        "start_sec": 600,
+        "gain_db": -3
+      }
+    ]
+  }
+}

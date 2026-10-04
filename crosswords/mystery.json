@@ -1,0 +1,658 @@
+{
+  "title": "The Clockmaker’s Last Chime",
+  "tagline": "A locked-room murder at Ravenhurst Manor—where time itself becomes the weapon.",
+  "genre": ["murder mystery", "locked-room", "gothic", "whodunit"],
+  "recommended_players": {
+    "min": 3,
+    "max": 8,
+    "best": 6
+  },
+  "play_time_minutes": {
+    "mystery_readthrough": 45,
+    "game_night": 120
+  },
+  "setting": {
+    "name": "Ravenhurst Manor",
+    "era": "Late Victorian / Edwardian vibe (timeless gothic)",
+    "weather": "A violent coastal storm. Roads flooded. Telegraph line down. No one can leave until morning.",
+    "tone_notes": [
+      "Everything ticks. Silence is rare.",
+      "The manor is elegant but cold—like a museum of time.",
+      "People are polite in public and vicious in private."
+    ]
+  },
+  "premise": "At 11:47 PM, an unscheduled chime rings through Ravenhurst Manor. Minutes later, famous clockmaker Edmund Blackwood is found dead inside his locked workshop. The room appears sealed from the inside. The household is trapped by a storm. Someone in the manor used Edmund’s own precision against him.",
+  "victim": {
+    "name": "Edmund Blackwood",
+    "age": 68,
+    "occupation": "Master horologist and inventor",
+    "public_reputation": "Genius clockmaker, collector, philanthropist in name",
+    "private_reputation": "Controlling, paranoid, vindictive, obsessed with legacy",
+    "medical_notes": [
+      "Mild heart condition",
+      "Insomnia",
+      "Occasional tremor in left hand"
+    ],
+    "time_of_death_window": {
+      "start": "23:30",
+      "end": "23:45",
+      "confidence": "High"
+    },
+    "cause_of_death": {
+      "primary": "Belladonna (atropine) poisoning",
+      "delivery": "Tea consumed in workshop",
+      "symptoms_observed": [
+        "Dilated pupils",
+        "Dry mouth",
+        "Confusion",
+        "Rapid pulse",
+        "Collapse"
+      ]
+    }
+  },
+  "cast": {
+    "suspects": [
+      {
+        "id": "S1",
+        "name": "Margaret Blackwood",
+        "age": 61,
+        "role": "Wife",
+        "public_face": "Immaculate hostess, brittle grace",
+        "temperament": ["composed", "cold", "practiced liar"],
+        "relationship_to_victim": "Marriage of obligation; he treated her like furniture",
+        "motive": {
+          "primary": "Financial ruin and humiliation",
+          "details": "Edmund rewrote his will to leave Margaret only a small annuity contingent on her remaining at the manor."
+        },
+        "means": "Access to household stores, tea service, and staff routines",
+        "opportunity": "Claims she remained in the east wing reading; could have moved unseen during the storm confusion",
+        "alibi": {
+          "claim": "Reading in the east wing parlor from 22:30 onward",
+          "supporting_witness": "None directly",
+          "weakness": "Her book is dry and pristine despite the nearby roof leak; she may not have been there long."
+        },
+        "secrets": [
+          "Has been skimming household funds via false invoices",
+          "Keeps a hidden jewelry case she intended to sell if cut off"
+        ],
+        "red_herring_hooks": [
+          "Her fingerprints are on Edmund’s teacup (she handled the service earlier)",
+          "A belladonna-themed botanical print is found among her things (gift from Edmund years ago)"
+        ],
+        "roleplay_notes": [
+          "Never raises her voice. Cuts with precision.",
+          "If accused, pivots to moral arguments: 'You think I am capable because I am unhappy.'"
+        ]
+      },
+      {
+        "id": "S2",
+        "name": "Julian Blackwood",
+        "age": 34,
+        "role": "Son",
+        "public_face": "Charming wastrel, social butterfly",
+        "temperament": ["impulsive", "deflective", "desperate"],
+        "relationship_to_victim": "Loved the prestige, hated the control; constantly punished",
+        "motive": {
+          "primary": "Debt and inheritance panic",
+          "details": "Edmund discovered Julian sold a prototype clock illegally and threatened prosecution."
+        },
+        "means": "Knows enough about locks and clock housings to meddle; access to study and display rooms",
+        "opportunity": "Was unsupervised for long stretches; claims billiard room solitude",
+        "alibi": {
+          "claim": "Drinking alone in the billiard room from 23:00 to midnight",
+          "supporting_witness": "The butler saw him at 23:05",
+          "weakness": "Storm noise covers movement; billiard room decanter is suspiciously untouched for someone 'drinking heavily'."
+        },
+        "secrets": [
+          "Pawned Edmund’s rare escapement components to cover gambling",
+          "Has a letter demanding payment by morning"
+        ],
+        "red_herring_hooks": [
+          "A pawn ticket is found in his pocket linked to Edmund’s workshop inventory",
+          "A muddy boot print near the workshop hall could match his shoes"
+        ],
+        "roleplay_notes": [
+          "Switches between jokes and anger.",
+          "If pressured, tries to barter information about other suspects."
+        ]
+      },
+      {
+        "id": "S3",
+        "name": "Eliza Finch",
+        "age": 29,
+        "role": "Assistant horologist",
+        "public_face": "Quiet genius, always observing",
+        "temperament": ["precise", "controlled", "resentful"],
+        "relationship_to_victim": "Protégé exploited for brilliance; promised partnership, then erased",
+        "motive": {
+          "primary": "Betrayal and stolen credit",
+          "details": "Eliza designed key portions of Edmund’s '11:47' experimental mechanism, but Edmund planned to claim sole authorship and cut her out of the business."
+        },
+        "means": "Deep knowledge of the prototype clock, access to greenhouse (belladonna), access to workshop tools",
+        "opportunity": "Was seen in the west gallery; can traverse service corridors to reach the hall clock shaft unnoticed",
+        "alibi": {
+          "claim": "Calibrating the west gallery clocks with a tuning fork and notebook",
+          "supporting_witness": "None directly; only the sound of occasional chimes reported by staff",
+          "weakness": "Her calibration notes show a time gap exactly spanning the death window."
+        },
+        "secrets": [
+          "Has her own blueprint copy of Edmund’s prototype with annotations (including a reversible trigger)",
+          "Has been collecting belladonna in tiny measured doses 'for study'"
+        ],
+        "red_herring_hooks": [
+          "Her hands smell faintly of bitter plant sap",
+          "Her notebook contains the phrase: 'Reverse the drop, reverse the blame.' (looks incriminating but could be engineering jargon)"
+        ],
+        "roleplay_notes": [
+          "Answers carefully; never volunteers.",
+          "If someone praises Edmund, her composure cracks for a moment."
+        ]
+      },
+      {
+        "id": "S4",
+        "name": "Arthur Crowe",
+        "age": 47,
+        "role": "Family solicitor",
+        "public_face": "Professional, anxious",
+        "temperament": ["evasive", "calculating", "fearful"],
+        "relationship_to_victim": "Drafted the new will; was being threatened by Edmund",
+        "motive": {
+          "primary": "Blackmail and exposure fear",
+          "details": "Edmund discovered Crowe’s involvement in a fraud scheme and threatened to report him unless the will was rewritten exactly as Edmund demanded."
+        },
+        "means": "Access to documents, seals, and legal stationery; limited physical access to workshop",
+        "opportunity": "Claims he tried to leave before the worst of the storm; timeline doesn’t fit",
+        "alibi": {
+          "claim": "Departed at 22:30 but turned back due to storm at the gate",
+          "supporting_witness": "The gatekeeper is absent (sick), so no confirmation",
+          "weakness": "His coat is damp only at the hem—suggesting he did not walk far outside."
+        },
+        "secrets": [
+          "There are two versions of the will: one he prepared under duress, another he altered for leverage",
+          "He pocketed Edmund’s signet ring briefly earlier that evening (to stamp something)"
+        ],
+        "red_herring_hooks": [
+          "Fresh ink stains on his thumb",
+          "A torn draft page in his bag matching the safe documents"
+        ],
+        "roleplay_notes": [
+          "Avoids eye contact when asked about signatures.",
+          "If cornered, offers partial truths to redirect suspicion."
+        ]
+      }
+    ],
+    "supporting_npcs": [
+      {
+        "id": "N1",
+        "name": "Mrs. Dalloway",
+        "role": "Housekeeper",
+        "purpose": "Confirms routines, keys, and who was where; notices tiny inconsistencies",
+        "personality": ["stern", "observant", "loyal to the manor, not the family"]
+      },
+      {
+        "id": "N2",
+        "name": "Thomas Reed",
+        "role": "Butler",
+        "purpose": "Provides timing of tea service and sightings; knows everyone's habits",
+        "personality": ["formal", "controlled", "quietly judgmental"]
+      },
+      {
+        "id": "N3",
+        "name": "Dr. Harriet Vale",
+        "role": "Village physician (storm-trapped at manor after dinner call)",
+        "purpose": "Medical determination of poison and time of death; explains belladonna symptoms",
+        "personality": ["direct", "scientific", "unimpressed by wealth"]
+      }
+    ]
+  },
+  "locations": [
+    {
+      "id": "L1",
+      "name": "Grand Hall",
+      "description": "Cathedral-ceilinged hall dominated by a towering, ornate hall clock with a narrow service panel behind it.",
+      "notable_features": [
+        "Hall clock shaft aligns with workshop ventilation route",
+        "Echo makes footsteps hard to place during storm"
+      ],
+      "clues": ["C1", "C7"]
+    },
+    {
+      "id": "L2",
+      "name": "The Workshop (Crime Scene)",
+      "description": "A cluttered sanctuary of gears, brass filings, blueprints, and half-built mechanisms. Smells of oil and old wood.",
+      "notable_features": [
+        "Door: heavy oak, keyhole on hall side; inside has a thumb-latch and bolt",
+        "Window: bolted shut from inside",
+        "Ventilation grate: connects to a vertical service cavity behind the hall clock"
+      ],
+      "clues": ["C2", "C3", "C4", "C5", "C6"]
+    },
+    {
+      "id": "L3",
+      "name": "Library",
+      "description": "Leather-bound volumes, maps, and a coal fire that struggles against the damp.",
+      "notable_features": ["A hidden safe behind a portrait of Edmund’s father"],
+      "clues": ["C8", "C9"]
+    },
+    {
+      "id": "L4",
+      "name": "Billiard Room",
+      "description": "Green felt table, decanter cabinet, trophies, and cigar smoke embedded in velvet.",
+      "notable_features": ["A clock with a cracked face stopped at 11:47"],
+      "clues": ["C10"]
+    },
+    {
+      "id": "L5",
+      "name": "West Gallery",
+      "description": "Long corridor lined with mantle clocks on pedestals; glass cases and soft rugs.",
+      "notable_features": ["A service corridor door disguised as paneling"],
+      "clues": ["C11", "C12"]
+    },
+    {
+      "id": "L6",
+      "name": "Greenhouse",
+      "description": "Fogged glass, damp soil, medicinal plants, and a sharp herbal smell.",
+      "notable_features": [
+        "Belladonna plant kept in a locked cabinet",
+        "Key is usually on a nail in the potting shed—unless removed"
+      ],
+      "clues": ["C13"]
+    }
+  ],
+  "timeline": [
+    {
+      "time": "20:00",
+      "event": "Dinner concludes. Edmund announces 'changes' are coming to the business and the will.",
+      "witnesses": ["N1", "N2", "S1", "S2", "S3", "S4"]
+    },
+    {
+      "time": "21:10",
+      "event": "Arthur Crowe requests a private word with Edmund; voices rise in the study.",
+      "witnesses": ["N2"]
+    },
+    {
+      "time": "21:40",
+      "event": "Eliza returns to the workshop to 'check the escapement' on Edmund’s experimental clock.",
+      "witnesses": ["N1"]
+    },
+    {
+      "time": "22:00",
+      "event": "The storm worsens. The road is impassable; staff lock outer doors. Telegraph goes dead.",
+      "witnesses": ["N1", "N2"]
+    },
+    {
+      "time": "22:20",
+      "event": "Tea service is prepared. Edmund insists his tea be brought to the workshop as usual.",
+      "witnesses": ["N2"]
+    },
+    {
+      "time": "22:35",
+      "event": "Margaret is seen near the library, then disappears toward the east wing.",
+      "witnesses": ["N1"]
+    },
+    {
+      "time": "23:05",
+      "event": "Butler sees Julian in the billiard room, coat off, appearing restless.",
+      "witnesses": ["N2"]
+    },
+    {
+      "time": "23:15",
+      "event": "Eliza is 'heard' in the west gallery (a chime and tuning fork tone), but not seen.",
+      "witnesses": ["N1"]
+    },
+    {
+      "time": "23:28",
+      "event": "Tea tray arrives at workshop door. Edmund takes it in; door closes. No one admits entering after.",
+      "witnesses": ["N2"]
+    },
+    {
+      "time": "23:33",
+      "event": "A soft mechanical whir is faintly heard in the grand hall near the hall clock—masked by thunder.",
+      "witnesses": ["N1"]
+    },
+    {
+      "time": "23:47",
+      "event": "A single, discordant chime rings—no clock is scheduled to chime then.",
+      "witnesses": ["All in manor"]
+    },
+    {
+      "time": "23:52",
+      "event": "A thud is heard from the workshop side. Silence follows.",
+      "witnesses": ["N2", "S4"]
+    },
+    {
+      "time": "00:05",
+      "event": "Workshop door is found locked. Butler fetches tools. Door forced. Edmund found dead at workbench.",
+      "witnesses": ["N2", "N1", "S1", "S2", "S3", "S4", "N3"]
+    }
+  ],
+  "crime_scene_report": {
+    "room_status": "Appears locked from inside",
+    "door": {
+      "locked": true,
+      "damage": "Forced with a pry bar at 00:05",
+      "key": "On a hook inside the workshop, not in the lock",
+      "notes": "Interior bolt engaged. Suggests Edmund locked himself in—or the bolt was engaged remotely or before closure."
+    },
+    "window": {
+      "bolted": true,
+      "tampering": "None obvious",
+      "outside": "Ledge slick with rain; no footprints possible"
+    },
+    "victim_position": {
+      "location": "Slumped beside workbench",
+      "hands": "One hand clenched with a small brass gear; other near teacup",
+      "face": "Wide-eyed, pupils dilated"
+    },
+    "objects_of_interest": [
+      {
+        "item": "Teacup and saucer",
+        "detail": "Tea smells faintly sweet and bitter; residue visible at bottom."
+      },
+      {
+        "item": "Experimental clock mechanism ('The 11:47 Prototype')",
+        "detail": "A bespoke chime trigger and a concealed drop mechanism built into a housing connected to the hall clock shaft."
+      },
+      {
+        "item": "Ventilation grate",
+        "detail": "Screws show fresh tool marks; dust disturbed."
+      },
+      {
+        "item": "Blueprints",
+        "detail": "One blueprint page is missing; the remaining pages include reversible trigger annotations in a different handwriting."
+      }
+    ]
+  },
+  "clues": [
+    {
+      "id": "C1",
+      "name": "The 11:47 Chime",
+      "type": "event",
+      "location_id": "L1",
+      "description": "A single off-schedule chime rings at 11:47 PM, slightly discordant—like a test note rather than a normal strike.",
+      "relevance": "Points to an artificial trigger rather than a standard clock schedule.",
+      "points_to": ["S3", "L1", "L2"]
+    },
+    {
+      "id": "C2",
+      "name": "Belladonna in the Tea",
+      "type": "forensic",
+      "location_id": "L2",
+      "description": "Dr. Vale identifies signs consistent with belladonna poisoning. A faint botanical bitterness is detectable in the remaining tea.",
+      "relevance": "Establishes poison and narrows access to greenhouse or someone knowledgeable about dosing.",
+      "points_to": ["L6", "S3", "S1"]
+    },
+    {
+      "id": "C3",
+      "name": "Fresh Tool Marks on Vent Grate",
+      "type": "physical",
+      "location_id": "L2",
+      "description": "The screws on the workshop ventilation grate show fresh screwdriver marks; dust is disturbed.",
+      "relevance": "Someone accessed the service cavity recently.",
+      "points_to": ["S3", "L1", "L2"]
+    },
+    {
+      "id": "C4",
+      "name": "Reversed Drop Mechanism",
+      "type": "mechanical",
+      "location_id": "L2",
+      "description": "The prototype contains a small release latch designed to drop a payload at a timed chime. The latch has been reversed—deliberately altered.",
+      "relevance": "Requires specialized understanding of the prototype’s engineering.",
+      "points_to": ["S3"]
+    },
+    {
+      "id": "C5",
+      "name": "Calibration Notes with a Time Gap",
+      "type": "document",
+      "location_id": "L5",
+      "description": "Eliza’s notebook lists clock calibrations from 23:05 to 23:20, then resumes at 23:55. The death window sits inside the gap.",
+      "relevance": "Weakens her alibi without directly proving guilt.",
+      "points_to": ["S3"]
+    },
+    {
+      "id": "C6",
+      "name": "The Victim’s Clenched Brass Gear",
+      "type": "physical",
+      "location_id": "L2",
+      "description": "Edmund died holding a tiny brass gear from the prototype—suggesting he noticed something wrong and tried to intervene too late.",
+      "relevance": "Implies the mechanism activated shortly before death and Edmund understood it.",
+      "points_to": ["L2", "C1"]
+    },
+    {
+      "id": "C7",
+      "name": "Dust Trail in Hall Clock Service Panel",
+      "type": "physical",
+      "location_id": "L1",
+      "description": "Behind the hall clock, a thin dust layer is smudged at shoulder height as if someone squeezed through or reached deep into the cavity.",
+      "relevance": "Supports the method: access via service cavity rather than the workshop door.",
+      "points_to": ["S3", "S2"]
+    },
+    {
+      "id": "C8",
+      "name": "The Hidden Safe and Two Wills",
+      "type": "document",
+      "location_id": "L3",
+      "description": "A safe behind a portrait holds: (1) a signed will, (2) an unsigned draft with fresher ink, and (3) a note in Edmund’s hand: 'If I fall, look to the chime.'",
+      "relevance": "Establishes motive tensions and suggests Edmund anticipated danger.",
+      "points_to": ["S4", "S1", "S2", "S3"]
+    },
+    {
+      "id": "C9",
+      "name": "Fresh Ink on Crowe’s Thumb",
+      "type": "physical",
+      "location_id": "L3",
+      "description": "Crowe has a faint ink stain matching the unsigned draft’s ink hue.",
+      "relevance": "Indicates document tampering but not necessarily murder.",
+      "points_to": ["S4"]
+    },
+    {
+      "id": "C10",
+      "name": "Untouched Decanter",
+      "type": "behavioral",
+      "location_id": "L4",
+      "description": "Julian claims heavy drinking, but the decanter level is nearly unchanged and glasses are clean.",
+      "relevance": "Suggests he lied about what he was doing—creates suspicion.",
+      "points_to": ["S2"]
+    },
+    {
+      "id": "C11",
+      "name": "Service Corridor Panel Ajar",
+      "type": "physical",
+      "location_id": "L5",
+      "description": "A disguised service corridor panel is slightly misaligned, as if recently opened and shut in a hurry.",
+      "relevance": "Provides stealth route between gallery and hall clock cavity.",
+      "points_to": ["S3"]
+    },
+    {
+      "id": "C12",
+      "name": "A Brass Filing in Eliza’s Cuff",
+      "type": "trace",
+      "location_id": "L5",
+      "description": "A tiny brass filing—freshly cut—clings to Eliza’s sleeve cuff.",
+      "relevance": "Indicates recent work on the prototype or related components.",
+      "points_to": ["S3"]
+    },
+    {
+      "id": "C13",
+      "name": "Belladonna Cabinet Disturbed",
+      "type": "physical",
+      "location_id": "L6",
+      "description": "The belladonna cabinet lock is intact, but the soil appears freshly compacted and one leaf cluster is missing.",
+      "relevance": "Someone harvested carefully rather than smashing the lock—suggests key access and expertise.",
+      "points_to": ["S3", "S1"]
+    }
+  ],
+  "red_herrings": [
+    {
+      "id": "RH1",
+      "name": "Margaret’s Fingerprints on the Cup",
+      "explanation": "She handled the tea service earlier as part of hosting. Prints don’t indicate poisoning.",
+      "misleads_toward": "S1"
+    },
+    {
+      "id": "RH2",
+      "name": "Julian’s Muddy Boot Print",
+      "explanation": "The boot print near the workshop hall is from earlier when he fetched a dropped cigar case during a drafty door check.",
+      "misleads_toward": "S2"
+    },
+    {
+      "id": "RH3",
+      "name": "Crowe’s Ink Stain",
+      "explanation": "Crowe altered paperwork and may have attempted leverage, but did not engineer the mechanism or poison delivery.",
+      "misleads_toward": "S4"
+    }
+  ],
+  "method_of_murder": {
+    "locked_room_solution": "The workshop was sealed, but the poison delivery and trigger were routed through the hall clock service cavity and the workshop ventilation grate.",
+    "steps": [
+      "The killer prepared a tiny measured belladonna dose in a sealed vial or capsule.",
+      "They accessed the hall clock’s service panel and the connecting cavity leading to the workshop vent.",
+      "They inserted the dose into the prototype’s concealed drop mechanism (or directly into the tea via a guided channel) and reversed the release latch.",
+      "They set the prototype to trigger at 11:47 PM with a single test chime to mask the activation.",
+      "When Edmund returned to the tea and drank, the delayed mechanism released the poison after the door was shut, making it appear no one entered.",
+      "Edmund noticed the mechanism’s irregularity too late; he tried to interrupt it, leaving the gear clenched in his hand."
+    ],
+    "required_capabilities": [
+      "Understanding of the 11:47 prototype’s reversible trigger",
+      "Access to the hall clock service panel route",
+      "Knowledge of belladonna dosing and stealth harvesting"
+    ],
+    "why_it_points_to_eliza": "Eliza designed and calibrated the prototype’s reversible latch and is the only suspect with both intimate engineering knowledge and plausible stealth access via gallery service corridors, plus greenhouse familiarity."
+  },
+  "solution": {
+    "killer_id": "S3",
+    "killer_name": "Eliza Finch",
+    "core_reveal": "Eliza reversed Edmund’s own safeguard mechanism so it delivered poison after he believed himself secure in a locked room.",
+    "motive_summary": "Years of stolen credit and a final betrayal: Edmund planned to publish Eliza’s work under his name and cut her from the will and business.",
+    "proof_chain": [
+      "C1 + C4: The 11:47 chime corresponds to the prototype trigger, and the latch is reversed—requires expert knowledge.",
+      "C3 + C7 + C11: Fresh tool marks and smudged dust show someone used the hall clock cavity and service route.",
+      "C5: Eliza’s notes include a precise gap during the death window.",
+      "C12: Fresh brass filing suggests recent prototype work.",
+      "C2 + C13: Belladonna access and careful harvesting align with Eliza’s measured habits."
+    ],
+    "confession_prompt": "Confront Eliza with the reversible latch explanation and the precise timing gap; she will correct one technical detail—revealing she knows too much—and then quietly admits it."
+  },
+  "scene_flow": [
+    {
+      "scene_id": "SC1",
+      "title": "The Body and the Chime",
+      "objective": "Establish locked-room mystery, introduce suspects, collect immediate impressions.",
+      "key_reveals": ["C1", "C2"],
+      "recommended_duration_minutes": 20
+    },
+    {
+      "scene_id": "SC2",
+      "title": "Rooms, Routes, and Lies",
+      "objective": "Map manor routes, test alibis, discover service corridors.",
+      "key_reveals": ["C7", "C11", "C10"],
+      "recommended_duration_minutes": 30
+    },
+    {
+      "scene_id": "SC3",
+      "title": "The Prototype",
+      "objective": "Understand the mechanism; discover it was altered.",
+      "key_reveals": ["C4", "C3", "C6"],
+      "recommended_duration_minutes": 30
+    },
+    {
+      "scene_id": "SC4",
+      "title": "The Wills in the Safe",
+      "objective": "Uncover motive web; identify who benefits and who is threatened.",
+      "key_reveals": ["C8", "C9"],
+      "recommended_duration_minutes": 20
+    },
+    {
+      "scene_id": "SC5",
+      "title": "The Greenhouse Measure",
+      "objective": "Confirm poison source and access patterns.",
+      "key_reveals": ["C13"],
+      "recommended_duration_minutes": 15
+    },
+    {
+      "scene_id": "SC6",
+      "title": "Accusation and Reveal",
+      "objective": "Players present theory; GM confirms proof chain; choose ending.",
+      "key_reveals": ["solution.proof_chain"],
+      "recommended_duration_minutes": 25
+    }
+  ],
+  "handouts": [
+    {
+      "id": "H1",
+      "name": "Eliza’s Calibration Page",
+      "format": "text",
+      "content": "West Gallery Calibrations (11/02)\n23:05 — Mantle Clock #3: +2s\n23:08 — Carriage Clock: -4s\n23:12 — Bracket Clock: +1s\n23:20 — Longcase #2: 0s\n...\n23:55 — Mantle Clock #9: -1s\n23:58 — Carriage Clock: +3s\nNote: 'Trigger must be symmetrical or it will betray itself.'"
+    },
+    {
+      "id": "H2",
+      "name": "Safe Note",
+      "format": "text",
+      "content": "If I fall, look to the chime. A clock never lies—only the hands that set it."
+    },
+    {
+      "id": "H3",
+      "name": "Prototype Sketch Fragment",
+      "format": "text",
+      "content": "Partial diagram: Reversible latch + payload drop. Margin note in different handwriting: 'Reverse the drop, reverse the blame.'"
+    },
+    {
+      "id": "H4",
+      "name": "Crowe’s Torn Draft",
+      "format": "text",
+      "content": "…hereby bequeath the workshop and all patents to… [TORN]\nWitness lines blank.\nInk appears fresh; seal impression partially smeared."
+    }
+  ],
+  "props_list": [
+    "A small vial (representing belladonna dose)",
+    "A brass gear (or any small metal cog)",
+    "A sealed envelope labeled 'WILL — SIGNED'",
+    "A second envelope labeled 'WILL — DRAFT'",
+    "A simple floor plan of the manor with the hall clock cavity route marked (for GM only)"
+  ],
+  "difficulty_controls": {
+    "easy_mode": [
+      "Add a witness who saw Eliza near the hall clock service panel at ~23:35",
+      "Let Dr. Vale identify belladonna instantly",
+      "Make Eliza’s notebook gap more obvious"
+    ],
+    "hard_mode": [
+      "Remove the brass filing clue (C12)",
+      "Make the safe harder to find (requires noticing portrait alignment)",
+      "Allow Crowe to convincingly implicate Julian unless players test the mechanism"
+    ]
+  },
+  "alternate_endings": [
+    {
+      "id": "E1",
+      "name": "The Clean Confession",
+      "description": "Eliza confesses with chilling calm, stating Edmund respected only precision."
+    },
+    {
+      "id": "E2",
+      "name": "Escape into the Storm",
+      "description": "A power flicker and chaos—Eliza vanishes through the service corridors. The chime echoes as her only signature."
+    },
+    {
+      "id": "E3",
+      "name": "Edmund’s Final Paradox",
+      "description": "The signed will reveals Edmund still left everything to Eliza—knowing she’d never accept it while he lived."
+    }
+  ],
+  "gm_notes": {
+    "core_theme": "Control versus credit: who gets to claim time and invention.",
+    "how_to_run": [
+      "Start with the chime and body discovery to hook players immediately.",
+      "Push players to map movement routes; the service corridor is the locked-room key.",
+      "Let suspects trade accusations—each has something to hide that is not murder.",
+      "When players focus on poison alone, redirect toward the mechanism and 11:47 trigger."
+    ],
+    "best_reveal_moment": "Eliza corrects a technical detail about the reversed latch that only the killer would know."
+  },
+  "quick_summary": {
+    "who": "Eliza Finch killed Edmund Blackwood.",
+    "why": "He stole her work and erased her from his legacy.",
+    "how": "She routed a belladonna dose through the hall clock service cavity and reversed the prototype’s timed drop latch to trigger at 11:47 PM, creating a locked-room illusion.",
+    "key_evidence": ["C1", "C3", "C4", "C5", "C7", "C13"]
+  }
+}

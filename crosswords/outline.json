@@ -1,0 +1,321 @@
+{
+  "title": "Storm at Ravenhurst",
+  "logline": "Amidst a violent storm, a family gathers at Ravenhurst Manor only to find their patriarch murdered in a locked study, revealing secrets and lies that threaten to tear them apart.",
+  "setting": {
+    "location": "Ravenhurst Manor",
+    "era": "Late Victorian / Edwardian",
+    "containment": "A violent coastal storm. Roads flooded. Power intermittent.",
+    "tone_notes": [
+      "Gothic elegance",
+      "Social politeness masking cruelty",
+      "Silence broken only by clocks and rain"
+    ]
+  },
+  "cast": [
+    {
+      "name": "Beatrice Blackwood",
+      "role": "Widow",
+      "public_persona": "Cold dignity, financially dependent on the victim",
+      "private_secret": "She was involved in a secret affair with the family physician.",
+      "relationships": [
+        {
+          "with": "Edgar Blackwood",
+          "type": "Husband",
+          "note": "Resentful of his control over her finances."
+        },
+        {
+          "with": "Julian Blackwood",
+          "type": "Son",
+          "note": "Desires to protect him from Edgar's manipulations."
+        }
+      ],
+      "alibi_windows": [
+        {
+          "from": "8:00 PM",
+          "to": "8:30 PM",
+          "claim": "She was in her room preparing for dinner."
+        }
+      ],
+      "means_access": "She has a key to the study.",
+      "appearance_summary": "Pale, angular features, severe posture.",
+      "signature_item": "Cameo brooch.",
+      "color_palette": [
+        "charcoal",
+        "ivory",
+        "muted silver"
+      ],
+      "portrait_brief": "A woman of poise, hiding her true feelings behind a mask of mourning."
+    },
+    {
+      "name": "Julian Blackwood",
+      "role": "Son",
+      "public_persona": "Charming, indebted gambler",
+      "private_secret": "He was in debt to dangerous people.",
+      "relationships": [
+        {
+          "with": "Edgar Blackwood",
+          "type": "Father",
+          "note": "Resented his father's control over his life."
+        },
+        {
+          "with": "Clara Finch",
+          "type": "Acquaintance",
+          "note": "Flirted with her but didn't take her seriously."
+        }
+      ],
+      "alibi_windows": [
+        {
+          "from": "8:00 PM",
+          "to": "8:30 PM",
+          "claim": "He was in the library with Clara."
+        }
+      ],
+      "means_access": "He has access to the study but claims he was elsewhere.",
+      "appearance_summary": "Handsome but tired eyes, restless smile.",
+      "signature_item": "Signet ring.",
+      "color_palette": [
+        "burgundy",
+        "navy",
+        "brass"
+      ],
+      "portrait_brief": "A young man caught between charm and desperation."
+    },
+    {
+      "name": "Clara Finch",
+      "role": "Secretary",
+      "public_persona": "Overworked, knows everyone’s secrets",
+      "private_secret": "She has been blackmailing Julian.",
+      "relationships": [
+        {
+          "with": "Edgar Blackwood",
+          "type": "Employer",
+          "note": "Knew his secrets and resented his treatment of staff."
+        },
+        {
+          "with": "Beatrice Blackwood",
+          "type": "Colleague",
+          "note": "Felt sympathy for her plight."
+        }
+      ],
+      "alibi_windows": [
+        {
+          "from": "8:00 PM",
+          "to": "8:30 PM",
+          "claim": "She was in the study organizing files."
+        }
+      ],
+      "means_access": "She has a key to the study.",
+      "appearance_summary": "Sharp gaze, ink-stained fingertips.",
+      "signature_item": "Wire spectacles.",
+      "color_palette": [
+        "olive",
+        "cream",
+        "slate"
+      ],
+      "portrait_brief": "A woman of sharp intellect, burdened by secrets."
+    },
+    {
+      "name": "Dr. Samuel Hargreaves",
+      "role": "Family physician",
+      "public_persona": "Prescribes unusual medications",
+      "private_secret": "He was in love with Beatrice.",
+      "relationships": [
+        {
+          "with": "Edgar Blackwood",
+          "type": "Patient",
+          "note": "Disliked him for his cruelty."
+        },
+        {
+          "with": "Beatrice Blackwood",
+          "type": "Love interest",
+          "note": "Cares deeply for her."
+        }
+      ],
+      "alibi_windows": [
+        {
+          "from": "8:00 PM",
+          "to": "8:30 PM",
+          "claim": "He was in the kitchen with the cook."
+        }
+      ],
+      "means_access": "He had access to the study through Beatrice.",
+      "appearance_summary": "Neatly trimmed beard, clinical composure.",
+      "signature_item": "Leather satchel.",
+      "color_palette": [
+        "forest green",
+        "black",
+        "tan"
+      ],
+      "portrait_brief": "A man of science, torn between duty and desire."
+    }
+  ],
+  "victim": {
+    "name": "Edgar Blackwood",
+    "why_hated": "Financial manipulation, blackmail, and quiet cruelty toward family and staff"
+  },
+  "detective": {
+    "name": "Inspector Alistair Crowe",
+    "style": "Methodical, quietly observant, unnervingly patient",
+    "blind_spot": "Underestimates the emotional motivations of the suspects."
+  },
+  "solution": {
+    "murderer": "Clara Finch",
+    "motive": "To silence Edgar's threats of revealing her blackmail.",
+    "method": "Poison in the whiskey he drank during dinner.",
+    "locked_room_explanation": "Clara used a hidden key to access the study, then returned to her alibi."
+  },
+  "red_herrings": [
+    {
+      "label": "The Stopped Clock",
+      "appears_as": "A clue indicating the time of death.",
+      "truth": "It stopped at the time of the murder but was merely a coincidence.",
+      "how_resolved": "Inspector Crowe discovers it was merely a malfunction."
+    },
+    {
+      "label": "The Torn Letter",
+      "appears_as": "A letter suggesting Edgar was going to cut off Julian financially.",
+      "truth": "It was actually a letter of support, misinterpreted.",
+      "how_resolved": "Crowe finds the complete letter hidden in Julian's belongings."
+    },
+    {
+      "label": "The Missing Key",
+      "appears_as": "The key to the study thought to be lost.",
+      "truth": "Clara had it all along, hidden in her belongings.",
+      "how_resolved": "Crowe discovers it during a search of her things."
+    }
+  ],
+  "chapter_plan": [
+    {
+      "chapter": 1,
+      "purpose": "Introduce the characters and setting.",
+      "key_scenes": [
+        "Arrival of guests at Ravenhurst Manor",
+        "Initial dinner conversation",
+        "Introduction of Edgar's controlling nature"
+      ],
+      "chapter_end_hook": "A sudden power outage plunges the manor into darkness.",
+      "clues_to_seed": [
+        "An overheard argument between Julian and Edgar."
+      ]
+    },
+    {
+      "chapter": 2,
+      "purpose": "The murder occurs.",
+      "key_scenes": [
+        "Guests discover Edgar's body in the locked study",
+        "Initial reactions of shock and suspicion",
+        "Inspector Crowe begins his investigation"
+      ],
+      "chapter_end_hook": "A thunderclap echoes as the storm intensifies.",
+      "clues_to_seed": [
+        "Wet footprints leading away from the study."
+      ]
+    },
+    {
+      "chapter": 3,
+      "purpose": "Investigation deepens, red herrings are introduced.",
+      "key_scenes": [
+        "Interrogation of Beatrice about her alibi",
+        "Crowe finds the stopped clock",
+        "Julian's gambling debts come to light"
+      ],
+      "chapter_end_hook": "A hidden letter is found, raising more questions.",
+      "clues_to_seed": [
+        "The torn letter found in Julian's room."
+      ]
+    },
+    {
+      "chapter": 4,
+      "purpose": "Mid-story reversal reveals hidden connections.",
+      "key_scenes": [
+        "Crowe confronts Clara about her knowledge of Edgar's secrets",
+        "The discovery of the missing key",
+        "Julian's confrontation with Clara about blackmail"
+      ],
+      "chapter_end_hook": "Clara's nervousness raises suspicion.",
+      "clues_to_seed": [
+        "A misfiled ledger found in the study."
+      ]
+    },
+    {
+      "chapter": 5,
+      "purpose": "The truth begins to unravel.",
+      "key_scenes": [
+        "Crowe pieces together the timeline",
+        "Interviews reveal conflicting alibis",
+        "Confrontation with Dr. Hargreaves about his relationship with Beatrice"
+      ],
+      "chapter_end_hook": "A shocking revelation about Clara's motives.",
+      "clues_to_seed": [
+        "The stopped clock is examined for fingerprints."
+      ]
+    },
+    {
+      "chapter": 6,
+      "purpose": "Resolution and reveal.",
+      "key_scenes": [
+        "Inspector Crowe gathers all suspects",
+        "Reveals the true murderer",
+        "Explains the locked room mystery"
+      ],
+      "chapter_end_hook": "The storm begins to clear, symbolizing the end of the mystery.",
+      "clues_to_seed": []
+    }
+  ],
+  "clue_ledger": [
+    {
+      "clue": "A stopped clock",
+      "planted_in_chapter": 3,
+      "surface_interpretation": "Indicates the time of death.",
+      "true_meaning": "Merely a coincidence, unrelated to the murder."
+    },
+    {
+      "clue": "A misfiled ledger",
+      "planted_in_chapter": 4,
+      "surface_interpretation": "Could suggest financial wrongdoing by Julian.",
+      "true_meaning": "Points to Clara's hidden dealings."
+    },
+    {
+      "clue": "Wet footprints where none should be",
+      "planted_in_chapter": 2,
+      "surface_interpretation": "Indicates someone left the study.",
+      "true_meaning": "Clara's access during the storm."
+    },
+    {
+      "clue": "A torn letter",
+      "planted_in_chapter": 3,
+      "surface_interpretation": "Suggests a financial dispute.",
+      "true_meaning": "Misleading; it was a supportive letter."
+    },
+    {
+      "clue": "A missing key",
+      "planted_in_chapter": 4,
+      "surface_interpretation": "Indicates someone could access the study.",
+      "true_meaning": "Clara had it hidden."
+    },
+    {
+      "clue": "An overheard argument",
+      "planted_in_chapter": 1,
+      "surface_interpretation": "Suggests tension between Julian and Edgar.",
+      "true_meaning": "Hints at deeper family issues."
+    }
+  ],
+  "timeline": [
+    {
+      "time": "7:00 PM",
+      "event": "Dinner begins with all guests present."
+    },
+    {
+      "time": "8:00 PM",
+      "event": "Power outage occurs, guests are unsettled."
+    },
+    {
+      "time": "8:30 PM",
+      "event": "Murder discovered by Clara."
+    },
+    {
+      "time": "9:00 PM",
+      "event": "Inspector Crowe arrives to investigate."
+    }
+  ]
+}

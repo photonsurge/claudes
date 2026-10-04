@@ -1,0 +1,294 @@
+{
+  "chapter_number": 1,
+  "chapter_title": "The Gathering Storm",
+  "summary": "As the storm rages outside, the guests at Ravenhurst Manor gather for dinner, revealing their hidden tensions and secrets. A scream shatters the evening, foreshadowing the dark events to come.",
+  "runtime_target_sec": 1800,
+  "continuity": {
+    "must_reference_clues": [
+      "A stopped clock",
+      "An overheard argument"
+    ],
+    "must_not_reveal": [],
+    "state_in": {
+      "location": "Ravenhurst Manor",
+      "known_facts": [
+        "A violent storm is occurring.",
+        "The family dynamics are strained."
+      ]
+    },
+    "state_out": {
+      "location": "Ravenhurst Manor",
+      "new_facts": [
+        "A scream is heard from Edgar's study."
+      ]
+    }
+  },
+  "scenes": [
+    {
+      "scene_id": "ch_01_scene_01",
+      "order": 1,
+      "location": "Entrance Hall, Ravenhurst Manor",
+      "time": "8:00 PM",
+      "mood": "Tense and foreboding",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Dim, flickering candles",
+        "bg_sfx": [
+          "Thunder rumbling",
+          "Rain pounding against windows"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_01_beat_01",
+          "order": 1,
+          "type": "action",
+          "actor": "null",
+          "speaker": "null",
+          "text": "The guests arrive, shaking off rain and exchanging polite but strained greetings.",
+          "line": null,
+          "emotion": null,
+          "pace_wpm": null,
+          "duration_sec": 15,
+          "shot_hint": "Wide shot of the entrance hall with guests arriving.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_01_beat_02",
+          "order": 2,
+          "type": "dialogue",
+          "actor": "Beatrice Blackwood",
+          "speaker": "Beatrice",
+          "text": "I hope the storm does not ruin our evening.",
+          "line": null,
+          "emotion": "Concerned",
+          "pace_wpm": 120,
+          "duration_sec": 5,
+          "shot_hint": "Close-up on Beatrice's worried face.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "female_01",
+            "style": "calm",
+            "prosody": "slightly anxious"
+          },
+          "subtext": "Her concern masks deeper fears."
+        },
+        {
+          "beat_id": "ch_01_beat_03",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Julian Blackwood",
+          "speaker": "Julian",
+          "text": "Don't worry, Mother. It's just a bit of rain.",
+          "line": null,
+          "emotion": "Reassuring",
+          "pace_wpm": 130,
+          "duration_sec": 5,
+          "shot_hint": "Medium shot of Julian with a charming smile.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_01",
+            "style": "charming",
+            "prosody": "confident"
+          },
+          "subtext": "Trying to mask his own anxiety."
+        }
+      ],
+      "transitions": {
+        "in": "Fade in from black.",
+        "out": "Cut to dinner table."
+      }
+    },
+    {
+      "scene_id": "ch_01_scene_02",
+      "order": 2,
+      "location": "Dining Room, Ravenhurst Manor",
+      "time": "8:30 PM",
+      "mood": "Oppressive yet elegant",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Candlelit, shadows flickering",
+        "bg_sfx": [
+          "Thunder crashing",
+          "Clinking of cutlery"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_01_beat_04",
+          "order": 1,
+          "type": "action",
+          "actor": "null",
+          "speaker": "null",
+          "text": "The family sits at the table, tension palpable in the air.",
+          "line": null,
+          "emotion": null,
+          "pace_wpm": null,
+          "duration_sec": 10,
+          "shot_hint": "Wide shot of the dining table with all characters present.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_01_beat_05",
+          "order": 2,
+          "type": "dialogue",
+          "actor": "Clara Finch",
+          "speaker": "Clara",
+          "text": "The storm is quite fierce tonight, isn't it, Mr. Blackwood?",
+          "line": null,
+          "emotion": "Curious",
+          "pace_wpm": 120,
+          "duration_sec": 5,
+          "shot_hint": "Close-up on Clara with a slight smile.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "female_02",
+            "style": "inquisitive",
+            "prosody": "light"
+          },
+          "subtext": "Trying to ease the tension."
+        },
+        {
+          "beat_id": "ch_01_beat_06",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Edgar Blackwood",
+          "speaker": "Edgar",
+          "text": "It's merely a storm, Clara. We have more pressing matters at hand.",
+          "line": null,
+          "emotion": "Irritated",
+          "pace_wpm": 100,
+          "duration_sec": 5,
+          "shot_hint": "Close-up on Edgar's stern face.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_02",
+            "style": "authoritative",
+            "prosody": "sharp"
+          },
+          "subtext": "His irritation hints at deeper issues."
+        }
+      ],
+      "transitions": {
+        "in": "Cut to dining room.",
+        "out": "Fade to black."
+      }
+    },
+    {
+      "scene_id": "ch_01_scene_03",
+      "order": 3,
+      "location": "Study, Ravenhurst Manor",
+      "time": "9:30 PM",
+      "mood": "Chaotic and shocking",
+      "set_state": {
+        "weather": "Stormy",
+        "lighting": "Dim, with flashes of lightning",
+        "bg_sfx": [
+          "Scream echoing",
+          "Thunder crashing"
+        ]
+      },
+      "beats": [
+        {
+          "beat_id": "ch_01_beat_07",
+          "order": 1,
+          "type": "action",
+          "actor": "null",
+          "speaker": "null",
+          "text": "A blood-curdling scream pierces the air, followed by silence.",
+          "line": null,
+          "emotion": null,
+          "pace_wpm": null,
+          "duration_sec": 5,
+          "shot_hint": "Close-up on the door to the study, slightly ajar.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_01_beat_08",
+          "order": 2,
+          "type": "action",
+          "actor": "Beatrice Blackwood",
+          "speaker": "null",
+          "text": "Beatrice rushes towards the study, panic in her eyes.",
+          "line": null,
+          "emotion": "Panicked",
+          "pace_wpm": null,
+          "duration_sec": 5,
+          "shot_hint": "Tracking shot following Beatrice as she runs.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": null,
+          "subtext": null
+        },
+        {
+          "beat_id": "ch_01_beat_09",
+          "order": 3,
+          "type": "dialogue",
+          "actor": "Julian Blackwood",
+          "speaker": "Julian",
+          "text": "What was that?!",
+          "line": null,
+          "emotion": "Shocked",
+          "pace_wpm": 150,
+          "duration_sec": 5,
+          "shot_hint": "Medium shot of Julian, eyes wide.",
+          "blocking": null,
+          "animation_tags": null,
+          "voice": {
+            "voice_id": "male_01",
+            "style": "urgent",
+            "prosody": "fast"
+          },
+          "subtext": "His charm replaced by genuine fear."
+        }
+      ],
+      "transitions": {
+        "in": "Cut to the study door.",
+        "out": "Fade to black."
+      }
+    }
+  ],
+  "chapter_audio_plan": {
+    "music_cues": [
+      {
+        "cue_id": "ch_01_music_01",
+        "track": "Gothic Elegance",
+        "start_sec": 0,
+        "duck_under_dialogue": true
+      },
+      {
+        "cue_id": "ch_01_music_02",
+        "track": "Tension Rising",
+        "start_sec": 600,
+        "duck_under_dialogue": true
+      }
+    ],
+    "sfx_cues": [
+      {
+        "cue_id": "ch_01_sfx_01",
+        "name": "Thunder Crash",
+        "start_sec": 0,
+        "gain_db": -5
+      },
+      {
+        "cue_id": "ch_01_sfx_02",
+        "name": "Scream",
+        "start_sec": 900,
+        "gain_db": 0
+      }
+    ]
+  }
+}

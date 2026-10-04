@@ -1,0 +1,5 @@
+node_modules/
+*.svg
+HF-HUB/
+character_images/*
+location_images/*
