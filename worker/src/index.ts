@@ -33,6 +33,7 @@ import { installJobConsoleTap, runInJobLogContext, getJobLog, listJobLogs } from
 import { beginJob, endJob, startCancelSubscriber, activeJobLabels } from "./jobCancel";
 import { startDirector, stopDirector } from "./director/loop";
 import { startScriptRunner, stopScriptRunner } from "./director/script-runner";
+import { startCrosswordRunner, stopCrosswordRunner } from "./crossword/runner";
 import { startViewerSweep, stopViewerSweep } from "./stream/viewer-sweep";
 import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
@@ -213,6 +214,9 @@ process.on("uncaughtException", (err) => {
   // Scripted shorts: plays a saved script on scenes in "script" mode, on its
   // own clock so a cut never waits behind the auto loop's candidate builds.
   startScriptRunner();
+  // Crossword host: one game per enabled crossword scene, on its own clock
+  // (docs/crossword-mode-plan.md §4.4).
+  startCrosswordRunner();
   // Viewer chat picks (music / palette): lapse and promote them on time.
   startViewerSweep();
 
@@ -513,6 +517,26 @@ process.on("uncaughtException", (err) => {
       log(TAG, `registered repeatable weather.thinArchive`, { every: THIN_MS });
     } catch (err) {
       log(TAG, `failed to register weather.thinArchive`, { err: summarizeForLog(err) });
+    }
+  }
+
+  // ---- Repeatable crossword.topUp (docs/crossword-mode-plan.md §7.5) ----
+  // Builds one puzzle for each enabled crossword scene short of stock. Every 30
+  // minutes, staggered; a no-op with no crossword scene. CROSSWORD_TOP_UP=off pauses it.
+  if (process.env.CROSSWORD_TOP_UP !== "off") {
+    const TOP_UP_MS = Number(process.env.CROSSWORD_TOP_UP_MS || 30 * 60 * 1000);
+    try {
+      await addJob(
+        "do",
+        { domain: "crossword", type: "crossword", event: "topUp", data: {} },
+        {
+          repeat: { every: TOP_UP_MS, offset: staggerOffset("crossword-top-up", TOP_UP_MS) },
+          jobId: "crossword-top-up",
+        },
+      );
+      log(TAG, `registered repeatable crossword.topUp`, { every: TOP_UP_MS });
+    } catch (err) {
+      log(TAG, `failed to register crossword.topUp`, { err: summarizeForLog(err) });
     }
   }
 
@@ -1802,6 +1826,7 @@ process.on("uncaughtException", (err) => {
     // carries on cutting shots the whole time bullWorker.close() drains jobs.
     stopDirector();
     stopScriptRunner();
+    stopCrosswordRunner();
     stopViewerSweep();
 
     // Stop the streaming-run monitors (in-process health/confirm loops) too.
