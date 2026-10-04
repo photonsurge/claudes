@@ -455,12 +455,15 @@ the video reaches the front.
 - **Quota:** about 400 units a video (create, bind, two transitions, thumbnail,
   description, privacy), of 10,000 a day.
 - **No chat.** A video is not a live show, even though it is made through a broadcast.
-  The run is created with `chat` off, so the worker never polls or posts to chat, and
-  chat commands can't steer the director. Nothing is announced (`announce` off, no
-  hydra post). The broadcast's live chat on YouTube itself also needs to be off, so the
-  video has no chat replay. That is set on the broadcast if the API allows it, and
-  otherwise in YouTube Studio's live defaults for the account. Check this on the first
-  render.
+  This reuses the chat switch live runs already have (`Run.chat`, the Chat toggle on
+  the streams form and slots): the queue creates every render's run with
+  `chat: { enabled: false, promoteToTicker: false }`, and the Render form doesn't offer
+  the toggle. So the worker never polls or posts to chat, and chat commands can't steer
+  the director. Nothing is announced (`announce` off, no
+  hydra post). That switch only covers our side. It doesn't turn off YouTube's own chat
+  on the broadcast, so a video may still show a chat replay. Turn that off on the
+  broadcast if the API allows it, otherwise in YouTube Studio's live defaults for the
+  account. Check this on the first render.
 
 ### 6.4 Changes the run pipeline needs
 
