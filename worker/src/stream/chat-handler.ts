@@ -37,6 +37,7 @@ import {
 } from "@photonsurge/shared/viewer";
 import type { StreamPlatform } from "@photonsurge/shared/runs";
 import { emitWorkerEvent } from "../socket";
+import { makeDirectorHook } from "./chat-director";
 
 export interface ChatInput {
   author: string;
@@ -250,8 +251,10 @@ export async function handleChatBatch(
 
 /** The worker's default wiring: the app db and the socket relay. */
 export async function defaultHandlerDeps(): Promise<HandlerDeps> {
+  const db = await getAppDb();
   return {
-    db: await getAppDb(),
+    db,
     emit: (state) => emitWorkerEvent({ type: VIEWER_STATE, data: state }),
+    director: makeDirectorHook(db),
   };
 }

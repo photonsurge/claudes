@@ -359,6 +359,18 @@ export function activeRegionBbox(
 }
 
 /**
+ * The map looks a cut tours: its own (a viewer's `:mode aurora` parks the spin
+ * on one look) or else the channel's enabled looks for its kind.
+ */
+export function cutMapTypeIds(
+  cut: Pick<Segment, "kind" | "mapTypes"> | null,
+  config: { mapTypes: Partial<Record<SegmentKind, string[]>> },
+): string[] | undefined {
+  if (!cut) return undefined;
+  return cut.mapTypes?.length ? cut.mapTypes : config.mapTypes[cut.kind];
+}
+
+/**
  * The effective look for the current cut: its baseline `patch` with the current
  * within-shot map step folded in (the cycled field, or a full map-type look for a
  * global spin), plus the `segment` relabelled to the current map type (global

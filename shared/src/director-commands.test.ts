@@ -110,16 +110,25 @@ describe("arbitrate", () => {
     expect(arbitrate([q], { now: NOW, atBoundary: true }).atBoundary).toBe(q);
   });
 
-  it("never treats a viewer cut as an immediate operator cut", () => {
+  it("never treats a viewer cut as an operator one: it comes out as the viewer's next request", () => {
     const v = cmd({ op: "cut", target: { type: "kind", kind: "quake" } }, { source: { kind: "viewer", platform: "youtube", author: "ann" } });
     const out = arbitrate([v], { now: NOW, atBoundary: false });
     expect(out.cutNow).toBeNull();
-    expect(arbitrate([v], { now: NOW, atBoundary: true }).atBoundary).toBe(v);
+    expect(out.viewerNext).toBe(v);
+    expect(arbitrate([v], { now: NOW, atBoundary: true }).atBoundary).toBeNull();
+  });
+
+  it("puts an operator's queued request ahead of an older viewer request at the boundary", () => {
+    const v = cmd({ op: "queue", target: { type: "kind", kind: "quake" } }, { source: { kind: "viewer", platform: "youtube", author: "ann" } });
+    const o = cmd({ op: "queue", target: { type: "kind", kind: "storm" } });
+    const out = arbitrate([v, o], { now: NOW, atBoundary: true });
+    expect(out.atBoundary).toBe(o);
+    expect(out.viewerNext).toBe(v);
   });
 
   it("ignores rows that are no longer queued", () => {
     const done = cmd({ op: "skip" }, { status: "applied" });
-    expect(arbitrate([done], { now: NOW, atBoundary: true })).toEqual({ expired: [], control: [], cutNow: null, atBoundary: null });
+    expect(arbitrate([done], { now: NOW, atBoundary: true })).toEqual({ expired: [], control: [], cutNow: null, atBoundary: null, viewerNext: null });
   });
 });
 

@@ -194,12 +194,18 @@ export async function stepScene(
   /** Put a command's target on air; false when it was refused. */
   const air = async (c: DirectorCommand, boundary: boolean): Promise<boolean> => {
     if (c.cmd.op !== "cut" && c.cmd.op !== "queue") return false;
-    const res = await deps.resolve(db, cfg, r, c.cmd.target, now);
+    const res = await deps.resolve(db, cfg, r, c.cmd.target, now, undefined, {
+      allowCities: c.source.kind === "viewer" ? !!c.viewer?.allowCities : true,
+    });
     if ("refused" in res) {
       await settle(c, "refused", { note: res.refused });
       return false;
     }
-    const next = withHold(res.segment, c.cmd.holdS);
+    let next = withHold(res.segment, c.cmd.holdS);
+    if (c.source.kind === "viewer") {
+      next = { ...next, requestedBy: { author: c.source.author, platform: c.source.platform } };
+      r.lastViewerCutAt = now;
+    }
     await cut(next, {
       pool: [],
       skipRequested: boundary ? skipRequested || skipByCommand : true,
@@ -276,15 +282,33 @@ export async function stepScene(
   // Interrupt the running shot for breaking news.
   if (!boundary && (await breakIn(false))) return;
 
+  // A viewer's request, when the channel's pacing allows another one. Never
+  // mid-ad, never while paused, and mid-shot only for an "immediate" channel.
+  const viewer = arb.viewerNext && !cleared && !settled.has(arb.viewerNext.id) ? arb.viewerNext : null;
+  const viewerDue = (c: DirectorCommand) =>
+    !paused && now - r.lastViewerCutAt >= (c.viewer?.everyS ?? 0) * 1000;
+  if (
+    !boundary &&
+    viewer &&
+    viewer.cmd.op === "cut" &&
+    viewer.viewer?.immediate &&
+    r.current?.kind !== "ad" &&
+    viewerDue(viewer) &&
+    (await air(viewer, false))
+  ) {
+    refreshQueued();
+    return;
+  }
+
   if (boundary) {
     // operator > break-in > viewer > rotation.
     const queued = arb.atBoundary && !cleared && !settled.has(arb.atBoundary.id) ? arb.atBoundary : null;
-    if (queued?.source.kind === "operator" && (await air(queued, true))) {
+    if (queued && (await air(queued, true))) {
       refreshQueued();
       return;
     }
     if (await breakIn(true)) return;
-    if (queued && queued.source.kind !== "operator" && (await air(queued, true))) {
+    if (viewer && viewerDue(viewer) && (await air(viewer, true))) {
       refreshQueued();
       return;
     }

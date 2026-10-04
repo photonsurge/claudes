@@ -43,6 +43,17 @@ export const DirectorCommandSchema = new mongoose.Schema<iDirectorCommand>(
     expiresAt: { type: Number, required: true },
     appliedAt: { type: Number, required: false },
     appliedSeq: { type: Number, required: false },
+    viewer: {
+      type: new mongoose.Schema(
+        {
+          everyS: { type: Number, required: true },
+          immediate: { type: Boolean, required: true },
+          allowCities: { type: Boolean, required: true },
+        },
+        { _id: false },
+      ),
+      required: false,
+    },
     purgeAt: { type: Date, required: false },
   },
   mongoTimestamps,

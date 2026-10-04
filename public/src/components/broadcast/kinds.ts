@@ -55,6 +55,12 @@ export function incomingEyebrow(segment: { breakIn?: { reason: BreakInReason } }
   return segment.breakIn ? `⚡ INCOMING · ${BREAK_IN_LABEL[segment.breakIn.reason]}` : "EVENT DETECTED";
 }
 
+/** Who asked for this shot, for the on-air eyebrow — null for the director's own picks. */
+export function requestedByLabel(segment: { requestedBy?: { author: string } }): string | null {
+  const author = segment.requestedBy?.author?.trim();
+  return author ? `REQUESTED BY @${author.replace(/^@/, "")}` : null;
+}
+
 /** Kinds that are a single tracked point → get the centred event reticle. */
 const TARGETED = new Set<SegmentKind>(["storm", "volcano", "quake", "flight", "ship"]);
 

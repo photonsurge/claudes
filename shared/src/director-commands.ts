@@ -56,6 +56,11 @@ export interface DirectorCommand {
   expiresAt: number;
   appliedAt?: number;
   appliedSeq?: number;
+  /** A viewer's request carries the channel's policy as it stood when asked,
+   *  so the loop can pace it without reading the scene: the minimum gap
+   *  between viewer cuts, whether it may air mid-shot, and whether a place may
+   *  resolve to a city. */
+  viewer?: { everyS: number; immediate: boolean; allowCities: boolean };
 }
 
 /** How long a command waits before it lapses. */
@@ -144,8 +149,11 @@ export interface Arbitration {
   control: DirectorCommand[];
   /** An operator `cut` to put on air now (the oldest; any others wait a tick). */
   cutNow: DirectorCommand | null;
-  /** A `queue` command whose turn it is at this shot boundary. */
+  /** The operator's oldest `queue` command, whose turn it is at this shot boundary. */
   atBoundary: DirectorCommand | null;
+  /** The oldest viewer request (`cut` or `queue`). The loop decides when it may
+   *  air — behind the operator and breaking news, and the channel's pacing. */
+  viewerNext: DirectorCommand | null;
 }
 
 /**
@@ -153,7 +161,7 @@ export interface Arbitration {
  * Everything not returned stays queued and is looked at again next tick.
  */
 export function arbitrate(pending: readonly DirectorCommand[], view: ArbitrationView): Arbitration {
-  const out: Arbitration = { expired: [], control: [], cutNow: null, atBoundary: null };
+  const out: Arbitration = { expired: [], control: [], cutNow: null, atBoundary: null, viewerNext: null };
   for (const c of pending) {
     if (c.status !== "queued") continue;
     if (view.now >= c.expiresAt) {
@@ -162,10 +170,12 @@ export function arbitrate(pending: readonly DirectorCommand[], view: Arbitration
     }
     if (isControlOp(c.cmd)) {
       out.control.push(c);
-    } else if (c.cmd.op === "cut" && c.source.kind === "operator") {
+    } else if (c.source.kind !== "operator") {
+      out.viewerNext ??= c;
+    } else if (c.cmd.op === "cut") {
       out.cutNow ??= c;
-    } else if (view.atBoundary && !out.atBoundary) {
-      out.atBoundary = c;
+    } else if (view.atBoundary) {
+      out.atBoundary ??= c;
     }
   }
   return out;

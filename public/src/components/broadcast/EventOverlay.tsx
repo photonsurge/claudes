@@ -17,7 +17,7 @@
 import type { CSSProperties } from "react";
 import type { Segment } from "@photonsurge/shared/director";
 import { STAGE_W, STAGE_H } from "./useStageScale";
-import { KIND_COLOR, incomingEyebrow } from "./kinds";
+import { KIND_COLOR, incomingEyebrow, requestedByLabel } from "./kinds";
 import { useIncomingPhase } from "../../lib/incoming";
 import { TILE_BG } from "./config";
 import { KindGlyph } from "./glyphs";
@@ -239,6 +239,24 @@ export default function EventOverlay({
           WebkitBackdropFilter: "var(--panel-blur, blur(5px))",
         }}
       >
+        {requestedByLabel(segment) ? (
+          <div
+            data-testid="requested-by"
+            style={{
+              fontSize: 11.5,
+              fontWeight: 800,
+              letterSpacing: 2,
+              color,
+              marginBottom: 6,
+              maxWidth: "100%",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {requestedByLabel(segment)}
+          </div>
+        ) : null}
         <div style={{ display: "flex", alignItems: "center", gap: 10, maxWidth: "100%" }}>
           <KindGlyph kind={segment.kind} color={color} size={27} />
           <div

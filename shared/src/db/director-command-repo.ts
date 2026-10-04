@@ -26,6 +26,7 @@ export function makeDirectorCommandRepo(model: Model<iDirectorCommand>) {
       ttlMs: number;
       status?: CommandStatus;
       note?: string;
+      viewer?: DirectorCommand["viewer"];
     }): Promise<DirectorCommand> {
       const status = input.status ?? "queued";
       const doc: iDirectorCommand = {
@@ -37,6 +38,7 @@ export function makeDirectorCommandRepo(model: Model<iDirectorCommand>) {
         createdAt: input.now,
         expiresAt: input.now + input.ttlMs,
         ...(input.note ? { note: input.note } : {}),
+        ...(input.viewer ? { viewer: input.viewer } : {}),
         ...(status !== "queued" ? { purgeAt: new Date(input.now + COMMAND_RETENTION_MS) } : {}),
       } as iDirectorCommand;
       await model.create(doc);

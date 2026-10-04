@@ -83,6 +83,8 @@ export interface SceneRunner {
   handled: Set<string>;
   lastBreakInAt: number;
   lastRoundupBreakInAt: number;
+  /** When a viewer's request last aired — the channel's `everyS` pacing. */
+  lastViewerCutAt: number;
 }
 
 export const newRunner = (sceneId: string): SceneRunner => ({
@@ -105,6 +107,7 @@ export const newRunner = (sceneId: string): SceneRunner => ({
   handled: new Set(),
   lastBreakInAt: 0,
   lastRoundupBreakInAt: 0,
+  lastViewerCutAt: 0,
 });
 
 /** Remember break-in keys as dealt with, capped like the airing tally. */

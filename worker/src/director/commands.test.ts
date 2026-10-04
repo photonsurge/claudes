@@ -4,7 +4,7 @@ import { DEFAULT_DIRECTOR_CONFIG, mergeDirectorConfig, type Segment, type Segmen
 import type { Candidate } from "@photonsurge/shared/director-select";
 import type { AppDb } from "@photonsurge/shared/db/index";
 import type { DirectorCommand } from "@photonsurge/shared/director-commands";
-import { applyControl, holdPaused, resolveTarget, resume, withHold } from "./commands";
+import { applyControl, holdPaused, mapTypeAvailable, resolveTarget, resume, withHold } from "./commands";
 import { newRunner } from "./runner";
 
 const cfg = mergeDirectorConfig(DEFAULT_DIRECTOR_CONFIG, {});
@@ -229,5 +229,83 @@ describe("resolveTarget — places and round-ups", () => {
     const res = await resolveTarget(roundupDb({ eventSummaries: { latest } }), cfg, r, { type: "roundup" }, NOW);
     expect("segment" in res && res.segment.id).toBe("global:d1");
     expect(await resolveTarget(roundupDb(), cfg, r, { type: "roundup" }, NOW)).toEqual({ refused: "no world round-up yet" });
+  });
+});
+
+describe("resolveTarget — map looks", () => {
+  const r = newRunner("s1");
+  const spin = (kind: "global" | "ocean"): Candidate => ({
+    segment: { ...seg(`${kind}:world`), title: "World", patch: { showCables: true } },
+    score: 5,
+  });
+  const lookDb = (over: Record<string, unknown> = {}) =>
+    fakeDb({
+      aurora: { latest: jest.fn(async () => ({ aurora: { frameId: "latest" } })) },
+      satimg: { latest: jest.fn(async () => ({ frame: null })) },
+      latestPublishedRunsByModel: jest.fn(async () => [{ model: "gfs", variables: { temp: {}, cloud: {} } }, { model: "rtofs", variables: { sst: {} } }]),
+      ...over,
+    });
+
+  it("parks the world spin on one look, titled for it", async () => {
+    const build = builder([spin("global")]);
+    const res = await resolveTarget(lookDb(), cfg, r, { type: "mapType", id: "aurora" }, NOW, { buildCandidates: build } as any);
+    expect("segment" in res && res.segment).toMatchObject({ id: "global:world", mapTypes: ["aurora"], title: expect.stringMatching(/aurora/i) });
+    const [, builtCfg, , opts] = build.mock.calls[0] as unknown as [unknown, typeof cfg, unknown, { kinds: string[] }];
+    expect(opts.kinds).toEqual(["global"]);
+    expect(builtCfg.kinds.global).toBe(true);
+  });
+
+  it("folds the look's patch over the spin's and leaves the pool member untouched", async () => {
+    const member = spin("global");
+    const res = await resolveTarget(lookDb(), cfg, r, { type: "mapType", id: "temp" }, NOW, { buildCandidates: builder([member]) } as any);
+    expect("segment" in res && res.segment.patch).toMatchObject({ activeVariable: "temp", showCables: false });
+    expect(member.segment.mapTypes).toBeUndefined();
+    expect(member.segment.patch).toEqual({ showCables: true });
+  });
+
+  it("uses the ocean spin for an ocean field", async () => {
+    const build = builder([spin("ocean")]);
+    const res = await resolveTarget(lookDb(), cfg, r, { type: "mapType", id: "sst" }, NOW, { buildCandidates: build } as any);
+    expect("segment" in res && res.segment).toMatchObject({ id: "ocean:world", mapTypes: ["sst"] });
+  });
+
+  it("refuses an unknown look, or one whose data isn't baked", async () => {
+    const deps = { buildCandidates: builder([spin("global"), spin("ocean")]) } as any;
+    expect(await resolveTarget(lookDb(), cfg, r, { type: "mapType", id: "lava" }, NOW, deps)).toEqual({ refused: `"lava" isn't a map look` });
+    const res = await resolveTarget(lookDb(), cfg, r, { type: "mapType", id: "wave" }, NOW, deps);
+    expect("refused" in res && res.refused).toMatch(/isn't available right now/);
+    const noAurora = lookDb({ aurora: { latest: async () => ({ aurora: null }) } });
+    expect("refused" in (await resolveTarget(noAurora, cfg, r, { type: "mapType", id: "aurora" }, NOW, deps))).toBe(true);
+  });
+
+  it("refuses when the spin can't be built", async () => {
+    const res = await resolveTarget(lookDb(), cfg, r, { type: "mapType", id: "temp" }, NOW, { buildCandidates: builder([]) } as any);
+    expect("refused" in res && res.refused).toMatch(/isn't available right now/);
+  });
+});
+
+describe("mapTypeAvailable", () => {
+  const db = (over: Record<string, unknown>) => fakeDb(over);
+
+  it("is true for a look with no data need", async () => {
+    expect(await mapTypeAvailable(db({}), undefined)).toBe(true);
+  });
+
+  it("needs a baked disc or mosaic for satellite imagery — the lightning overlay doesn't count", async () => {
+    const latest = jest.fn(async (id: string) => ({ frame: id === "lightning" ? { id } : null }));
+    expect(await mapTypeAvailable(db({ satimg: { latest } }), { kind: "satimg" })).toBe(false);
+    const himawari = jest.fn(async (id: string) => ({ frame: id === "himawari" ? { id } : null }));
+    expect(await mapTypeAvailable(db({ satimg: { latest: himawari } }), { kind: "satimg" })).toBe(true);
+  });
+
+  it("needs the variable in some published run", async () => {
+    const runs = db({ latestPublishedRunsByModel: async () => [{ variables: { temp: {} } }, {}] });
+    expect(await mapTypeAvailable(runs, { kind: "variable", id: "temp" })).toBe(true);
+    expect(await mapTypeAvailable(runs, { kind: "variable", id: "rain" })).toBe(false);
+  });
+
+  it("reads a db error as unavailable", async () => {
+    const broken = db({ aurora: { latest: async () => { throw new Error("down"); } } });
+    expect(await mapTypeAvailable(broken, { kind: "aurora" })).toBe(false);
   });
 });

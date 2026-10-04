@@ -34,7 +34,7 @@ const NO_UP_NEXT: never[] = [];
 import { listCities, type City } from "../../lib/cities";
 import { retryUntil } from "../../lib/retry";
 import { useRegionCities } from "../../lib/useRegionCities";
-import { useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
+import { cutMapTypeIds, useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
 import WatchSurface from "../../components/WatchSurface";
 import { useViewerState } from "../../lib/viewer";
 import ViewingOverlay from "../../components/ViewingOverlay";
@@ -74,7 +74,7 @@ function WatchPageInner() {
   const { patch: cutPatch, segment: onAir, focus } = useDirectorCut(
     cut,
     manifest,
-    cut ? directorConfig.mapTypes[cut.kind] : undefined,
+    cutMapTypeIds(cut, directorConfig),
   );
   const shown = useMemo(
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),

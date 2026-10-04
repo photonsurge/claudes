@@ -258,6 +258,93 @@ describe("stepScene", () => {
     await stepScene(fake, config(), { ...onAir(), endsAt: NOW }, NOW, deps);
     expect(cutCalls[0].meta.command).toEqual({ source: "viewer", author: "ann" });
   });
+
+  describe("viewer requests", () => {
+    const ann = { kind: "viewer" as const, platform: "youtube" as const, author: "ann" };
+    const ask = (op: "cut" | "queue", viewer: DirectorCommand["viewer"], over: Partial<DirectorCommand> = {}) =>
+      command({ op, target: { type: "place", query: "japan" } }, { source: ann, viewer, ...over });
+    const paced = { everyS: 60, immediate: false, allowCities: false };
+
+    it("waits for the shot change, then airs stamped with who asked", async () => {
+      const { queue, fake, deps, cutCalls } = setup([ask("queue", paced)]);
+      const r = onAir();
+      await stepScene(fake, config(), r, NOW, deps);
+      expect(cutCalls).toHaveLength(0);
+      r.endsAt = NOW;
+      await stepScene(fake, config(), r, NOW, deps);
+      expect(cutCalls[0].next).toMatchObject({ id: "quake:taken", requestedBy: { author: "ann", platform: "youtube" } });
+      expect(r.lastViewerCutAt).toBe(NOW);
+      expect(queue.rows[0].status).toBe("applied");
+    });
+
+    it("never stamps the resolved pool member itself", async () => {
+      const resolved = seg("quake:taken");
+      const { fake, deps } = setup([ask("queue", paced)], resolved);
+      await stepScene(fake, config(), { ...onAir(), endsAt: NOW }, NOW, deps);
+      expect(resolved.requestedBy).toBeUndefined();
+    });
+
+    it("keeps the channel's gap between viewer cuts, rotating meanwhile", async () => {
+      const { queue, fake, deps, cutCalls } = setup([ask("queue", paced)]);
+      const r = { ...onAir(), endsAt: NOW, lastViewerCutAt: NOW - 30_000 };
+      await stepScene(fake, config(), r, NOW, deps);
+      expect(cutCalls.map((c) => c.next.id)).toEqual(["storm:rotation"]);
+      expect(queue.rows[0].status).toBe("queued");
+      r.endsAt = NOW + 30_000;
+      await stepScene(fake, config(), r, NOW + 30_000, deps);
+      expect(cutCalls[1].next.requestedBy?.author).toBe("ann");
+    });
+
+    it("passes the channel's city rule to the resolver (operators always get cities)", async () => {
+      const { fake, deps } = setup([ask("queue", { ...paced, allowCities: true })]);
+      await stepScene(fake, config(), { ...onAir(), endsAt: NOW }, NOW, deps);
+      expect((deps.resolve as jest.Mock).mock.calls[0][6]).toEqual({ allowCities: true });
+      const second = setup([ask("queue", paced)]);
+      await stepScene(second.fake, config(), { ...onAir(), endsAt: NOW }, NOW, second.deps);
+      expect((second.deps.resolve as jest.Mock).mock.calls[0][6]).toEqual({ allowCities: false });
+      const op = setup([command({ op: "queue", target: { type: "place", query: "paris" } })]);
+      await stepScene(op.fake, config(), { ...onAir(), endsAt: NOW }, NOW, op.deps);
+      expect((op.deps.resolve as jest.Mock).mock.calls[0][6]).toEqual({ allowCities: true });
+    });
+
+    it("an immediate channel cuts mid-shot — but never into an ad or a paused shot", async () => {
+      const fast = { ...paced, immediate: true };
+      const a = setup([ask("cut", fast)]);
+      await stepScene(a.fake, config(), onAir(), NOW, a.deps);
+      expect(a.cutCalls[0].meta.skipRequested).toBe(true);
+      expect(a.cutCalls[0].next.requestedBy?.author).toBe("ann");
+
+      const b = setup([ask("cut", fast)]);
+      await stepScene(b.fake, config(), { ...onAir(), current: seg("ad:a1") }, NOW, b.deps);
+      expect(b.cutCalls).toHaveLength(0);
+
+      const c = setup([ask("cut", fast)]);
+      await stepScene(c.fake, config(), { ...onAir(), paused: { since: NOW - 1, remainingMs: 5_000 } } as SceneRunner, NOW, c.deps);
+      expect(c.cutCalls).toHaveLength(0);
+    });
+
+    it("a viewer cut on a next-shot channel still waits for the boundary", async () => {
+      const { fake, deps, cutCalls } = setup([ask("cut", paced)]);
+      await stepScene(fake, config(), onAir(), NOW, deps);
+      expect(cutCalls).toHaveLength(0);
+    });
+
+    it("an operator's queued request goes before a viewer's at the same shot change", async () => {
+      const v = ask("queue", { ...paced, everyS: 0 }, { createdAt: NOW - 900 });
+      const o = command({ op: "queue", target: { type: "segment", id: "storm:op" } });
+      const { queue, fake, deps, cutCalls } = setup([v, o]);
+      await stepScene(fake, config(), { ...onAir(), endsAt: NOW }, NOW, deps);
+      expect(cutCalls[0].meta.command.source).toBe("operator");
+      expect(queue.rows.find((c) => c.id === v.id)!.status).toBe("queued");
+    });
+
+    it("a refused viewer request falls through to rotation with its reason logged", async () => {
+      const { queue, fake, deps, cutCalls } = setup([ask("queue", paced)], null);
+      await stepScene(fake, config(), { ...onAir(), endsAt: NOW }, NOW, deps);
+      expect(queue.rows[0]).toMatchObject({ status: "refused", note: "no quake in the pool" });
+      expect(cutCalls.map((c) => c.next.id)).toEqual(["storm:rotation"]);
+    });
+  });
 });
 
 describe("stepScene — break-ins", () => {

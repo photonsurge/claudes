@@ -13,6 +13,8 @@ import type { CommandTarget, ControlOp, DirectorCommand } from "@photonsurge/sha
 import { countryShot } from "@photonsurge/shared/director-countries";
 import { regionShot } from "@photonsurge/shared/director-regions";
 import { resolvePlaceQuery } from "@photonsurge/shared/director-places";
+import { INTRO_MAP_TYPES, OCEAN_MAP_TYPES, type MapTypeNeed } from "@photonsurge/shared/director-rois";
+import { SATIMG_FEEDS } from "@photonsurge/shared/satimg/types";
 import {
   buildCandidates,
   countryCandidate,
@@ -176,8 +178,48 @@ export async function resolveTarget(
       return pick ? { segment: pick } : { refused: `no ${KIND_WORDS[target.kind] ?? target.kind} to show right now` };
     }
     case "mapType":
-      return { refused: "that request isn't supported yet" };
+      return resolveMapType(db, cfg, r, target.id, deps);
   }
+}
+
+/** Is the data a look needs actually there right now? (So a pick never parks on a blank globe.) */
+export async function mapTypeAvailable(db: AppDb, need: MapTypeNeed | undefined): Promise<boolean> {
+  if (!need) return true;
+  try {
+    if (need.kind === "aurora") return !!(await db.aurora.latest()).aurora;
+    if (need.kind === "satimg") {
+      for (const feed of SATIMG_FEEDS) if (feed.kind !== "overlay" && (await db.satimg.latest(feed.id)).frame) return true;
+      return false;
+    }
+    const runs = await db.latestPublishedRunsByModel();
+    return runs.some((run: { variables?: Record<string, unknown> }) => !!run.variables?.[need.id]);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A map-look request (`:mode aurora`): the world spin (the ocean spin for an
+ * ocean field) with its look tour parked on that one look.
+ */
+async function resolveMapType(db: AppDb, cfg: DirectorConfig, r: SceneRunner, id: string, deps: ResolveDeps): Promise<Resolution> {
+  const ocean = OCEAN_MAP_TYPES.find((t) => t.id === id);
+  const look = ocean ?? INTRO_MAP_TYPES.find((t) => t.id === id);
+  if (!look) return { refused: `"${id}" isn't a map look` };
+  if (!(await mapTypeAvailable(db, look.needs))) return { refused: `${look.title} isn't available right now` };
+  const kind: SegmentKind = ocean ? "ocean" : "global";
+  const pool = await deps.buildCandidates(db, { ...cfg, kinds: { ...cfg.kinds, [kind]: true } }, countsOf(r), { kinds: [kind] });
+  const spin = pool.find((c) => c.segment.id === `${kind}:world`);
+  if (!spin) return { refused: `${look.title} isn't available right now` };
+  return {
+    segment: {
+      ...spin.segment,
+      title: look.title,
+      subtitle: look.subtitle,
+      mapTypes: [look.id],
+      patch: { ...spin.segment.patch, ...look.patch },
+    },
+  };
 }
 
 /** Apply a requested hold to a resolved segment (a copy — never mutate a pool member). */

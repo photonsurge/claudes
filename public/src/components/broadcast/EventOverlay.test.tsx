@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import type { Segment } from "@photonsurge/shared/director";
 import EventOverlay, { EventTrackingLabel, trackingBlockHeight } from "./EventOverlay";
-import { incomingEyebrow } from "./kinds";
+import { incomingEyebrow, requestedByLabel } from "./kinds";
 
 /** Minimal targeted-event segment for the readout block. */
 const quake: Segment = {
@@ -112,6 +112,21 @@ describe("EventOverlay INCOMING pre-roll", () => {
     render(<EventOverlay segment={seg()} />);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(document.querySelector("[data-phase]")).toHaveAttribute("data-phase", "none");
+    expect(screen.queryByTestId("requested-by")).not.toBeInTheDocument();
+  });
+
+  it("credits the viewer who asked, above the name", () => {
+    render(<EventOverlay segment={seg({ requestedBy: { author: "ann", platform: "youtube" } })} />);
+    expect(screen.getByTestId("requested-by")).toHaveTextContent("REQUESTED BY @ann");
+  });
+});
+
+describe("requestedByLabel", () => {
+  it("names the viewer, once-prefixed, and is null for the director's own picks", () => {
+    expect(requestedByLabel({ requestedBy: { author: "ann" } })).toBe("REQUESTED BY @ann");
+    expect(requestedByLabel({ requestedBy: { author: "@bob" } })).toBe("REQUESTED BY @bob");
+    expect(requestedByLabel({ requestedBy: { author: "  " } })).toBeNull();
+    expect(requestedByLabel({})).toBeNull();
   });
 });
 

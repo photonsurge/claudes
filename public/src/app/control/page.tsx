@@ -21,7 +21,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../lib/socket-provider";
 import { fetchManifest } from "../../lib/manifest";
 import { listScenes, fetchSceneState, useSceneEmitter } from "../../lib/scenes";
-import { useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
+import { cutMapTypeIds, useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
 import { listCities, type City } from "../../lib/cities";
 import { useRegionCities } from "../../lib/useRegionCities";
 import { useTracks } from "../../lib/tracks/useTracks";
@@ -116,7 +116,7 @@ export default function ControlPage() {
   const { patch: cutPatch, segment: onAir } = useDirectorCut(
     cut,
     manifest,
-    cut ? directorConfig.mapTypes[cut.kind] : undefined,
+    cutMapTypeIds(cut, directorConfig),
   );
   const shown = useMemo(
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),

@@ -353,6 +353,14 @@ describe("deckBadge", () => {
     expect(deckBadge(roundup, "locked")).toEqual({ badge: `⚡ ${KIND_LABEL.country}` });
   });
 
+  it("names the viewer who asked for a wide shot; a targeted shot leaves that to the reticle", () => {
+    const by = { author: "ann", platform: "youtube" };
+    expect(deckBadge(wide({ requestedBy: by }), null)).toEqual({ badge: `${KIND_LABEL.country} · @ann` });
+    expect(deckBadge(wide({ kind: "quake", requestedBy: by }), null)).toEqual({ badge: KIND_LABEL.quake });
+    // A break-in's own badge wins over a stale request stamp.
+    expect(deckBadge(wide({ requestedBy: by, breakIn: { reason: "storm", interrupted: false } }), "locked")).toEqual({ badge: `⚡ ${KIND_LABEL.country}` });
+  });
+
   it("leaves a targeted break-in to the reticle", () => {
     const quake = wide({ id: "quake:a", kind: "quake", breakIn: { reason: "quake", interrupted: true } });
     expect(deckBadge(quake, "incoming")).toEqual({ badge: KIND_LABEL.quake });

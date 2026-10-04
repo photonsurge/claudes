@@ -1,4 +1,4 @@
-import { eventPulse, activeCountryIso, activeRegionBbox, cutSteps } from "./director";
+import { eventPulse, activeCountryIso, activeRegionBbox, cutMapTypeIds, cutSteps } from "./director";
 import type { DirectorState, Segment } from "@photonsurge/shared/director";
 import type { MapTypeAvailability } from "./director";
 
@@ -193,6 +193,14 @@ describe("cutSteps", () => {
     expect(steps[0].label?.title).toBe("Southern Europe");
   });
 
+  it("parks a viewer's :mode spin on the one look they asked for", () => {
+    const spin = segment({ id: "global:world", kind: "global", mapTypes: ["temp"] });
+    const live = { ...avail, variables: new Set(["temp", "cloud"]) };
+    const { steps } = cutSteps(spin, live, cutMapTypeIds(spin, { mapTypes: { global: ["temp", "cloud"] } }));
+    expect(steps).toHaveLength(1);
+    expect(steps[0].patch.activeVariable).toBe("temp");
+  });
+
   it("never tours a world spin — it shows maps off even when it carries stops", () => {
     // A round-up rides a `global` spin as narrative graphics only; the camera
     // keeps spinning through the map-type cycle rather than flying to the stops.
@@ -237,5 +245,23 @@ describe("cutSteps", () => {
       const without = cutSteps(segment({ id: "storm:x", kind: "storm" }), avail).periodMs;
       expect(withTempo).toBe(without);
     });
+  });
+});
+
+describe("cutMapTypeIds", () => {
+  const cfg = { mapTypes: { global: ["temp", "cloud"] } };
+
+  it("prefers the cut's own looks (a viewer's :mode request)", () => {
+    expect(cutMapTypeIds({ kind: "global", mapTypes: ["aurora"] }, cfg)).toEqual(["aurora"]);
+  });
+
+  it("falls back to the channel's looks for the kind", () => {
+    expect(cutMapTypeIds({ kind: "global" }, cfg)).toEqual(["temp", "cloud"]);
+    expect(cutMapTypeIds({ kind: "global", mapTypes: [] }, cfg)).toEqual(["temp", "cloud"]);
+    expect(cutMapTypeIds({ kind: "ocean" }, cfg)).toBeUndefined();
+  });
+
+  it("is undefined with nothing on air", () => {
+    expect(cutMapTypeIds(null, cfg)).toBeUndefined();
   });
 });

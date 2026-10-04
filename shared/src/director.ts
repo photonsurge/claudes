@@ -218,6 +218,13 @@ export interface Segment {
   /** Which deck slide leads after the lede — "roundup" when the round-up IS the
    *  story (a round-up break-in, or a `:roundup uk` request). */
   leadSlide?: "roundup";
+  /** A viewer asked for this shot from chat — credited on air ("REQUESTED BY
+   *  @ann"). Operator cuts are editorial and carry nothing. */
+  requestedBy?: { author: string; platform: string };
+  /** Pins the look tour to these map-type ids (a viewer's `:mode aurora`): a
+   *  one-element list parks the look instead of cycling. Wins over the
+   *  channel's `mapTypes[kind]`. */
+  mapTypes?: string[];
 }
 
 /**

@@ -167,7 +167,9 @@ const CONDITION_LABEL: Record<string, string> = {
  */
 export function deckBadge(segment: Segment, phase: IncomingPhase | null): { badge: string; acquiring?: boolean } {
   const kind = KIND_BADGE[segment.kind] ?? segment.kind;
-  if (!segment.breakIn || isTargetedEvent(segment.kind)) return { badge: kind };
+  if (isTargetedEvent(segment.kind)) return { badge: kind };
+  // A viewer's pick on a wide shot: the reticle isn't there to say who asked.
+  if (!segment.breakIn) return { badge: segment.requestedBy ? `${kind} · @${segment.requestedBy.author.replace(/^@/, "")}` : kind };
   if (phase === "incoming") {
     return { badge: segment.breakIn.reason === "roundup" ? BREAK_IN_LABEL.roundup : "BREAKING", acquiring: true };
   }

@@ -22,7 +22,7 @@ import { listCities, type City } from "../../../lib/cities";
 import { useRegionCities } from "../../../lib/useRegionCities";
 import { useSceneState, listScenes } from "../../../lib/scenes";
 import { retryUntil } from "../../../lib/retry";
-import { useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../../lib/director";
+import { cutMapTypeIds, useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../../lib/director";
 import WatchSurface from "../../../components/WatchSurface";
 import { useViewerState } from "../../../lib/viewer";
 import ViewingOverlay from "../../../components/ViewingOverlay";
@@ -66,7 +66,7 @@ function SceneWatchPageInner() {
   const { patch: cutPatch, segment: onAir, focus } = useDirectorCut(
     cut,
     manifest,
-    cut ? directorConfig.mapTypes[cut.kind] : undefined,
+    cutMapTypeIds(cut, directorConfig),
   );
   const shown = useMemo(
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),
