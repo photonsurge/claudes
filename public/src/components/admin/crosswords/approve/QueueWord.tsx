@@ -157,7 +157,7 @@ function ClueItem({ clue, index, props }: { clue: BankQueueClue; index: number; 
 export default function QueueWord(props: QueueWordProps) {
   const { word, busy } = props;
   const s = word.suggestion;
-  const haveSuggestion = !!s && word.clues.some((c) => c.text.trim().toLowerCase() === s.clue.trim().toLowerCase());
+  const haveSuggestion = !!s?.clue && word.clues.some((c) => c.text.trim().toLowerCase() === s.clue.trim().toLowerCase());
   return (
     <Paper sx={{ p: 2 }}>
       <Stack direction="row" sx={{ flexWrap: "wrap", gap: 1.5, alignItems: "baseline" }}>
@@ -218,15 +218,24 @@ export default function QueueWord(props: QueueWordProps) {
           <Typography variant="caption" sx={{ display: "block", fontWeight: 600 }}>
             SUGGESTION, not approved{s.model ? ` · ${s.model}` : ""}
           </Typography>
-          <Typography variant="body1">&ldquo;{s.clue}&rdquo;</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Suggests {s.familyFriendly ? "family friendly" : "not family friendly"}
-            {s.reason ? ` — ${s.reason}` : ""}
+          {s.clue ? (
+            <>
+              <Typography variant="body1">&ldquo;{s.clue}&rdquo;</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Suggests {s.familyFriendly ? "family friendly" : "not family friendly"}
+                {s.reason ? ` — ${s.reason}` : ""}
+              </Typography>
+              <Button size="small" sx={{ mt: 0.5 }} disabled={busy || haveSuggestion} onClick={props.onAcceptSuggestion}>
+                {haveSuggestion ? "Already a candidate clue" : "Add as a candidate clue"}
+                {!haveSuggestion && <Key k="U" />}
+              </Button>
+            </>
+          ) : (
+            <Typography variant="body2">
+            No usable clue — {s.familyFriendly ? "family friendly: yes" : "family friendly: no"}
+            {s.reason ? `, because ${s.reason}` : ""}
           </Typography>
-          <Button size="small" sx={{ mt: 0.5 }} disabled={busy || haveSuggestion} onClick={props.onAcceptSuggestion}>
-            {haveSuggestion ? "Already a candidate clue" : "Add as a candidate clue"}
-            {!haveSuggestion && <Key k="U" />}
-          </Button>
+          )}
         </Alert>
       )}
 

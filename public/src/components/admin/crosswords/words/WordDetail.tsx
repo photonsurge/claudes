@@ -166,7 +166,7 @@ function WordDecision({ word, actions }: { word: BankWordDetail; actions: WordAc
 /** A stored model suggestion, marked as one. Accepting saves it as a new pending clue, never an approval. */
 function SuggestionBox({ word, actions }: { word: BankWordDetail; actions: WordActions }) {
   const s = word.suggestion;
-  const have = !!s && word.clues.some((c) => c.text.trim().toLowerCase() === s.clue.trim().toLowerCase());
+  const have = !!s?.clue && word.clues.some((c) => c.text.trim().toLowerCase() === s.clue.trim().toLowerCase());
   return (
     <Section title="Suggestion">
       {s ? (
@@ -174,16 +174,25 @@ function SuggestionBox({ word, actions }: { word: BankWordDetail; actions: WordA
           <Typography variant="caption" sx={{ display: "block", fontWeight: 600 }}>
             SUGGESTION, not approved{s.model ? ` · ${s.model}` : ""}
           </Typography>
-          <Typography variant="body1" sx={{ my: 0.5 }}>
-            &ldquo;{s.clue}&rdquo;
+          {s.clue ? (
+            <>
+              <Typography variant="body1" sx={{ my: 0.5 }}>
+                &ldquo;{s.clue}&rdquo;
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Suggests {s.familyFriendly ? "family friendly" : "not family friendly"}
+                {s.reason ? ` — ${s.reason}` : ""}
+              </Typography>
+              <Button size="small" sx={{ mt: 1 }} disabled={actions.busy || have} onClick={() => actions.onWord({ acceptSuggestion: true })}>
+                {have ? "Already a candidate clue" : "Add as a candidate clue"}
+              </Button>
+            </>
+          ) : (
+            <Typography variant="body2">
+            No usable clue — {s.familyFriendly ? "family friendly: yes" : "family friendly: no"}
+            {s.reason ? `, because ${s.reason}` : ""}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Suggests {s.familyFriendly ? "family friendly" : "not family friendly"}
-            {s.reason ? ` — ${s.reason}` : ""}
-          </Typography>
-          <Button size="small" sx={{ mt: 1 }} disabled={actions.busy || have} onClick={() => actions.onWord({ acceptSuggestion: true })}>
-            {have ? "Already a candidate clue" : "Add as a candidate clue"}
-          </Button>
+          )}
         </Alert>
       ) : (
         <Typography variant="body2" color="text.secondary">
@@ -432,6 +441,13 @@ export default function WordDetail({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const watching = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -467,12 +483,16 @@ export default function WordDetail({ id }: { id: string }) {
     const res = await postSuggest([id]);
     if (!res.ok) setActionError(res.error);
     else {
-      for (let i = 0; i < SUGGEST_POLL_MAX; i++) {
+      let arrived = false;
+      for (let i = 0; i < SUGGEST_POLL_MAX && !arrived; i++) {
         await new Promise((r) => setTimeout(r, SUGGEST_POLL_MS));
+        if (!mounted.current) return;
         const fresh = await getBankWord(id).then((r) => (r.ok ? r.data : null));
+        if (!mounted.current) return;
         if (fresh) setWord(fresh);
-        if (fresh && fresh.suggestion && fresh.suggestion.at !== before) break;
+        arrived = !!fresh?.suggestion && fresh.suggestion.at !== before;
       }
+      if (!arrived) setActionError("The suggestion has not arrived yet. The job may still be running or may have failed; reload to check, or try again.");
     }
     watching.current = false;
     setSuggesting(false);

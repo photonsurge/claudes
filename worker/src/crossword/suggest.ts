@@ -44,6 +44,8 @@ export interface SuggestOutcome {
   stored: number;
   /** Of those, stored without a clue because the polished one failed `validateClue`. */
   clueDropped: number;
+  /** Ids past the per-request cap, not looked at. */
+  dropped: number;
   /** Ids with no word, nothing to go on, or no usable entry in the reply. */
   skipped: string[];
   /** Ids whose batch failed (model error or unusable reply). */
@@ -112,8 +114,11 @@ export async function suggestWords(bank: SuggestBank, wordIds: string[], fetchIm
   const model = suggestModel();
   if (!model) throw new Error("CROSSWORD_MODEL (or OPENROUTER_MODEL) is not set");
 
-  const ids = [...new Set(wordIds.filter((x) => typeof x === "string" && x))].slice(0, SUGGEST_MAX_WORDS);
-  const out: SuggestOutcome = { requested: ids.length, stored: 0, clueDropped: 0, skipped: [], failed: [] };
+  const unique = [...new Set(wordIds.filter((x) => typeof x === "string" && x))];
+  const ids = unique.slice(0, SUGGEST_MAX_WORDS);
+  const dropped = unique.length - ids.length;
+  if (dropped) log(TAG, "suggest: over the per-request cap, ids dropped", { cap: SUGGEST_MAX_WORDS, dropped });
+  const out: SuggestOutcome = { requested: ids.length, stored: 0, clueDropped: 0, dropped, skipped: [], failed: [] };
   const entries: Entry[] = [];
   for (const id of ids) {
     const w = await bank.getWordById(id);
@@ -166,8 +171,8 @@ export async function suggest(job: Job) {
     const db = await getAppDb();
     const result = await suggestWords(db.crosswordBank, wordIds);
     log(TAG, "suggest done", result);
-    const trouble = result.failed.length > 0;
-    (trouble ? blogWarn : blogInfo)(TAG, `crossword suggestions: ${result.stored} of ${result.requested} stored${trouble ? `, ${result.failed.length} failed` : ""}`, result, "crossword", "suggest");
+    const trouble = result.failed.length > 0 || result.dropped > 0;
+    (trouble ? blogWarn : blogInfo)(TAG, `crossword suggestions: ${result.stored} of ${result.requested} stored${result.clueDropped ? `, ${result.clueDropped} without a usable clue` : ""}${result.dropped ? `, ${result.dropped} over the cap not processed` : ""}${result.failed.length ? `, ${result.failed.length} failed` : ""}`, result, "crossword", "suggest");
     return result;
   } catch (err) {
     log(TAG, "suggest failed", { err: summarizeForLog(err) });

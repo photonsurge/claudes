@@ -89,6 +89,13 @@ export default function ApprovePage() {
   const skipped = useRef<string[]>([]);
   const inHand = useRef<string[]>([]);
   const generation = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const bodyRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
   const word = queue[0];
@@ -187,7 +194,9 @@ export default function ApprovePage() {
     let left = ids;
     for (let i = 0; i < SUGGEST_POLL_MAX && left.length; i++) {
       await new Promise((r) => setTimeout(r, SUGGEST_POLL_MS));
-      const fresh = (await Promise.all(left.map((id) => getBankWord(id)))).flatMap((r) => (r.ok && r.data.suggestion ? [r.data] : []));
+      if (!mounted.current) return;
+      const fresh = (await Promise.all(left.map((id) => getBankWord(id)))).flatMap((r) => (r.ok && r.data?.suggestion ? [r.data] : []));
+      if (!mounted.current) return;
       if (!fresh.length) continue;
       const got = new Map(fresh.map((d) => [d.id, d.suggestion!]));
       setQueue((q) => q.map((w) => (got.has(w.id) ? { ...w, suggestion: got.get(w.id) } : w)));
@@ -226,7 +235,7 @@ export default function ApprovePage() {
     /** Tab or a click away from the edit box drops the edit (cancel, never commit) and leaves focus where it went. */
     editBlur: () => setEditing(null),
     acceptSuggestion: async () => {
-      if (!word?.suggestion || busyRef.current) return;
+      if (!word?.suggestion?.clue || busyRef.current) return;
       const id = word.id;
       busyRef.current = true;
       setBusy(true);
