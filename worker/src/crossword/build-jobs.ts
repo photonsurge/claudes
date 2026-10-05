@@ -9,7 +9,6 @@
  *    /admin/jobs).
  *  • bankIndex — build the imported word bank's indexes and drop the legacy
  *    pick index. Idempotent.
- *  • writeClues — the Words page's "Write clues" (WP11, not built yet).
  *
  * Only the handlers are re-exported from jobs/crossword.ts; the work lives in
  * build.ts so the scripts run the exact same code.
@@ -91,9 +90,4 @@ export async function bankIndex(_job: Job) {
     blogErr(TAG, "crossword bank index failed", err, "crossword", "bankIndex");
     throw err;
   }
-}
-
-/** Job handler: `crossword.writeClues` — WP11. */
-export async function writeClues(_job: Job) {
-  throw new UnrecoverableError("crossword.writeClues is not built yet (WP11)");
 }

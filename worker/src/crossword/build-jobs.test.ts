@@ -3,7 +3,7 @@ jest.mock("../blog", () => ({ blogInfo: jest.fn(), blogWarn: jest.fn(), blogErr:
 import { UnrecoverableError } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { DEFAULT_CROSSWORD_CONFIG } from "@photonsurge/shared/crossword";
-import { bankIndex, generate, topUp, writeClues } from "./build-jobs";
+import { bankIndex, generate, topUp } from "./build-jobs";
 
 const job = (event: string, data: unknown = {}) => ({ id: "1", data: { domain: "crossword", type: "crossword", event, data } }) as any;
 
@@ -91,11 +91,5 @@ describe("crossword.topUp", () => {
     const result = await topUp(job("topUp"));
     expect(result.scenes).toEqual([{ sceneId: "xw", outcome: "skipped", reason: expect.stringMatching(/seed words/) }]);
     expect(f.upsert).not.toHaveBeenCalled();
-  });
-});
-
-describe("crossword.writeClues", () => {
-  it("is not built yet", async () => {
-    await expect(writeClues(job("writeClues"))).rejects.toThrow(/WP11/);
   });
 });

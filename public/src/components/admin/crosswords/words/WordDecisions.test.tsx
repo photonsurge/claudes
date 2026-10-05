@@ -57,7 +57,7 @@ it("shows the flags as warnings, who decided and when, and the suggestion marked
   expect(screen.getAllByText(/2026-10-04 12:30 UTC/).length).toBeGreaterThan(0);
   expect(screen.getByText(/SUGGESTION, not approved/)).toBeInTheDocument();
   expect(screen.getByText(/Eager with anticipation/)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Suggest" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Suggest" })).toBeEnabled();
 });
 
 it("approves, rejects and tags the word through PATCH words/:id", async () => {

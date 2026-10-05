@@ -27,7 +27,7 @@ import Typography from "@mui/material/Typography";
 import { BANK_ZIPF_BANDS, type BankPoolCounts, type BankQueueWord, type BankZipfBand } from "@photonsurge/shared/crossword-bank";
 import AdminPageShell from "../../AdminPageShell";
 import { font } from "../../../../theme/tokens";
-import { getBankWord, patchBankClue, patchBankWord, type Outcome } from "../words/api";
+import { SUGGEST_POLL_MAX, SUGGEST_POLL_MS, getBankWord, patchBankClue, patchBankWord, postSuggest, type Outcome } from "../words/api";
 import PoolCounter from "../words/PoolCounter";
 import { getQueue } from "./api";
 import type { QueueFilters } from "./query";
@@ -37,6 +37,8 @@ import { withClueApproval, withClueEdit, withClueFamily, withClues, withWordAppr
 const FETCH_BATCH = 5;
 /** Fetch more when this few words are left in hand. */
 const LOW_WATER = 2;
+/** Most words one suggest request carries (the route's cap). */
+const SUGGEST_MAX = 50;
 const LENGTHS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 const KEY_MAP: [string, string][] = [
@@ -80,6 +82,8 @@ export default function ApprovePage() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [done, setDone] = useState({ decided: 0, skipped: 0 });
+  /** Words queued for suggestions and still waiting for them. */
+  const [awaiting, setAwaiting] = useState<string[]>([]);
 
   /** Skipped (or left undecided) words: the only ids sent as `exclude`, with the ones in hand. */
   const skipped = useRef<string[]>([]);
@@ -167,6 +171,32 @@ export default function ApprovePage() {
     },
     [word, focusBody],
   );
+
+  /** Words in view with no suggestion yet (the one on screen first), up to the route's cap. */
+  const suggestable = queue.filter((w) => !w.suggestion && !awaiting.includes(w.id)).slice(0, SUGGEST_MAX);
+
+  /** Queue `crossword.suggest` for the pending words in view, then refetch them until the suggestions land. */
+  const suggestNext = async () => {
+    const ids = suggestable.map((w) => w.id);
+    if (!ids.length || awaiting.length) return;
+    setError(null);
+    const res = await postSuggest(ids);
+    if (!res.ok) return setError(`Couldn't queue suggestions: ${res.error}`);
+    setAwaiting(ids);
+    setStatus(`Queued suggestions for ${ids.length} words`);
+    let left = ids;
+    for (let i = 0; i < SUGGEST_POLL_MAX && left.length; i++) {
+      await new Promise((r) => setTimeout(r, SUGGEST_POLL_MS));
+      const fresh = (await Promise.all(left.map((id) => getBankWord(id)))).flatMap((r) => (r.ok && r.data.suggestion ? [r.data] : []));
+      if (!fresh.length) continue;
+      const got = new Map(fresh.map((d) => [d.id, d.suggestion!]));
+      setQueue((q) => q.map((w) => (got.has(w.id) ? { ...w, suggestion: got.get(w.id) } : w)));
+      left = left.filter((id) => !got.has(id));
+      setAwaiting(left);
+    }
+    setAwaiting([]);
+    setStatus(left.length ? `${left.length} suggestions have not arrived yet` : "Suggestions are in");
+  };
 
   const clueAt = (i: number | null) => (word && i !== null ? word.clues[i] : undefined);
 
@@ -304,6 +334,9 @@ export default function ApprovePage() {
               control={<Switch checked={!!filters.withSuggestions} onChange={(e) => set({ withSuggestions: e.target.checked || undefined })} />}
               label="Only with suggestions"
             />
+            <Button size="small" variant="outlined" disabled={awaiting.length > 0 || suggestable.length === 0} onClick={() => void suggestNext()}>
+              {awaiting.length > 0 ? `Waiting for ${awaiting.length} suggestions…` : `Suggest for the next ${suggestable.length}`}
+            </Button>
           </Stack>
         </Paper>
 

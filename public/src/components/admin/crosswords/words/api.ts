@@ -61,5 +61,26 @@ export function patchBankClue(id: string, patch: CluePatch, wordId?: string): Pr
   return call(`/api/crossword/clues/${encodeURIComponent(id)}`, patch, wordId ? { "X-Word-Id": wordId } : {});
 }
 
+/** Queue `crossword.suggest` for these words (at most 50). Answers at once; suggestions land later. */
+export async function postSuggest(wordIds: string[]): Promise<Outcome<{ queued: true; count: number }>> {
+  try {
+    const res = await fetch("/api/crossword/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wordIds }),
+      cache: "no-store",
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: body?.error || `HTTP ${res.status}` };
+    return { ok: true, data: body };
+  } catch (err) {
+    return { ok: false, error: String((err as Error)?.message ?? err) };
+  }
+}
+
+/** How often, and how many times, a page refetches while a suggest job runs. */
+export const SUGGEST_POLL_MS = 4000;
+export const SUGGEST_POLL_MAX = 15;
+
 /** Path of a word's detail page. */
 export const wordHref = (id: string) => `/admin/crosswords/words/${encodeURIComponent(id)}`;

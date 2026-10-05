@@ -10,7 +10,7 @@
  * show as warnings and decide nothing; a stored suggestion is shown as one and
  * can be saved as a new candidate clue, which still needs approving.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -30,7 +30,7 @@ import type { BankClue, BankWordDetail } from "@photonsurge/shared/crossword-ban
 import { toQueueClue } from "../approve/queueState";
 import AdminPageShell from "../../AdminPageShell";
 import { font } from "../../../../theme/tokens";
-import { getBankWord, patchBankClue, patchBankWord, type CluePatch, type Outcome, type WordPatch } from "./api";
+import { SUGGEST_POLL_MAX, SUGGEST_POLL_MS, getBankWord, patchBankClue, patchBankWord, postSuggest, type CluePatch, type Outcome, type WordPatch } from "./api";
 import { ApprovalChip, ClueStatusChip, DecisionChip, FamilyChip, FlagChips, decidedLabel, fmtTime, zipfLabel } from "./chips";
 
 const PROBLEM_TEXT = { short: "too short to air", long: "too long to air", leak: "gives the answer away", blocked: "on the blocklist" } as const;
@@ -41,6 +41,9 @@ export interface WordActions {
   onWord: (patch: WordPatch) => void;
   /** `wordId` lets the route check a clue before approving it. */
   onClue: (id: string, patch: CluePatch, wordId?: string) => void;
+  /** Queue a suggestion for this word; `suggesting` shows while it is queued or running. */
+  onSuggest?: () => void;
+  suggesting?: boolean;
 }
 const NO_ACTIONS: WordActions = { busy: true, onWord: () => undefined, onClue: () => undefined };
 
@@ -187,9 +190,8 @@ function SuggestionBox({ word, actions }: { word: BankWordDetail; actions: WordA
           No suggestion stored.
         </Typography>
       )}
-      {/* The suggest job is a later package: this stays off until it exists. */}
-      <Button size="small" disabled sx={{ mt: 1 }}>
-        Suggest
+      <Button size="small" sx={{ mt: 1 }} disabled={actions.busy || actions.suggesting || !actions.onSuggest} onClick={actions.onSuggest}>
+        {actions.suggesting ? "Queued, waiting for the suggestion…" : "Suggest"}
       </Button>
     </Section>
   );
@@ -428,6 +430,8 @@ export default function WordDetail({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const watching = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -453,8 +457,30 @@ export default function WordDetail({ id }: { id: string }) {
     }
     setBusy(false);
   };
+  /** Queue the job, then refetch until the stored suggestion changes (or give up quietly). */
+  const suggest = async () => {
+    if (watching.current) return;
+    watching.current = true;
+    setSuggesting(true);
+    setActionError(null);
+    const before = word?.suggestion?.at;
+    const res = await postSuggest([id]);
+    if (!res.ok) setActionError(res.error);
+    else {
+      for (let i = 0; i < SUGGEST_POLL_MAX; i++) {
+        await new Promise((r) => setTimeout(r, SUGGEST_POLL_MS));
+        const fresh = await getBankWord(id).then((r) => (r.ok ? r.data : null));
+        if (fresh) setWord(fresh);
+        if (fresh && fresh.suggestion && fresh.suggestion.at !== before) break;
+      }
+    }
+    watching.current = false;
+    setSuggesting(false);
+  };
   const actions: WordActions = {
     busy,
+    onSuggest: suggest,
+    suggesting,
     onWord: (patch) => decide(() => patchBankWord(id, patch)),
     onClue: (clueId, patch, wordId) => decide(() => patchBankClue(clueId, patch, wordId)),
   };
