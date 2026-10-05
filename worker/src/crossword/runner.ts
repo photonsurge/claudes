@@ -291,12 +291,15 @@ function pruneRate(rt: SceneRuntime, now: number): void {
   }
 }
 
-/** Rebuild the today board (after solves, at load, at the UTC day's turn). */
+/**
+ * Rebuild the today board (after solves, at load, at the UTC day's turn).
+ * Simulator solves never count: a rehearsal must not put `sim:` names on air.
+ */
 async function refreshToday(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps): Promise<void> {
   const since = startOfUtcDay(now);
   try {
     const hiddenIds = await deps.db.crosswordPlayers.hiddenIds();
-    const rows = await deps.db.crosswordSolves.board({ sceneId: rt.sceneId, since, hiddenIds, limit: 10 });
+    const rows = await deps.db.crosswordSolves.board({ sceneId: rt.sceneId, since, hiddenIds, limit: 10, includeSim: false });
     rt.today = rows.map((r) => ({ name: r.name, points: r.points }));
     rt.todayDay = since;
   } catch (err) {

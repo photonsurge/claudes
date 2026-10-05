@@ -132,10 +132,11 @@ function harness() {
     },
     crosswordSolves: {
       append: async (s: CrosswordSolve) => void solves.push(copy(s)),
-      board: async (o: { since?: number; hiddenIds?: string[] }) => {
+      board: async (o: { since?: number; hiddenIds?: string[]; includeSim?: boolean }) => {
         const m = new Map<string, { playerId: string; name: string; points: number; words: number }>();
         for (const s of solves) {
           if ((o.since != null && s.at < o.since) || o.hiddenIds?.includes(s.playerId)) continue;
+          if (o.includeSim === false && s.sim) continue;
           const r = m.get(s.playerId) ?? { playerId: s.playerId, name: s.name, points: 0, words: 0 };
           r.points += s.points;
           r.words += 1;
@@ -219,6 +220,14 @@ describe("live chat through the runner", () => {
     const res = await h.send([yt("ghost", "UCghost", "cat", h.now - 1_000)]);
     expect(res.solved).toEqual([]);
     expect(h.solves).toEqual([]);
+  });
+
+  it("a simulator solve takes the word but never reaches the on-air today board", async () => {
+    const h = await playing();
+    const res = await h.send([{ author: "Rehearsal", text: "cat", platform: "sim", ts: h.now - 1_000 }]);
+    expect(res.solved).toEqual(["1A"]);
+    expect(h.solves).toEqual([expect.objectContaining({ playerId: "sim:rehearsal", sim: true })]);
+    expect(h.pub().today).toEqual([]);
   });
 
   it("the earliest typed wins a word, whatever order the batch is in", async () => {

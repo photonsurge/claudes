@@ -105,16 +105,15 @@ describe("commandReplies on a crossword scene (crossword plan §6.3)", () => {
     expect(await commandReplies(xw, [msg(":modes"), msg(":mode"), msg("!MODES", "m2")], NOW)).toEqual([]);
   });
 
-  it("answers :help with how to play, and reads the scene once per batch", async () => {
-    const out = await commandReplies(xw, [msg(":modes"), msg(":help")], NOW);
-    expect(out).toEqual([expect.stringMatching(/^Crossword: type the answer in the chat/)]);
+  it("skips :help and :commands too — no chat replies on a crossword, and reads the scene once per batch", async () => {
+    expect(await commandReplies(xw, [msg(":modes"), msg(":help"), msg("!commands")], NOW)).toEqual([]);
     expect(mockGetScene).toHaveBeenCalledTimes(1);
   });
 
   it("a skipped command spends no cooldown", async () => {
-    await commandReplies(xw, [msg(":modes")], NOW);
+    await commandReplies(xw, [msg(":modes"), msg(":help")], NOW);
     mockGetScene.mockResolvedValue({ id: "xw" }); // the same scene, now a globe
-    expect(await commandReplies(xw, [msg(":modes")], NOW + 1)).toHaveLength(1);
+    expect(await commandReplies(xw, [msg(":modes"), msg(":help")], NOW + 1)).toHaveLength(2);
   });
 
   it("does not read the scene for plain chatter", async () => {

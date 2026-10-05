@@ -968,6 +968,9 @@ Notes that still hold from the first build:
 - **Layout** measures about 4 ms an attempt on 60 words, so it stays in-process.
 - **Restart**: a game resumes mid-puzzle unless its live run started after the last
   save, which counts as a go-live. Answers are ignored while paused or parked.
+- **Today board time**: `solved.at` is when the word landed (processing time, or the
+  reveal time for a late credit), so the today board counts by that, not by typed time.
+  Simulator solves never count on the on-air today board.
 - **The socket relay** sends a worker event as its `{ type, data }` envelope; the
   page's state hook unwraps it.
 - **Public home card**: the state route needs the channel token or an admin session, so

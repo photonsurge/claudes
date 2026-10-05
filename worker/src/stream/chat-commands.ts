@@ -72,11 +72,10 @@ const COMMANDS: Record<string, Handler> = {
 COMMANDS.commands = COMMANDS.help;
 
 /**
- * A crossword scene has no globe: `:modes` and `:mode` are not answered there
- * (docs/crossword-mode-plan.md §6.3), and `:help` says how to play instead.
+ * A crossword scene posts nothing into chat (docs/crossword-mode-plan.md §6.3,
+ * §13 decision 14): each reply costs 50 units of the chat budget. `:modes` and
+ * `:mode` describe the globe anyway; `:help` is not answered either.
  */
-const GLOBE_ONLY = new Set(["modes", "mode"]);
-export const CROSSWORD_HELP = "Crossword: type the answer in the chat — the first correct answer takes the word";
 
 // Per-(run, command) last-reply time — plain in-process state, like the
 // poller's own pageTokens map.
@@ -104,13 +103,12 @@ export async function commandReplies(run: Run, msgs: ChatMessage[], now = Date.n
     const cmd = parseCommand(msg.text);
     if (!cmd || !COMMANDS[cmd]) continue;
     const xw = await onCrossword();
-    if (xw && GLOBE_ONLY.has(cmd)) continue;
+    if (xw) continue;
     const key = `${run.id}:${cmd}`;
     if (now - (lastSent.get(key) ?? 0) < COOLDOWN_MS) continue;
     lastSent.set(key, now);
     try {
-      // On a crossword only :help / :commands get this far.
-      const reply = xw ? CROSSWORD_HELP : await COMMANDS[cmd]({ run });
+      const reply = await COMMANDS[cmd]({ run });
       if (reply) out.push(reply);
     } catch {
       // One bad handler (e.g. a Mongo blip in :mode) never blocks other replies.
