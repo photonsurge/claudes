@@ -44,6 +44,11 @@ interface Props {
   label?: string;
   /** `channel` only: the label of the empty value ("auto": the worker picks). */
   emptyLabel?: string;
+  /**
+   * `channel` only: a live, held or rendering encoder can't be chosen (the Go
+   * live dialog, crossword plan §10). Off, the state is advisory as before.
+   */
+  refuseBusy?: boolean;
   disabled?: boolean;
   size?: "small" | "medium";
   sx?: SxProps<Theme>;
@@ -54,6 +59,12 @@ export function occupancyLine(enc: EncoderWithOccupancy): string {
   if (!enc.enabled) return "disabled";
   return enc.occupancy?.label ?? "free";
 }
+
+/** Is the encoder streaming or held, so a channel can't go live on it now? */
+export const encoderBusy = (enc: EncoderWithOccupancy): boolean => {
+  const state = enc.occupancy?.state;
+  return state === "live" || state === "held" || state === "rendering";
+};
 
 /** Can a video be queued on this encoder (§6.2)? */
 export const canTakeVideo = (enc: EncoderWithOccupancy): boolean =>
@@ -66,6 +77,7 @@ export default function EncoderSelect({
   purpose,
   label = "encoder",
   emptyLabel = "auto",
+  refuseBusy,
   disabled,
   size,
   sx,
@@ -93,7 +105,7 @@ export default function EncoderSelect({
         {emptyLabel}
       </MenuItem>,
     );
-    for (const enc of encodersForChannel(encoders, value)) items.push(item(enc, !enc.enabled));
+    for (const enc of encodersForChannel(encoders, value)) items.push(item(enc, !enc.enabled || (!!refuseBusy && encoderBusy(enc))));
   } else {
     const video = encoders.filter((e) => encoderUse(e) === "videos");
     const channel = encoders.filter((e) => encoderUse(e) !== "videos");

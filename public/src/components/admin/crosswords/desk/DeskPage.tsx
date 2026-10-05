@@ -29,6 +29,7 @@ import { font } from "../../../../theme/tokens";
 import DeskControls from "./DeskControls";
 import EndButton from "./EndButton";
 import SimForm from "./SimForm";
+import GoLiveDialog from "../../streams/GoLiveDialog";
 import { useDeskState } from "./useDeskState";
 
 const PHASE_LABEL: Record<CrosswordPublicState["phase"], string> = {
@@ -43,6 +44,7 @@ const secondsLeft = (endsAt: number, skew: number) => Math.max(0, Math.round((en
 export default function DeskPage({ sceneId }: { sceneId: string }) {
   const { state, error, skew, refresh } = useDeskState(sceneId);
   const [scene, setScene] = useState<SceneMeta | null>(null);
+  const [goLiveOpen, setGoLiveOpen] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -92,13 +94,14 @@ export default function DeskPage({ sceneId }: { sceneId: string }) {
           <Button variant="outlined" component={Link} href={`/admin/crosswords/channels/${encodeURIComponent(sceneId)}`}>
             Settings
           </Button>
-          <Button variant="contained" color="error" component={Link} href="/admin/streams">
+          <Button variant="contained" color="error" onClick={() => setGoLiveOpen(true)} disabled={!scene}>
             Go live
           </Button>
           <EndButton sceneId={sceneId} />
         </Stack>
       }
     >
+      {scene && goLiveOpen && <GoLiveDialog open scene={scene} onClose={() => setGoLiveOpen(false)} />}
       <Stack spacing={1.75}>
         {notCrossword && <Alert severity="warning">This channel is a weather channel; its controls are on /control.</Alert>}
         {reason && <Alert severity="info">{reason}</Alert>}

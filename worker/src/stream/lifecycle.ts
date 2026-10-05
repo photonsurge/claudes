@@ -35,7 +35,7 @@ import { emitWorkerEvent } from "../socket";
 import { startMonitor, stopMonitor, stopAllMonitors } from "./monitor";
 import { queueAnnounce } from "./announce";
 import { chaptersEnabled, queueChapters } from "./chapters";
-import { channelYoutubeSettings } from "./channel-youtube";
+import { channelYoutubeSettings, resolveRunAccountId, type ChannelYoutube } from "./channel-youtube";
 import { queueThumbnail, thumbnailsEnabled } from "./thumbnail";
 import { startChatPoll, stopChatPoll } from "./chat";
 import {
@@ -49,7 +49,7 @@ import {
   outputInFlight,
   type ObsStreamStatus,
 } from "../obs/client";
-import { endpointForRun, provisionEncoderScene, watchBaseUrl } from "./encoders";
+import { encoderOwnSceneId, endpointForRun, provisionEncoderScene, restoreEncoderScene, watchBaseUrl } from "./encoders";
 import {
   getYoutubeClient,
   createBroadcast,
@@ -83,9 +83,32 @@ export { stopAllMonitors };
 
 // ---- helpers ----
 
-function defaultTitle(run: Run): string {
+function defaultTitle(run: Run, channel?: ChannelYoutube): string {
   const day = new Date().toISOString().slice(0, 10);
+  if (channel?.surface === "crossword") return `${channel.name || run.sceneId} — Live crossword — ${day}`;
   return `Live — ${run.sceneId} — ${day}`;
+}
+
+/**
+ * A crossword channel's description when its YouTube card leaves it blank
+ * (crossword plan §10). Not the deployment default or the built-in copy: both
+ * describe the weather globe. Date codes as in the title.
+ */
+export const CROSSWORD_STREAM_DESCRIPTION =
+  "A live crossword, played in the chat. Type an answer: the first right one takes the word and its points, " +
+  "and the host fills in whatever nobody gets.\n\nStreaming since %A %e %B %Y, %H:%M %Z.";
+
+/** The broadcast description for a channel run, from its YouTube card. */
+function channelDescription(channel: ChannelYoutube): string {
+  if (channel.surface === "crossword") {
+    // No "watch the map" link: the crossword's page is tokened and is not the site.
+    return buildBroadcastDescription({ template: channel.description || CROSSWORD_STREAM_DESCRIPTION });
+  }
+  return buildBroadcastDescription({
+    template: channel.description,
+    fallback: process.env.YOUTUBE_DESCRIPTION,
+    siteUrl: watchBaseUrl(),
+  });
 }
 
 function withYoutube(run: Run, youtube: Run["platforms"]["youtube"]): Run["platforms"] {
@@ -196,6 +219,7 @@ async function failRun(runId: string, step: string, err: unknown): Promise<void>
   // A failed render leaves nothing behind (§6.4): broadcast deleted, play
   // stopped, encoder restored, and the queue moves on.
   if (run && isScriptRun(run)) await onScriptRunOver(run);
+  else if (run) await restoreBorrowedEncoder(run);
 }
 
 // ---- go live ----
@@ -227,7 +251,14 @@ export async function goLive(runId: string): Promise<void> {
       run = await persistPhase(runId, run.phase ?? "created", { script: { ...run.script!, goLiveAt: Date.now() } });
     }
     if (wantsYoutube) {
-      const ctx = await getYoutubeClient(run.platforms.youtube?.accountId);
+      // The channel decides the account when the run names none (§10); a
+      // crossword channel with neither is refused here, before any YouTube call.
+      // A video render publishes where its render queue said, as before.
+      const channel = scripted ? null : await channelYoutubeSettings(run.sceneId);
+      const accountId = channel
+        ? await resolveRunAccountId(run.sceneId, run.platforms.youtube?.accountId, channel)
+        : run.platforms.youtube?.accountId;
+      const ctx = await getYoutubeClient(accountId);
       let yt: NonNullable<Run["platforms"]["youtube"]> = {
         ...run.platforms.youtube,
         accountId: ctx.accountId,
@@ -251,13 +282,8 @@ export async function goLive(runId: string): Promise<void> {
           title = run.title || defaultTitle(run);
           description = run.description ?? "";
         } else {
-          const channel = await channelYoutubeSettings(run.sceneId);
-          title = formatStreamTitle(run.title || channel.title || defaultTitle(run));
-          description = buildBroadcastDescription({
-            template: channel.description,
-            fallback: process.env.YOUTUBE_DESCRIPTION,
-            siteUrl: watchBaseUrl(),
-          });
+          title = formatStreamTitle(run.title || channel!.title || defaultTitle(run, channel!));
+          description = channelDescription(channel!);
         }
         const { broadcastId, watchUrl } = await createBroadcast(ctx, {
           title,
@@ -265,6 +291,9 @@ export async function goLive(runId: string): Promise<void> {
           privacy: run.privacy || "unlisted",
           scheduledStartTime: new Date().toISOString(),
           monitorStream: !!yt.monitorStream,
+          // Chat is a crossword's input, so its picture should trail by
+          // seconds, not tens of seconds (§6.3). Weather keeps the default.
+          ...(channel?.surface === "crossword" ? { latency: "low" as const } : {}),
         });
         yt = { ...yt, broadcastId, watchUrl };
         run = await persistPhase(runId, "broadcast", { title, description, platforms: withYoutube(run, yt) });
@@ -277,7 +306,7 @@ export async function goLive(runId: string): Promise<void> {
       }
       if (!yt.streamId) {
         const { streamId, ingestionAddress, streamName } = await createStream(ctx, {
-          title: run.title || defaultTitle(run),
+          title: run.title || defaultTitle(run, channel ?? undefined),
         });
         yt = { ...yt, streamId, ingestionAddress, streamName };
         run = await persistPhase(runId, "stream", { platforms: withYoutube(run, yt) });
@@ -315,16 +344,16 @@ export async function goLive(runId: string): Promise<void> {
 }
 
 /**
- * Best-effort full auto-provision of the run's encoder. A channel run shows the
- * encoder's own bound scene; a video render shows its SCRIPT's scene instead
- * (the `sceneId` override, §6.4) — the encoder's scene is restored when the
- * render ends (script-run.ts). Never fails the run.
+ * Best-effort full auto-provision of the run's encoder, always on the RUN's
+ * scene (the `sceneId` override): a video render shows its script's scene
+ * (short-video plan §6.4), and a channel run on a picked encoder shows the
+ * run's channel, not the encoder's usual one (crossword plan §10). The
+ * encoder's own scene comes back when the run ends (script-run.ts for a
+ * render, `restoreBorrowedEncoder` for a channel run). Never fails the run.
  */
 async function provisionForRun(run: Run): Promise<void> {
   try {
-    const p = isScriptRun(run)
-      ? await provisionEncoderScene(run.encoderId, { sceneId: run.sceneId })
-      : await provisionEncoderScene(run.encoderId);
+    const p = await provisionEncoderScene(run.encoderId, { sceneId: run.sceneId });
     const swept =
       p.removedInputs.length || p.removedScenes.length
         ? ` (swept ${p.removedInputs.length} stray source(s), ${p.removedScenes.length} scene(s))`
@@ -347,6 +376,28 @@ async function provisionForRun(run: Run): Promise<void> {
 async function provisionForScript(run: Run): Promise<void> {
   const p = await provisionEncoderScene(run.encoderId, { sceneId: run.sceneId });
   log(TAG, `offline test ${run.id}: OBS scene "${p.sceneName}" → ${p.url}`);
+}
+
+/**
+ * Hand an encoder a channel run borrowed back to its own scene (crossword plan
+ * §10): when the run's channel is not the one the encoder is bound to, its own
+ * channel (or, for a video encoder, the blank idle page) is provisioned again.
+ * Only after a run that reached OBS, and never while another run holds the
+ * encoder. Best-effort: a restore that fails is logged, never fails the finish.
+ */
+async function restoreBorrowedEncoder(run: Run): Promise<void> {
+  if (isScriptRun(run)) return; // script-run.ts restores a render's encoder itself
+  if (!run.obs?.configured && !run.startAt) return;
+  try {
+    const own = await encoderOwnSceneId(run.encoderId);
+    if (own === run.sceneId) return;
+    const other = await (await getAppDb()).activeRunForEncoder(encoderKeyForRun(run), run.id);
+    if (other) return;
+    const res = await restoreEncoderScene(run.encoderId);
+    log(TAG, `run ${run.id}: encoder ${encoderKeyForRun(run)} ${res.idle ? "idle (blank page)" : `back on ${res.url}`}`);
+  } catch (err) {
+    log(TAG, `run ${run.id}: encoder restore skipped`, String((err as Error)?.message ?? err));
+  }
 }
 
 async function configureAndStartObs(run: Run, server: string, key: string): Promise<void> {
@@ -681,6 +732,7 @@ export async function finishRun(
   // Video render: stop the play, restore the encoder, finalize or clean up,
   // record the outcome and start the next video (§6.5 steps 3 and 6).
   if (done && isScriptRun(done)) await onScriptRunOver(done);
+  else if (done) await restoreBorrowedEncoder(done);
 }
 
 // ---- boot reconciler ----

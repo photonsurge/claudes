@@ -129,3 +129,37 @@ describe("Channels list", () => {
     await waitFor(() => expect(mockCreate).toHaveBeenCalledWith("Gusts", "default", "globe"));
   });
 });
+
+// Go live on every row, weather too (crossword plan §8.1, §10).
+describe("Go live", () => {
+  beforeEach(() => {
+    global.fetch = jest.fn(async (url: RequestInfo | URL) => {
+      const u = String(url);
+      const body =
+        u === "/api/streams"
+          ? { youtubeConfigured: true, accounts: [{ channelId: "UCword", channelTitle: "Word Up TV" }], encoders: [], slots: [], runs: [] }
+          : {};
+      return { ok: true, status: 200, json: async () => body } as Response;
+    }) as typeof fetch;
+  });
+
+  it("is on every row", async () => {
+    render(<ScenesPage />);
+    for (const name of ["Main", "Atlantic Wind", "Word Up"]) {
+      expect(within(await rowOf(name)).getByRole("button", { name: "Go live" })).toBeInTheDocument();
+    }
+  });
+
+  it("opens the dialog for that channel with its YouTube channel preselected", async () => {
+    render(<ScenesPage />);
+    fireEvent.click(within(await rowOf("Word Up")).getByRole("button", { name: "Go live" }));
+    expect(await screen.findByRole("dialog", { name: "Go live: Word Up" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Go live on Word Up TV" })).toBeInTheDocument();
+  });
+
+  it("opens it for a weather channel too", async () => {
+    render(<ScenesPage />);
+    fireEvent.click(within(await rowOf("Atlantic Wind")).getByRole("button", { name: "Go live" }));
+    expect(await screen.findByRole("dialog", { name: "Go live: Atlantic Wind" })).toBeInTheDocument();
+  });
+});

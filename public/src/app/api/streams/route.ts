@@ -2,7 +2,7 @@ import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { sendToFore } from "@photonsurge/shared/bull/bull-queue";
-import { MAIN_SCENE_ID } from "@photonsurge/shared/control";
+import { MAIN_SCENE_ID, sceneSurface } from "@photonsurge/shared/control";
 import {
   ENV_ENCODER_ID,
   encoderUse,
@@ -66,7 +66,13 @@ async function GET__impl() {
       ...status,
       // "Configured" now means EITHER the legacy env OBS or a registered encoder.
       obsConfigured: status.obsConfigured || encoders.some((e) => e.enabled),
-      accounts: accounts.map((a) => ({ channelId: a.id, channelTitle: a.channelTitle, connectedAt: a.connectedAt })),
+      accounts: accounts.map((a) => ({
+        channelId: a.id,
+        channelTitle: a.channelTitle,
+        connectedAt: a.connectedAt,
+        // Google refused its token: the go-live forms show it and can't pick it.
+        ...(a.authError ? { needsReconnect: true } : {}),
+      })),
       encoders: encoders.map((e) => ({ ...toEncoderInfo(e), occupancy: occupancy[e.id] })),
       slots,
       runs: runs.map((r) => toRunState(r as Run)),
@@ -141,9 +147,14 @@ async function POST__impl(req: Request) {
     encoderId = (await db.encoderForScene(sceneId))?.id;
   }
 
-  // YouTube channel pick: explicit request → that connected account; otherwise the
-  // default (most-recently-connected) account. Resolved once and reused below.
-  const requestedAccountId = body.accountId ? String(body.accountId).trim() : undefined;
+  // YouTube channel pick (crossword plan §10): explicit request → that connected
+  // account; otherwise the account stored on the channel record; otherwise, for a
+  // weather channel only, the default (most-recently-connected) account. A
+  // crossword channel is never guessed: with neither it is refused, as is an
+  // account that needs reconnecting. Resolved once and reused below.
+  const crossword = sceneId !== MAIN_SCENE_ID && sceneSurface(scene as { surface?: unknown }) === "crossword";
+  const channelAccountId = String((scene as { youtube?: { accountId?: unknown } }).youtube?.accountId ?? "").trim();
+  const requestedAccountId = (body.accountId ? String(body.accountId).trim() : "") || channelAccountId || undefined;
   const publishYoutube = body.platforms?.youtube === true;
   let publishAccountId: string | undefined;
   if (publishYoutube) {
@@ -165,7 +176,26 @@ async function POST__impl(req: Request) {
     if (!platformStatus().youtubeConfigured) {
       return NextResponse.json({ error: "YouTube is not configured on the server" }, { status: 400, headers: NO_CACHE });
     }
+    if (crossword && !requestedAccountId) {
+      const name = (scene as { name?: string }).name || sceneId;
+      return NextResponse.json(
+        {
+          error:
+            `Crossword channel "${name}" has no YouTube channel. Pick one here, or set it on the channel's ` +
+            `YouTube card — a crossword never goes out on a default account.`,
+        },
+        { status: 400, headers: NO_CACHE },
+      );
+    }
     const account = await db.getYoutubeAccount(requestedAccountId);
+    if (crossword && account?.authError) {
+      return NextResponse.json(
+        {
+          error: `YouTube channel "${account.channelTitle || account.id}" needs reconnecting on /admin/youtube before it can go live`,
+        },
+        { status: 400, headers: NO_CACHE },
+      );
+    }
     if (!account) {
       return NextResponse.json(
         {

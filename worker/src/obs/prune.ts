@@ -33,17 +33,21 @@ export function pruneEnabled(): boolean {
   return (process.env.OBS_PRUNE || "").toLowerCase() !== "off";
 }
 
+/** Our output pages: the weather `/watch/<scene>` and the crossword `/crossword/<scene>`. */
+const OUTPUT_PATH = /^\/(watch|crossword)(\/|$)/;
+
 /**
- * True for a URL that loads one of our broadcast pages (`/watch/<scene>`), on any
- * host — the dev box, the deploy domain or an IP all count, because what makes it
- * expensive is the page, not where it is served from.
+ * True for a URL that loads one of our broadcast pages (`/watch/<scene>`, or a
+ * crossword channel's `/crossword/<scene>`), on any host — the dev box, the
+ * deploy domain or an IP all count, because what makes it expensive is the
+ * page, not where it is served from.
  */
 export function isWatchUrl(url: unknown): boolean {
   if (typeof url !== "string" || !url) return false;
   try {
-    return /^\/watch(\/|$)/.test(new URL(url).pathname);
+    return OUTPUT_PATH.test(new URL(url).pathname);
   } catch {
-    return /^\/watch(\/|$)/.test(url); // a bare path in the settings is still a watch page
+    return OUTPUT_PATH.test(url); // a bare path in the settings is still an output page
   }
 }
 

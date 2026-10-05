@@ -369,7 +369,15 @@ export async function checkYoutubeConnection(accountId?: string): Promise<Youtub
 
 export async function createBroadcast(
   ctx: YoutubeCtx,
-  opts: { title: string; description?: string; privacy: YoutubePrivacy; scheduledStartTime: string; monitorStream: boolean },
+  opts: {
+    title: string;
+    description?: string;
+    privacy: YoutubePrivacy;
+    scheduledStartTime: string;
+    monitorStream: boolean;
+    /** `contentDetails.latencyPreference`; omitted = YouTube's default (normal). */
+    latency?: "normal" | "low" | "ultraLow";
+  },
 ): Promise<{ broadcastId: string; watchUrl: string }> {
   const res = await apiCall(ctx, "liveBroadcasts.insert", () =>
     ctx.youtube.liveBroadcasts.insert({
@@ -391,6 +399,9 @@ export async function createBroadcast(
           enableAutoStart: false,
           enableAutoStop: false,
           monitorStream: { enableMonitorStream: opts.monitorStream },
+          // A crossword asks for "low" so chat answers meet a fresh picture
+          // (crossword plan §6.3); anything else keeps YouTube's default.
+          ...(opts.latency ? { latencyPreference: opts.latency } : {}),
           // No chat switch exists here: liveBroadcast contentDetails/status in the
           // Data API v3 (googleapis youtube_v3 Schema$LiveBroadcastContentDetails,
           // checked 2026-10) carry no "live chat enabled" field. Turning YouTube's

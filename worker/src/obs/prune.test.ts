@@ -68,6 +68,12 @@ describe("isWatchUrl", () => {
     expect(isWatchUrl("http://localhost:10100/watch/main")).toBe(true);
     expect(isWatchUrl("/watch/volcano")).toBe(true);
   });
+  it("treats a crossword channel's /crossword page as ours too", () => {
+    expect(isWatchUrl("https://gods.example/crossword/daily?token=abc")).toBe(true);
+    expect(isWatchUrl("/crossword/daily")).toBe(true);
+    expect(isWatchUrl("https://gods.example/admin/crosswords/desk/daily")).toBe(false);
+    expect(isWatchUrl("https://gods.example/crosswords")).toBe(false);
+  });
   it("rejects other pages and non-strings", () => {
     expect(isWatchUrl("https://gods.example/control")).toBe(false);
     expect(isWatchUrl("https://gods.example/watchlist")).toBe(false);

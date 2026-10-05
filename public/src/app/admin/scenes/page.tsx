@@ -35,6 +35,7 @@ import { listScenes, createScene, deleteScene } from "../../../lib/scenes";
 import { consoleHref, settingsHrefFor, surfaceLabel } from "../../../lib/channel-links";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import { fetchYoutubeChannels, type YoutubeChannel } from "../../../components/admin/crosswords/channels/client";
+import GoLiveDialog from "../../../components/admin/streams/GoLiveDialog";
 import { font } from "../../../theme/tokens";
 
 export default function ScenesPage() {
@@ -45,6 +46,9 @@ export default function ScenesPage() {
   const [filter, setFilter] = useState<SceneSurface | "all">("all");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The channel the Go live dialog is open for (§10), and the last one started.
+  const [goLive, setGoLive] = useState<SceneMeta | null>(null);
+  const [started, setStarted] = useState<string | null>(null);
 
   const [youtube, setYoutube] = useState<YoutubeChannel[]>([]);
 
@@ -149,6 +153,23 @@ export default function ScenesPage() {
           {error}
         </Alert>
       )}
+      {started && (
+        <Alert severity="success" sx={{ mt: 1 }} onClose={() => setStarted(null)}>
+          {started} is going live. Follow it on{" "}
+          <MuiLink component={Link} href="/admin/streams">
+            Streams
+          </MuiLink>
+          .
+        </Alert>
+      )}
+      {goLive && (
+        <GoLiveDialog
+          open
+          scene={goLive}
+          onClose={() => setGoLive(null)}
+          onStarted={() => setStarted(goLive.name || goLive.id)}
+        />
+      )}
 
       {/* Filter by kind */}
       <ToggleButtonGroup
@@ -214,6 +235,9 @@ export default function ScenesPage() {
                 <MuiLink component={Link} href={watch} target="_blank" variant="body2" sx={{ whiteSpace: "nowrap" }}>
                   Output ↗
                 </MuiLink>
+                <Button variant="outlined" onClick={() => setGoLive(s)} sx={{ whiteSpace: "nowrap" }}>
+                  Go live
+                </Button>
                 {s.id !== MAIN_SCENE_ID && (
                   <Button variant="outlined" color="error" onClick={() => remove(s.id)}>
                     Delete

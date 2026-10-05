@@ -34,8 +34,12 @@ jest.mock("../obs/client", () => {
 
 // Encoder resolution is exercised in its own unit; here every run resolves to a
 // reachable test endpoint so the OBS-call mocks above see it as the first arg.
+// `encoderOwnScene` is the scene the encoder shows when no run borrows it.
+let encoderOwnScene: string | null = "default";
 jest.mock("./encoders", () => ({
   watchBaseUrl: () => "http://localhost:10100",
+  encoderOwnSceneId: jest.fn(async () => encoderOwnScene),
+  restoreEncoderScene: jest.fn(async () => ({ idle: false, url: "https://x/watch/volcano?token=t" })),
   endpointForRun: jest.fn(async () => ({ url: "ws://obs-test:4455" })),
   provisionEncoderScene: jest.fn(async () => ({
     sceneId: "default",
@@ -70,14 +74,19 @@ jest.mock("./chapters", () => ({ queueChapters: (...a: unknown[]) => queueChapte
 const queueThumbnail = jest.fn(async () => {});
 jest.mock("./thumbnail", () => ({ queueThumbnail: (...a: unknown[]) => queueThumbnail(...a), thumbnailsEnabled: () => true }));
 // The channel's YouTube settings (/admin/scenes/:id) — tests set what the channel says.
-let channelYoutube = { title: "", description: "", thumbnailUrl: "" };
-jest.mock("./channel-youtube", () => ({ channelYoutubeSettings: jest.fn(async () => ({ ...channelYoutube })) }));
+// The account pick is the real one (crossword plan §10), over the fake db below.
+let channelYoutube: Record<string, unknown> = { title: "", description: "", thumbnailUrl: "" };
+jest.mock("./channel-youtube", () => ({
+  ...jest.requireActual("./channel-youtube"),
+  channelYoutubeSettings: jest.fn(async () => ({ ...channelYoutube })),
+}));
 
 const fakeQueue = { add: jest.fn(async () => ({})), getJob: jest.fn(async () => null) };
 jest.mock("@photonsurge/shared/bull/bull", () => ({ getQueue: jest.fn(() => fakeQueue) }));
 
 // In-memory run store standing in for the Mongo data-access layer.
 const runs = new Map<string, any>();
+const accounts = new Map<string, any>();
 const ACTIVE = new Set(["scheduled", "awaiting-ingest", "live", "ending"]);
 const db = {
   getRun: jest.fn(async (id: string) => (runs.has(id) ? { ...runs.get(id) } : null)),
@@ -87,6 +96,7 @@ const db = {
     return { ...next };
   }),
   listRuns: jest.fn(async () => [...runs.values()]),
+  getYoutubeAccount: jest.fn(async (id?: string) => (id ? accounts.get(id) ?? null : null)),
   // Mirrors the real accessor: same-encoder publishing runs conflict ("" → env).
   activeRunForEncoder: jest.fn(async (encoderId: string, excludeRunId?: string) =>
     [...runs.values()].find(
@@ -104,7 +114,7 @@ import { goLive, finishRun } from "./lifecycle";
 import { startMonitor } from "./monitor";
 import * as obs from "../obs/client";
 import * as yt from "../youtube/client";
-import { provisionEncoderScene } from "./encoders";
+import { provisionEncoderScene, restoreEncoderScene } from "./encoders";
 
 const OBS_IDLE = {
   outputActive: false,
@@ -130,6 +140,8 @@ const setRun = (r: any) => runs.set(r.id, r);
 
 beforeEach(() => {
   runs.clear();
+  accounts.clear();
+  encoderOwnScene = "default";
   channelYoutube = { title: "", description: "", thumbnailUrl: "" };
   jest.clearAllMocks();
 });
@@ -214,7 +226,7 @@ describe("goLive", () => {
     setRun({ id: "one-off", sceneId: "default", status: "scheduled", encoderId: "gpu-1", platforms: { youtube: {} }, durationMs: 3_600_000 });
     await goLive("one-off");
 
-    expect(provisionEncoderScene).toHaveBeenCalledWith("gpu-1");
+    expect(provisionEncoderScene).toHaveBeenCalledWith("gpu-1", { sceneId: "default" });
     const provisionedAt = (provisionEncoderScene as jest.Mock).mock.invocationCallOrder[0];
     const keyedAt = (obs.setStreamKey as jest.Mock).mock.invocationCallOrder[0];
     expect(provisionedAt).toBeLessThan(keyedAt);
@@ -226,7 +238,7 @@ describe("goLive", () => {
     setRun({ id: "slot-run-2", sceneId: "default", status: "scheduled", encoderId: "gpu-1", slotId: "slot-1", createdBy: "slot:slot-1", platforms: { youtube: {} }, durationMs: null });
     await goLive("slot-run-2");
 
-    expect(provisionEncoderScene).toHaveBeenCalledWith("gpu-1");
+    expect(provisionEncoderScene).toHaveBeenCalledWith("gpu-1", { sceneId: "default" });
     expect(obs.startStream).toHaveBeenCalledTimes(1);
     expect(runs.get("slot-run-2").status).toBe("awaiting-ingest");
   });
@@ -429,5 +441,119 @@ describe("finishRun", () => {
     expect(yt.transitionBroadcast).not.toHaveBeenCalled();
     expect(runs.get("r6").status).toBe("ended");
     expect(queueChapters).not.toHaveBeenCalled();
+  });
+});
+
+// Going live on a crossword channel (crossword plan §10, §6.3).
+describe("going live on a crossword channel", () => {
+  const crossword = (extra: Record<string, unknown> = {}) => ({
+    title: "",
+    description: "",
+    thumbnailUrl: "",
+    surface: "crossword",
+    name: "Daily Crossword",
+    ...extra,
+  });
+  const ytRun = (id: string, sceneId: string, youtube: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
+    setRun({ id, sceneId, status: "scheduled", phase: "created", platforms: { youtube }, durationMs: null, ...extra });
+
+  it("asks for low latency on a crossword broadcast", async () => {
+    channelYoutube = crossword({ accountId: "UC-cw" });
+    accounts.set("UC-cw", { id: "UC-cw", refreshTokenEnc: "v1.x" });
+    ytRun("cw", "daily");
+    await goLive("cw");
+    expect(yt.createBroadcast).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ latency: "low" }));
+  });
+
+  it("leaves a weather broadcast at YouTube's default latency", async () => {
+    ytRun("wx", "default");
+    await goLive("wx");
+    expect((yt.createBroadcast as jest.Mock).mock.calls[0][1]).not.toHaveProperty("latency");
+  });
+
+  it("publishes to the channel record's account when the run names none", async () => {
+    channelYoutube = crossword({ accountId: "UC-cw" });
+    accounts.set("UC-cw", { id: "UC-cw", refreshTokenEnc: "v1.x" });
+    ytRun("cw", "daily");
+    await goLive("cw");
+    expect(yt.getYoutubeClient).toHaveBeenCalledWith("UC-cw");
+  });
+
+  it("publishes to the run's own pick over the channel's", async () => {
+    channelYoutube = crossword({ accountId: "UC-cw" });
+    accounts.set("UC-cw", { id: "UC-cw", refreshTokenEnc: "v1.x" });
+    accounts.set("UC-other", { id: "UC-other", refreshTokenEnc: "v1.y" });
+    ytRun("cw", "daily", { accountId: "UC-other" });
+    await goLive("cw");
+    expect(yt.getYoutubeClient).toHaveBeenCalledWith("UC-other");
+  });
+
+  it("refuses a crossword channel with no YouTube channel, before any YouTube call", async () => {
+    channelYoutube = crossword();
+    ytRun("cw", "daily");
+    await goLive("cw");
+    const run = runs.get("cw");
+    expect(run.status).toBe("failed");
+    expect(run.error.message).toMatch(/has no YouTube channel/);
+    expect(yt.getYoutubeClient).not.toHaveBeenCalled();
+    expect(yt.createBroadcast).not.toHaveBeenCalled();
+  });
+
+  it("refuses a crossword account that needs reconnecting", async () => {
+    channelYoutube = crossword({ accountId: "UC-cw" });
+    accounts.set("UC-cw", { id: "UC-cw", refreshTokenEnc: "v1.x", authError: { kind: "auth-revoked", message: "x", at: 1 } });
+    ytRun("cw", "daily");
+    await goLive("cw");
+    expect(runs.get("cw").status).toBe("failed");
+    expect(runs.get("cw").error.message).toMatch(/needs reconnecting/);
+    expect(yt.createBroadcast).not.toHaveBeenCalled();
+  });
+
+  it("keeps today's fallback for a weather channel with no account anywhere", async () => {
+    ytRun("wx", "default");
+    await goLive("wx");
+    expect(yt.getYoutubeClient).toHaveBeenCalledWith(undefined);
+    expect(runs.get("wx").status).toBe("awaiting-ingest");
+  });
+
+  it("defaults the title and description to crossword copy, with no weather blurb or map link", async () => {
+    channelYoutube = crossword({ accountId: "UC-cw" });
+    accounts.set("UC-cw", { id: "UC-cw", refreshTokenEnc: "v1.x" });
+    ytRun("cw", "daily");
+    await goLive("cw");
+    const { title, description } = (yt.createBroadcast as jest.Mock).mock.calls[0][1];
+    expect(title).toMatch(/^Daily Crossword — Live crossword — \d{4}-\d{2}-\d{2}$/);
+    expect(description).toMatch(/^A live crossword/);
+    expect(description).not.toMatch(/weather|Watch the map/);
+  });
+
+  it("uses the channel's own title template and description when set", async () => {
+    channelYoutube = crossword({ accountId: "UC-cw", title: "Crossword %Y", description: "Play along" });
+    accounts.set("UC-cw", { id: "UC-cw", refreshTokenEnc: "v1.x" });
+    ytRun("cw", "daily");
+    await goLive("cw");
+    const { title, description } = (yt.createBroadcast as jest.Mock).mock.calls[0][1];
+    expect(title).toMatch(/^Crossword \d{4}$/);
+    expect(description).toBe("Play along");
+  });
+
+  it("shows the run's channel on a borrowed encoder and gives the encoder back when the run ends", async () => {
+    channelYoutube = crossword({ accountId: "UC-cw" });
+    accounts.set("UC-cw", { id: "UC-cw", refreshTokenEnc: "v1.x" });
+    encoderOwnScene = "volcano";
+    ytRun("cw", "daily", {}, { encoderId: "gpu-1" });
+    await goLive("cw");
+    expect(provisionEncoderScene).toHaveBeenCalledWith("gpu-1", { sceneId: "daily" });
+    setRun({ ...runs.get("cw"), status: "live", startAt: Date.now() });
+    await finishRun("cw", "manual");
+    expect(restoreEncoderScene).toHaveBeenCalledWith("gpu-1");
+  });
+
+  it("leaves an encoder alone after a run on its own channel", async () => {
+    ytRun("wx", "default", {}, { encoderId: "gpu-1" });
+    await goLive("wx");
+    setRun({ ...runs.get("wx"), status: "live", startAt: Date.now() });
+    await finishRun("wx", "manual");
+    expect(restoreEncoderScene).not.toHaveBeenCalled();
   });
 });

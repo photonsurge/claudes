@@ -9,7 +9,7 @@
  * stream-key handoff path instead of failing the run.
  */
 import { getAppDb } from "@photonsurge/shared/db/index";
-import { MAIN_SCENE_ID } from "@photonsurge/shared/control";
+import { MAIN_SCENE_ID, outputPath } from "@photonsurge/shared/control";
 import { ENV_ENCODER_ID, encoderKeyForRun, encoderUse, type Run } from "@photonsurge/shared/runs";
 import { decryptSecret } from "@photonsurge/shared/utill/secretbox";
 import { obsNamesFor } from "../obs/names";
@@ -62,13 +62,19 @@ export function watchBaseUrl(): string {
   return "http://localhost:10100";
 }
 
-/** The tokened /watch URL an OBS browser source should load for a channel/scene. */
+/**
+ * The tokened URL an OBS browser source should load for a channel/scene: its
+ * output page as `outputPath` names it — `/watch/<id>` for a weather channel,
+ * `/crossword/<id>` for a crossword one (crossword plan §3). The main channel is
+ * always weather.
+ */
 export async function watchUrlForScene(sceneId: string): Promise<string> {
   const db = await getAppDb();
   // getScene / getOrInitBroadcastState both backfill a watchToken if absent.
   const doc = sceneId === MAIN_SCENE_ID ? await db.getOrInitBroadcastState() : await db.getScene(sceneId);
   const token = (doc as { watchToken?: string } | null)?.watchToken;
-  const url = `${watchBaseUrl()}/watch/${encodeURIComponent(sceneId)}`;
+  const surface = sceneId === MAIN_SCENE_ID ? undefined : (doc as { surface?: unknown } | null)?.surface;
+  const url = `${watchBaseUrl()}${outputPath({ id: sceneId, surface })}`;
   return token ? `${url}?token=${token}` : url;
 }
 
@@ -92,6 +98,18 @@ async function resolveEncoderScene(
   const sceneId = sceneOverride || enc?.sceneId || MAIN_SCENE_ID; // unbound / env encoder → main channel
   const ep = await endpointForEncoderId(encoderId);
   return { ep, sceneId, ...obsNamesFor(sceneId) };
+}
+
+/**
+ * The scene an encoder shows when no run has borrowed it: its bound channel, the
+ * main channel for an unbound or env encoder, and null for a video encoder (it
+ * idles on a blank page instead). Restoring after a run compares against this.
+ */
+export async function encoderOwnSceneId(encoderId?: string): Promise<string | null> {
+  const key = encoderId && encoderId !== ENV_ENCODER_ID ? encoderId : undefined;
+  const enc = key ? await (await getAppDb()).getStreamEncoder(key) : null;
+  if (encoderUse(enc) === "videos") return null;
+  return enc?.sceneId || MAIN_SCENE_ID;
 }
 
 /** OBS names for a video encoder's idle state: a blank page, no globe. */

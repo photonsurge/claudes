@@ -28,6 +28,8 @@ export interface StreamAccount {
   channelId: string;
   channelTitle?: string;
   connectedAt?: number;
+  /** Google refused its token: it needs reconnecting on /admin/youtube before it can go live. */
+  needsReconnect?: boolean;
 }
 
 export interface StreamSnapshot {

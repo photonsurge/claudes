@@ -82,11 +82,13 @@ it("draws the board, the spotlight and the boards", async () => {
   jest.restoreAllMocks();
 });
 
-it("links Output to the tokened crossword page, Settings and Go live", async () => {
+it("links Output to the tokened crossword page and Settings; Go live opens the dialog for this channel", async () => {
   render(<DeskPage sceneId="xw" />);
   await waitFor(() => expect(screen.getByRole("link", { name: "Output" })).toHaveAttribute("href", "/crossword/xw?token=tok"));
   expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/crosswords/channels/xw");
-  expect(screen.getByRole("link", { name: "Go live" })).toHaveAttribute("href", "/admin/streams");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Go live" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Go live" }));
+  expect(await screen.findByRole("dialog", { name: "Go live: Crossword One" })).toBeInTheDocument();
 });
 
 it("polls the state every 2 s", async () => {
