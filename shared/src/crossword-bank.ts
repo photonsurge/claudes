@@ -112,7 +112,7 @@ export type BankWarning = "adult" | "vulgar" | "offensive";
  * queue marked as a suggestion; never an approval.
  */
 export interface BankSuggestion {
-  /** One polished clue, at most CLUE_MAX characters, for the most common sense. */
+  /** One polished clue, at most CLUE_MAX characters, for the most common sense; "" when it failed validation. */
   clue: string;
   familyFriendly: boolean;
   /** One line on why. */
@@ -364,7 +364,7 @@ export interface BankQueueQuery {
   maxLength?: number;
   /** Single letter A–Z. */
   startsWith?: string;
-  /** Only words with a stored suggestion. */
+  /** Only words with a stored suggestion (a family-friendly call alone, with an empty clue, counts). */
   withSuggestions?: boolean;
   /** Words to leave out (the ones the operator skipped this session). */
   excludeIds?: string[];
@@ -538,13 +538,18 @@ export function toBankApproval(v: unknown): BankApproval {
 /** A stored tag → wire: true / false, anything else null (untagged). */
 export const toFamilyFriendly = (v: unknown): boolean | null => (typeof v === "boolean" ? v : null);
 
-/** A stored suggestion → wire, or undefined when it is missing or malformed. */
+/**
+ * A stored suggestion → wire, or undefined when it is missing or malformed.
+ * The family-friendly call is what makes it a suggestion: `crossword.suggest`
+ * stores an empty clue when its polished clue fails `validateClue` and keeps
+ * the call and its reason, so an empty (or missing) clue is kept as "".
+ */
 export function toBankSuggestion(v: unknown): BankSuggestion | undefined {
-  if (!v || typeof v !== "object") return undefined;
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
   const o = v as Record<string, unknown>;
-  const clue = asStr(o.clue);
-  if (!clue || typeof o.familyFriendly !== "boolean") return undefined;
-  return { clue, familyFriendly: o.familyFriendly, reason: asStr(o.reason) ?? "", model: asStr(o.model) ?? "", at: asMs(o.at) ?? 0 };
+  if (typeof o.familyFriendly !== "boolean") return undefined;
+  if (o.clue != null && typeof o.clue !== "string") return undefined;
+  return { clue: asStr(o.clue) ?? "", familyFriendly: o.familyFriendly, reason: asStr(o.reason) ?? "", model: asStr(o.model) ?? "", at: asMs(o.at) ?? 0 };
 }
 
 /** Who and when on a family-friendly tag. */

@@ -12,6 +12,7 @@ import {
   toBankClue,
   toBankSenses,
   toBankWordRow,
+  toBankSuggestion,
   zipfBand,
 } from "./crossword-bank";
 
@@ -204,6 +205,22 @@ describe("document mapping", () => {
     expect(row.familyFriendly).toBeNull();
     expect(row.warnings).toEqual([]);
     expect(row.suggestion).toBeUndefined();
+  });
+
+  it("keeps a suggestion whose clue failed validation (family-friendly call and reason only)", () => {
+    const row = toBankWordRow({ _id: "w", norm: "ORBIT", suggestion: { clue: "", familyFriendly: false, reason: "slang sense", model: "m", at: 4 } });
+    expect(row.suggestion).toEqual({ clue: "", familyFriendly: false, reason: "slang sense", model: "m", at: 4 });
+    expect(toBankSuggestion({ familyFriendly: true, reason: "plain" })).toEqual({ clue: "", familyFriendly: true, reason: "plain", model: "", at: 0 });
+  });
+
+  it("discards a malformed suggestion", () => {
+    expect(toBankSuggestion(undefined)).toBeUndefined();
+    expect(toBankSuggestion("Bowl")).toBeUndefined();
+    expect(toBankSuggestion([])).toBeUndefined();
+    expect(toBankSuggestion({ clue: "Bowl" })).toBeUndefined();
+    expect(toBankSuggestion({ clue: "", reason: "x" })).toBeUndefined();
+    expect(toBankSuggestion({ clue: "Bowl", familyFriendly: "yes" })).toBeUndefined();
+    expect(toBankSuggestion({ clue: 7, familyFriendly: true })).toBeUndefined();
   });
 
   it("maps senses and clues", () => {
