@@ -7,6 +7,10 @@
  * would see — the caller decides whether those go to YouTube (each costs
  * quota) or only to the operator panel.
  *
+ * On a crossword scene the batch goes to the crossword's consumer instead
+ * (`deps.crossword`, crossword/chat.ts): its answers, not the globe's
+ * commands, with no replies (docs/crossword-mode-plan.md §6.4).
+ *
  * See docs/done/director-programme-plan.md §5.
  */
 import { getAppDb, type AppDb } from "@photonsurge/shared/db/index";
@@ -15,6 +19,7 @@ import {
   DEFAULT_CONTROL_STATE,
   MAIN_SCENE_ID,
   mergeControlState,
+  sceneSurface,
   type AudioMode,
   type ControlState,
 } from "@photonsurge/shared/control";
@@ -38,6 +43,7 @@ import {
 import type { StreamPlatform } from "@photonsurge/shared/runs";
 import { emitWorkerEvent } from "../socket";
 import { makeDirectorHook } from "./chat-director";
+import { crosswordChatBatch } from "../crossword/chat";
 
 export interface ChatInput {
   author: string;
@@ -45,6 +51,10 @@ export interface ChatInput {
   isMod?: boolean;
   isOwner?: boolean;
   platform: StreamPlatform | "sim";
+  /** The author's platform channel id (the crossword's player key). */
+  authorChannelId?: string;
+  /** When it was typed (the message's publish time), epoch ms. */
+  ts?: number;
 }
 
 export interface BatchResult {
@@ -70,6 +80,13 @@ export interface HandlerDeps {
   emit: (state: ViewerState) => void;
   /** Director commands (`:show`, `:quake`, `:mode aurora`, …); undefined = not handled here. */
   director?: DirectorHook;
+  /**
+   * Batch shaping before the globe's commands run (the live poller's
+   * `coalesceCommands`: one vote per viewer); undefined = every message as is.
+   */
+  coalesce?: (msgs: ChatInput[]) => ChatInput[];
+  /** A crossword scene's consumer: the raw batch, as answers. */
+  crossword?: (sceneId: string, msgs: ChatInput[], now: number) => Promise<unknown>;
 }
 
 const label = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -85,10 +102,23 @@ export function resetChatHandlerCooldowns(): void {
   skipLast.clear();
 }
 
+/** The scene's stored document (ControlState plus metadata such as `surface`), or null. */
+async function sceneDoc(db: AppDb, sceneId: string): Promise<(Partial<ControlState> & { surface?: unknown }) | null> {
+  const doc = sceneId === MAIN_SCENE_ID ? await db.getOrInitBroadcastState() : await db.getScene(sceneId);
+  return (doc as (Partial<ControlState> & { surface?: unknown }) | null) ?? null;
+}
+
+const mergedControl = (doc: Partial<ControlState> | null): ControlState | null =>
+  doc ? mergeControlState(DEFAULT_CONTROL_STATE, doc) : null;
+
 /** The scene's merged ControlState (policy defaults filled in), or null. */
 export async function sceneControl(db: AppDb, sceneId: string): Promise<ControlState | null> {
-  const doc = sceneId === MAIN_SCENE_ID ? await db.getOrInitBroadcastState() : await db.getScene(sceneId);
-  return doc ? mergeControlState(DEFAULT_CONTROL_STATE, doc as Partial<ControlState>) : null;
+  return mergedControl(await sceneDoc(db, sceneId));
+}
+
+/** The scene is a crossword channel (`surface` is scene metadata, not ControlState). */
+export async function isCrosswordScene(db: AppDb, sceneId: string): Promise<boolean> {
+  return sceneSurface(await sceneDoc(db, sceneId)) === "crossword";
 }
 
 /** `:help` — what THIS channel allows, built from its policy. */
@@ -120,7 +150,13 @@ export async function handleChatBatch(
   now: number = Date.now(),
 ): Promise<BatchResult> {
   const replies: string[] = [];
-  const scene = await sceneControl(deps.db, sceneId);
+  const doc = await sceneDoc(deps.db, sceneId);
+  if (doc && sceneSurface(doc) === "crossword") {
+    // No globe here: the batch is answers, and answers get no replies.
+    if (deps.crossword) await deps.crossword(sceneId, msgs, now);
+    return { replies, replyInChat: false, changed: false };
+  }
+  const scene = mergedControl(doc);
   const policy = scene?.chat.commands;
   if (!scene || !scene.chat.enabled || !policy) return { replies, replyInChat: false, changed: false };
 
@@ -146,7 +182,7 @@ export async function handleChatBatch(
       : `@${msg.author} → ${shown} is queued (#${res.position})`;
   };
 
-  for (const msg of msgs) {
+  for (const msg of deps.coalesce ? deps.coalesce(msgs) : msgs) {
     const parsed = parseChatCommand(msg.text);
     if (!parsed) continue;
     // `:modes`, `:mode` (no argument) and `:help` are the always-on info
@@ -256,5 +292,6 @@ export async function defaultHandlerDeps(): Promise<HandlerDeps> {
     db,
     emit: (state) => emitWorkerEvent({ type: VIEWER_STATE, data: state }),
     director: makeDirectorHook(db),
+    crossword: crosswordChatBatch,
   };
 }

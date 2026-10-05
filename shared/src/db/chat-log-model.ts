@@ -24,6 +24,8 @@ export interface iChatLogMessage extends iGeneralModel {
   sceneId: string;
   platform: string;
   author: string;
+  /** The author's platform channel id (YouTube authorDetails.channelId). */
+  authorChannelId?: string;
   text: string;
   /** Platform publish time, epoch ms. */
   ts: number;
@@ -41,6 +43,7 @@ const ChatLogMessageSchema = new mongoose.Schema<iChatLogMessage>(
     sceneId: { type: String, required: true },
     platform: { type: String, required: true, default: "youtube" },
     author: { type: String, required: true, default: "" },
+    authorChannelId: { type: String, required: false },
     text: { type: String, required: true, default: "" },
     ts: { type: Number, required: true },
     isMod: { type: Boolean, required: false },

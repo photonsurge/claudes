@@ -3,9 +3,9 @@
  * swallowed, real errors are not) and listForRun returns clean wire-shaped
  * messages in air order with no default cap.
  */
-import type { Model } from "mongoose";
+import mongoose, { type Model } from "mongoose";
 import { makeChatLogRepo } from "./chat-log-repo";
-import type { iChatLogMessage } from "./chat-log-model";
+import { getChatLogMessageModel, type iChatLogMessage } from "./chat-log-model";
 import type { ChatMessage } from "../runs";
 
 const msg = (id: string): ChatMessage => ({
@@ -80,5 +80,23 @@ describe("listForRun", () => {
     await makeChatLogRepo(model).listForRun("r1", { since: 123, limit: 5 });
     expect(find).toHaveBeenCalledWith({ runId: "r1", ts: { $gt: 123 } });
     expect(limit).toHaveBeenCalledWith(5);
+  });
+});
+
+describe("authorChannelId", () => {
+  it("is a stored path on the chat-log model", () => {
+    const model = getChatLogMessageModel(mongoose.createConnection());
+    expect(model.schema.path("authorChannelId")).toBeDefined();
+    expect(model.schema.path("authorChannelId").isRequired).toBeFalsy();
+  });
+
+  it("is appended as given and read back on the wire message", async () => {
+    const { model, insertMany, exec } = makeModel();
+    const m = { ...msg("a"), authorChannelId: "UCann" };
+    insertMany.mockResolvedValue([{}]);
+    await makeChatLogRepo(model).append([m]);
+    expect(insertMany).toHaveBeenCalledWith([m], { ordered: false });
+    exec.mockResolvedValue([{ ...m, _id: "x", __v: 0 }]);
+    expect(await makeChatLogRepo(model).listForRun("r1")).toEqual([m]);
   });
 });

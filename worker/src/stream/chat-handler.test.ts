@@ -172,3 +172,45 @@ describe("helpText", () => {
     );
   });
 });
+
+describe("handleChatBatch — a crossword scene (crossword plan §6.4)", () => {
+  function crossword() {
+    const s = setup({ replyInChat: true });
+    (s.db.getScene as jest.Mock).mockResolvedValue({ ...DEFAULT_CONTROL_STATE, id: "xw", surface: "crossword" });
+    const hook = jest.fn(async () => undefined);
+    return { ...s, hook, deps: { ...s.deps, crossword: hook, coalesce: jest.fn((m: ChatInput[]) => m.slice(0, 1)) } };
+  }
+
+  it("hands the raw batch to the crossword consumer: no globe commands, no replies", async () => {
+    const { deps, hook, db, emit } = crossword();
+    const batch = [
+      say("cat", { platform: "youtube", authorChannelId: "UC1", ts: 5 }),
+      say(":music deep", { author: "bob" }),
+      say("7a rode", { author: "cy", platform: "youtube", authorChannelId: "UC3", ts: 6 }),
+    ];
+    expect(await handleChatBatch("xw", batch, deps, T)).toEqual({ replies: [], replyInChat: false, changed: false });
+    expect(hook).toHaveBeenCalledWith("xw", batch, T);
+    expect(deps.coalesce).not.toHaveBeenCalled();
+    expect(db.viewerState.get).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("does not need the scene's command policy to be on", async () => {
+    const { deps, hook, db } = crossword();
+    (db.getScene as jest.Mock).mockResolvedValue({ id: "xw", surface: "crossword", chat: { enabled: false } });
+    await handleChatBatch("xw", [say("cat")], deps, T);
+    expect(hook).toHaveBeenCalledTimes(1);
+  });
+
+  it("a globe scene never reaches the crossword consumer, and gets the coalesced batch", async () => {
+    const { deps, hook, db } = crossword();
+    (db.getScene as jest.Mock).mockResolvedValue({
+      ...DEFAULT_CONTROL_STATE,
+      chat: { enabled: true, promoteToTicker: false, commands: { ...DEFAULT_CHAT_COMMAND_SETTINGS, enabled: true } },
+    });
+    const res = await handleChatBatch("s1", [say(":music deep"), say(":music chill", { author: "bob" })], deps, T);
+    expect(hook).not.toHaveBeenCalled();
+    expect(deps.coalesce).toHaveBeenCalledTimes(1);
+    expect(res.replies).toEqual(["@ann → Deep for 5 min"]);
+  });
+});

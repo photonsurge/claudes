@@ -22,6 +22,9 @@
  * A slow poll returns minutes of chat at once, so command handling runs on a
  * coalesced batch (one vote per viewer, one winner per command — see
  * chat-coalesce.ts) and the replies are packed into as few posts as fit.
+ * The batch goes to the scene-scoped handler (chat-handler.ts) whole: on a
+ * crossword scene it is the game's answers (crossword/chat.ts, no replies),
+ * elsewhere the coalesced globe commands.
  *
  * Chat is OPERATOR-ONLY (a /control panel), never rendered on /watch by default
  * (docs/streaming-runs-plan.md decision 4).
@@ -129,6 +132,7 @@ async function chatTick(runId: string): Promise<number> {
       platform: "youtube",
       id: m.id,
       author: m.author,
+      ...(m.authorChannelId ? { authorChannelId: m.authorChannelId } : {}),
       text: m.text,
       ts: m.ts,
       isMod: m.isMod,
@@ -155,14 +159,16 @@ async function chatTick(runId: string): Promise<number> {
         const info = await commandReplies(run, msgs);
         const viewer = await handleChatBatch(
           run.sceneId,
-          coalesceCommands(msgs).map((m) => ({
+          msgs.map((m) => ({
             author: m.author,
             text: m.text,
             isMod: m.isMod,
             isOwner: m.isOwner,
             platform: m.platform,
+            authorChannelId: m.authorChannelId,
+            ts: m.ts,
           })),
-          await defaultHandlerDeps(),
+          { ...(await defaultHandlerDeps()), coalesce: coalesceCommands },
         );
         const replies = packReplies(
           [...info, ...(viewer.replyInChat ? viewer.replies : [])],

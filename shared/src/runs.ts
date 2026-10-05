@@ -474,6 +474,8 @@ export interface ChatMessage {
   platform: StreamPlatform;
   id: string;
   author: string;
+  /** The author's platform channel id (YouTube authorDetails.channelId) — a stable player key. */
+  authorChannelId?: string;
   text: string;
   ts: number;
   isMod?: boolean;

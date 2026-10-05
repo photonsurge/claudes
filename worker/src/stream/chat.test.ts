@@ -285,9 +285,41 @@ describe("the stream's chat poll setting", () => {
     });
     mockHandle.mockResolvedValueOnce({ replies: ["@ann → Deep for 5 min", "@dan → Storm is queued (#1)"], replyInChat: true, changed: true });
     await tick();
-    const handled = (mockHandle.mock.calls[0] as unknown[])[1] as Array<{ author: string; text: string }>;
-    expect(handled).toEqual([expect.objectContaining({ author: "ann", text: ":music deep" })]);
+    // The whole batch goes to the scene-scoped handler, which coalesces the globe's commands.
+    const [, handled, deps] = mockHandle.mock.calls[0] as unknown as [
+      string,
+      Array<{ author: string; text: string }>,
+      { coalesce: (m: unknown[]) => unknown[] },
+    ];
+    expect(handled).toHaveLength(4);
+    expect(deps.coalesce(handled)).toEqual([expect.objectContaining({ author: "ann", text: ":music deep" })]);
     expect(mockSendChat).toHaveBeenCalledTimes(1);
     expect(mockSendChat).toHaveBeenCalledWith({}, "chat-1", "@ann → Deep for 5 min · @dan → Storm is queued (#1)");
+  });
+});
+
+describe("the author's channel id (crossword plan §6.4)", () => {
+  it("is logged and handed to the scene-scoped handler with the message time", async () => {
+    mockListChat.mockResolvedValueOnce(page([], "tok-2"));
+    await tick();
+    mockListChat.mockResolvedValueOnce({
+      messages: [
+        { id: "a", author: "ann", authorChannelId: "UCann", text: "cat", ts: 111 },
+        { id: "b", author: "bob", text: "rode", ts: 222 },
+      ],
+      nextPageToken: "tok-3",
+      pollingIntervalMillis: 4_000,
+    });
+    await tick();
+    const logged = mockAppend.mock.calls.at(-1)[0];
+    expect(logged[0]).toMatchObject({ id: "a", authorChannelId: "UCann", ts: 111 });
+    expect(logged[1]).not.toHaveProperty("authorChannelId");
+    const handled = (mockHandle.mock.calls[0] as unknown[])[1];
+    expect(handled).toEqual([
+      expect.objectContaining({ author: "ann", text: "cat", authorChannelId: "UCann", ts: 111, platform: "youtube" }),
+      expect.objectContaining({ author: "bob", text: "rode", ts: 222 }),
+    ]);
+    // Answers are never replied to: nothing was owed, nothing was posted.
+    expect(mockSendChat).not.toHaveBeenCalled();
   });
 });

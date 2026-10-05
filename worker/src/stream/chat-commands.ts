@@ -13,7 +13,7 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { MAIN_SCENE_ID, type ControlState } from "@photonsurge/shared/control";
 import { INTRO_MAP_TYPES, OCEAN_MAP_TYPES } from "@photonsurge/shared/director-rois";
 import type { ChatMessage, Run } from "@photonsurge/shared/runs";
-import { helpText, sceneControl } from "./chat-handler";
+import { helpText, isCrosswordScene, sceneControl } from "./chat-handler";
 
 const COOLDOWN_MS = 30_000;
 export const MAX_REPLIES_PER_BATCH = 2;
@@ -71,6 +71,13 @@ const COMMANDS: Record<string, Handler> = {
 };
 COMMANDS.commands = COMMANDS.help;
 
+/**
+ * A crossword scene has no globe: `:modes` and `:mode` are not answered there
+ * (docs/crossword-mode-plan.md §6.3), and `:help` says how to play instead.
+ */
+const GLOBE_ONLY = new Set(["modes", "mode"]);
+export const CROSSWORD_HELP = "Crossword: type the answer in the chat — the first correct answer takes the word";
+
 // Per-(run, command) last-reply time — plain in-process state, like the
 // poller's own pageTokens map.
 const lastSent = new Map<string, number>();
@@ -86,15 +93,24 @@ export function resetChatCommandCooldowns(): void {
  */
 export async function commandReplies(run: Run, msgs: ChatMessage[], now = Date.now()): Promise<string[]> {
   const out: string[] = [];
+  // Read the scene's kind once, and only when a command needs it.
+  let crossword: Promise<boolean> | null = null;
+  const onCrossword = () =>
+    (crossword ??= getAppDb()
+      .then((db) => isCrosswordScene(db, run.sceneId))
+      .catch(() => false));
   for (const msg of msgs) {
     if (out.length >= MAX_REPLIES_PER_BATCH) break;
     const cmd = parseCommand(msg.text);
     if (!cmd || !COMMANDS[cmd]) continue;
+    const xw = await onCrossword();
+    if (xw && GLOBE_ONLY.has(cmd)) continue;
     const key = `${run.id}:${cmd}`;
     if (now - (lastSent.get(key) ?? 0) < COOLDOWN_MS) continue;
     lastSent.set(key, now);
     try {
-      const reply = await COMMANDS[cmd]({ run });
+      // On a crossword only :help / :commands get this far.
+      const reply = xw ? CROSSWORD_HELP : await COMMANDS[cmd]({ run });
       if (reply) out.push(reply);
     } catch {
       // One bad handler (e.g. a Mongo blip in :mode) never blocks other replies.
