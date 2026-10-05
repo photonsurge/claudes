@@ -958,6 +958,14 @@ findings were fixed. What the first build had to change to match this plan:
 - **Dev marker.** Puzzles built under `CROSSWORD_ALLOW_UNAPPROVED` are marked and never
   play unless that switch is on.
 
+- **Held encoders (operator to decide).** The Go live dialog refuses an encoder held by an
+  enabled slot (§10), and so does the API for runs the dialog starts. The older
+  `/admin/streams` run form still lets an operator take a held encoder deliberately; say if
+  it should refuse too.
+- **Every run now uses its own channel.** A run provisions its encoder with the run's
+  channel and hands the encoder back to its own channel afterwards (WP12). A standing slot
+  on its own encoder and shorts renders behave exactly as before.
+
 Notes that still hold from the first build:
 - **Spotlight tie-break**: most letters showing, then the longest word, then the lowest
   number, so that "the first pick is the longest word" holds.
