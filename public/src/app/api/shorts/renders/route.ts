@@ -12,7 +12,7 @@ import {
 import { playFor, type ShortScript } from "@photonsurge/shared/short-script";
 import { requireAdmin } from "../../../../lib/require-admin";
 import type { RenderQueueRow, RenderRow, RendersResponse } from "../../../../lib/renders";
-import { scopeLabel } from "../../../../lib/shorts";
+import { scopeLabel } from "../../../../lib/shorts-labels";
 import { NO_CACHE } from "../preview";
 
 export const runtime = "nodejs";
