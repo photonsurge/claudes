@@ -4,7 +4,7 @@ jest.mock("../lib/openrouter", () => ({ callOpenRouter: jest.fn() }));
 import { UnrecoverableError } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { callOpenRouter } from "../lib/openrouter";
-import { suggest, suggestWords, SUGGEST_BATCH } from "./suggest";
+import { DEFAULT_SUGGEST_MODEL, suggest, suggestModel, suggestWords, SUGGEST_BATCH } from "./suggest";
 
 const call = callOpenRouter as jest.Mock;
 const job = (data: unknown) => ({ id: "1", data: { domain: "crossword", type: "crossword", event: "suggest", data } }) as any;
@@ -144,14 +144,17 @@ describe("suggestWords", () => {
     expect(call).not.toHaveBeenCalled();
   });
 
-  it("fails clearly with no key, or no model, before any call", async () => {
+  it("fails clearly with no key, before any call", async () => {
     const { bank } = fakeBank({ w1: word("w1", "HARBOR") });
     delete process.env.OPENROUTER_API_KEY;
     await expect(suggestWords(bank, ["w1"])).rejects.toThrow(/OPENROUTER_API_KEY/);
-    process.env.OPENROUTER_API_KEY = "k";
-    delete process.env.CROSSWORD_MODEL;
-    await expect(suggestWords(bank, ["w1"])).rejects.toThrow(/CROSSWORD_MODEL/);
     expect(call).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the default model with neither variable set", () => {
+    delete process.env.CROSSWORD_MODEL;
+    delete process.env.OPENROUTER_MODEL;
+    expect(suggestModel()).toBe(DEFAULT_SUGGEST_MODEL);
   });
 });
 

@@ -570,7 +570,7 @@ the word detail page is too slow for hundreds of words:
 definitions and candidate clues through `callOpenRouter` and stores, per word: one
 polished clue of at most 48 characters for the most common sense, and a family-friendly
 suggestion with a one-line reason. The queue shows them marked as suggestions, so
-accepting is one key. Model: `CROSSWORD_MODEL`, falling back to `OPENROUTER_MODEL`.
+accepting is one key. Model: `CROSSWORD_MODEL`, falling back to `OPENROUTER_MODEL`, then to the app's usual default (`openai/gpt-4o-mini`).
 The definitions are the facts; the model supplies the wording.
 
 For a dev box only, `CROSSWORD_ALLOW_UNAPPROVED=true` lets the builder use pending words

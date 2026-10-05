@@ -7,7 +7,7 @@
  * one-line reason; a leaking or over-long clue is dropped; bad JSON fails that
  * batch only; nothing ever changes an approval, a family-friendly tag or a
  * clue's text; the model comes from CROSSWORD_MODEL then OPENROUTER_MODEL and
- * is never hard-coded; no key fails clearly.
+ * falls back to the app's usual OpenRouter default; no key fails clearly.
  *
  * OpenRouter is mocked at the HTTP boundary (global fetch), so the reply is the
  * provider's own shape.
@@ -20,7 +20,7 @@ import { UnrecoverableError } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { CLUE_MAX } from "@photonsurge/shared/crossword";
 import * as jobs from "../jobs/crossword";
-import { suggest, suggestWords, SUGGEST_BATCH } from "./suggest";
+import { DEFAULT_SUGGEST_MODEL, suggest, suggestWords, SUGGEST_BATCH } from "./suggest";
 
 type Sent = { url: string; auth: string | null; body: any };
 let sent: Sent[];
@@ -313,24 +313,17 @@ describe("the model", () => {
     expect(sent[0].body.model).toBe("vendor/general-model");
   });
 
-  it("follows whatever the variable says (never hard-coded)", async () => {
+  it("follows whatever the variable says", async () => {
     process.env.CROSSWORD_MODEL = "someone/anything-at-all";
     await run();
     expect(sent[0].body.model).toBe("someone/anything-at-all");
   });
 
-  it("with neither variable set, makes no call and stores nothing", async () => {
+  it("with neither variable set, uses the app's usual OpenRouter default", async () => {
     delete process.env.CROSSWORD_MODEL;
-    const { bank, suggestions } = makeBank({ w1: bankWord("w1", "HARBOR", HARBOR_DEFS) });
-    await expect(suggestWords(bank, ["w1"])).rejects.toThrow(/CROSSWORD_MODEL|OPENROUTER_MODEL/);
-    expect(sent).toEqual([]);
-    expect(suggestions).toEqual([]);
-  });
-
-  it("the source names no model", () => {
-    const src = fs.readFileSync(path.join(__dirname, "suggest.ts"), "utf8");
-    expect(src).not.toMatch(/["'`][a-z0-9-]+\/[a-z0-9.:-]+["'`]/i);
-    expect(src).not.toMatch(/\b(gpt-|claude-|gemini|llama|mistral|sonnet|haiku|opus)/i);
+    delete process.env.OPENROUTER_MODEL;
+    await run();
+    expect(sent[0].body.model).toBe(DEFAULT_SUGGEST_MODEL);
   });
 });
 

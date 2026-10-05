@@ -52,8 +52,12 @@ export interface SuggestOutcome {
   failed: string[];
 }
 
-/** The model to use, or null when neither variable is set. */
-export const suggestModel = (): string | null => process.env.CROSSWORD_MODEL || process.env.OPENROUTER_MODEL || null;
+/** Last resort when neither variable is set — the app's usual OpenRouter default. */
+export const DEFAULT_SUGGEST_MODEL = "openai/gpt-4o-mini";
+
+/** The model to use: CROSSWORD_MODEL, else OPENROUTER_MODEL, else the default. */
+export const suggestModel = (): string =>
+  process.env.CROSSWORD_MODEL || process.env.OPENROUTER_MODEL || DEFAULT_SUGGEST_MODEL;
 
 const SYSTEM = [
   "You write crossword clues for a family-friendly YouTube game.",
@@ -112,7 +116,6 @@ export function parseReply(content: string): Map<string, Reply> {
 export async function suggestWords(bank: SuggestBank, wordIds: string[], fetchImpl?: typeof fetch): Promise<SuggestOutcome> {
   if (!process.env.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not set");
   const model = suggestModel();
-  if (!model) throw new Error("CROSSWORD_MODEL (or OPENROUTER_MODEL) is not set");
 
   const unique = [...new Set(wordIds.filter((x) => typeof x === "string" && x))];
   const ids = unique.slice(0, SUGGEST_MAX_WORDS);
