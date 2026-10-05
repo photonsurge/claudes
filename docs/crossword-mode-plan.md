@@ -1,8 +1,9 @@
 # Crossword channel — plan
 
-> **Status: P0 BUILT** to this revision (see §14); not yet run against a real Mongo, the
-> imported bank or a real frame, so M0 is not signed off. WP9 (the chat-stream probe) is
-> built and waits for the operator to run it. Planned on Fable; built by
+> **Status: P0 and P1 BUILT** (WP1–WP9, WP11, WP12; see §14), not yet run against a real
+> Mongo, the imported bank, a real frame or a live YouTube run, so M0 and M1 are not
+> signed off. WP9 (the chat-stream probe) waits for the operator to run it; WP10 waits on
+> its result. Planned on Fable; built by
 > sub-agents on other models, chosen per work package, with tests and validation always
 > on a strong model (§11, "Who builds").
 > Source material: the February prototype in `../crosswords` (§1).
@@ -965,6 +966,23 @@ findings were fixed. What the first build had to change to match this plan:
 - **Every run now uses its own channel.** A run provisions its encoder with the run's
   channel and hands the encoder back to its own channel afterwards (WP12). A standing slot
   on its own encoder and shorts renders behave exactly as before.
+
+### P1 (WP8, WP9, WP11, WP12): built 2026-10-05
+
+Each went through build, plan-written tests and a fresh validation pass, and its
+findings were fixed.
+- **WP8 chat hookup**: answers reach the runner from the poller through
+  `handleChatBatch`; no chat replies at all on a crossword channel (`:help` included);
+  simulator solves never count on the on-air today board.
+- **WP9 probe**: `yarn youtube:chat-stream <runId>`; paced reconnects so it can't drain
+  the quota; says plainly if the endpoint behaves like polling.
+- **WP11 suggestions**: operator-triggered `crossword.suggest`; never an approval; a
+  suggestion whose clue fails validation keeps its family-friendly call.
+- **WP12 going live**: the Go live dialog on every channel row and the Desk; a crossword
+  run needs an explicit encoder and its own YouTube channel, never a fallback; low
+  latency; every run uses its own channel's page and hands the encoder back.
+- **Divergence**: the API refuses a crossword run without an explicit encoder only when
+  the Go live dialog asks it to (`strictEncoder`); a direct POST may still omit it.
 
 Notes that still hold from the first build:
 - **Spotlight tie-break**: most letters showing, then the longest word, then the lowest
