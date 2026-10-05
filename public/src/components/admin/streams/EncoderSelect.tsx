@@ -49,6 +49,8 @@ interface Props {
    * live dialog, crossword plan §10). Off, the state is advisory as before.
    */
   refuseBusy?: boolean;
+  /** `channel` only: no empty ("auto") value — an encoder must be picked. */
+  noAuto?: boolean;
   disabled?: boolean;
   size?: "small" | "medium";
   sx?: SxProps<Theme>;
@@ -78,6 +80,7 @@ export default function EncoderSelect({
   label = "encoder",
   emptyLabel = "auto",
   refuseBusy,
+  noAuto,
   disabled,
   size,
   sx,
@@ -100,11 +103,13 @@ export default function EncoderSelect({
   const items: ReactNode[] = [];
   let helper: string | undefined;
   if (purpose === "channel") {
-    items.push(
-      <MenuItem key="" value="">
-        {emptyLabel}
-      </MenuItem>,
-    );
+    if (!noAuto) {
+      items.push(
+        <MenuItem key="" value="">
+          {emptyLabel}
+        </MenuItem>,
+      );
+    }
     for (const enc of encodersForChannel(encoders, value)) items.push(item(enc, !enc.enabled || (!!refuseBusy && encoderBusy(enc))));
   } else {
     const video = encoders.filter((e) => encoderUse(e) === "videos");
@@ -147,7 +152,7 @@ export default function EncoderSelect({
         select: {
           renderValue: (v) => {
             const id = String(v ?? "");
-            if (id === "") return emptyLabel;
+            if (id === "") return noAuto ? "" : emptyLabel;
             if (id === ANY_ENCODER) return "Any video encoder";
             const enc = encoders.find((e) => e.id === id);
             return enc ? (

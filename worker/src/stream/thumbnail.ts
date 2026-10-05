@@ -149,9 +149,13 @@ export async function publishThumbnail(runId: string, opts: { force?: boolean } 
       ? { ok: false, skipped: "a frame thumbnail is taken from OBS during the render" }
       : { ok: false, skipped: "this video has no custom thumbnail" };
   }
-  const { url, source } = thumbnailSourceFor(
-    run.script?.scriptId ? run.script.thumbnailUrl : (await channelYoutubeSettings(run.sceneId)).thumbnailUrl,
-  );
+  const channel = run.script?.scriptId ? null : await channelYoutubeSettings(run.sceneId);
+  // The default plate is the weather globe's: a crossword channel with no
+  // thumbnail of its own keeps YouTube's auto-thumbnail (crossword plan §10).
+  if (channel?.surface === "crossword" && !(channel.thumbnailUrl ?? "").trim()) {
+    return { ok: false, skipped: "this crossword channel has no custom thumbnail" };
+  }
+  const { url, source } = thumbnailSourceFor(run.script?.scriptId ? run.script.thumbnailUrl : channel!.thumbnailUrl);
   const record = async (patch: Partial<NonNullable<Run["thumbnail"]>>) =>
     db
       .updateRun(runId, {

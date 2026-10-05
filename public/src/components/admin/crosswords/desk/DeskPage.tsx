@@ -45,6 +45,7 @@ export default function DeskPage({ sceneId }: { sceneId: string }) {
   const { state, error, skew, refresh } = useDeskState(sceneId);
   const [scene, setScene] = useState<SceneMeta | null>(null);
   const [goLiveOpen, setGoLiveOpen] = useState(false);
+  const [started, setStarted] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -101,8 +102,16 @@ export default function DeskPage({ sceneId }: { sceneId: string }) {
         </Stack>
       }
     >
-      {scene && goLiveOpen && <GoLiveDialog open scene={scene} onClose={() => setGoLiveOpen(false)} />}
+      {scene && goLiveOpen && (
+        <GoLiveDialog open scene={scene} onClose={() => setGoLiveOpen(false)} onStarted={() => setStarted(true)} />
+      )}
       <Stack spacing={1.75}>
+        {started && (
+          <Alert severity="success" onClose={() => setStarted(false)}>
+            {name} is going live. Follow it on{" "}
+            <Link href="/admin/streams">Streams</Link>.
+          </Alert>
+        )}
         {notCrossword && <Alert severity="warning">This channel is a weather channel; its controls are on /control.</Alert>}
         {reason && <Alert severity="info">{reason}</Alert>}
         {error && <Alert severity="error">Couldn&apos;t load the game: {error}</Alert>}

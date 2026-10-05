@@ -52,6 +52,7 @@ const PROVISIONED = {
 };
 jest.mock("./encoders", () => ({
   watchBaseUrl: () => "http://localhost:10100",
+  withEncoderLock: (_e: unknown, fn: () => Promise<unknown>) => fn(),
   endpointForRun: jest.fn(async () => ({ url: "ws://obs-test:4455" })),
   provisionEncoderScene: jest.fn(async (_e: string, o?: { sceneId?: string }) => ({ ...PROVISIONED, sceneId: o?.sceneId ?? "default" })),
   restoreEncoderScene: jest.fn(async () => ({ idle: true, url: "about:blank" })),

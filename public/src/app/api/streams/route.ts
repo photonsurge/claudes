@@ -119,6 +119,13 @@ async function POST__impl(req: Request) {
     );
   }
 
+  const crossword = sceneId !== MAIN_SCENE_ID && sceneSurface(scene as { surface?: unknown }) === "crossword";
+  // The Go live dialog's rules (crossword plan §10), asked for with
+  // `strictEncoder`: the encoder is one it showed — a crossword names one, never
+  // "auto" landing on the env OBS — and one held by an always-on slot is refused
+  // as well as one already streaming. The /admin/streams form keeps the old rules.
+  const strictEncoder = (body as CreateRunRequest & { strictEncoder?: unknown }).strictEncoder === true;
+
   // Encoder pick: explicit request → validated registry entry; otherwise the
   // encoder whose OBS instance captures this scene; otherwise unset, which the
   // worker resolves to the legacy env OBS (or a manual key handoff).
@@ -143,8 +150,30 @@ async function POST__impl(req: Request) {
         { status: 400, headers: NO_CACHE },
       );
     }
+    if (strictEncoder) {
+      const held = (await db.listStreamSlots()).find(
+        (slot) =>
+          slot.enabled && (slot.encoderId ? slot.encoderId === enc.id : !!enc.sceneId && enc.sceneId === slot.sceneId),
+      );
+      if (held) {
+        return NextResponse.json(
+          {
+            error:
+              `encoder "${enc.name || encoderId}" is held by always-on slot "${held.name || held.id}" — ` +
+              `pick another encoder, or turn that slot off on /admin/streams.`,
+          },
+          { status: 409, headers: NO_CACHE },
+        );
+      }
+    }
   } else if (!encoderId) {
     encoderId = (await db.encoderForScene(sceneId))?.id;
+  }
+  if (strictEncoder && crossword && (!encoderId || encoderId === ENV_ENCODER_ID)) {
+    return NextResponse.json(
+      { error: "pick an encoder for this crossword channel — it never goes out on the default OBS by itself" },
+      { status: 400, headers: NO_CACHE },
+    );
   }
 
   // YouTube channel pick (crossword plan §10): explicit request → that connected
@@ -152,7 +181,6 @@ async function POST__impl(req: Request) {
   // weather channel only, the default (most-recently-connected) account. A
   // crossword channel is never guessed: with neither it is refused, as is an
   // account that needs reconnecting. Resolved once and reused below.
-  const crossword = sceneId !== MAIN_SCENE_ID && sceneSurface(scene as { surface?: unknown }) === "crossword";
   const channelAccountId = String((scene as { youtube?: { accountId?: unknown } }).youtube?.accountId ?? "").trim();
   const requestedAccountId = (body.accountId ? String(body.accountId).trim() : "") || channelAccountId || undefined;
   const publishYoutube = body.platforms?.youtube === true;

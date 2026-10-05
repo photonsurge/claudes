@@ -91,6 +91,32 @@ it("links Output to the tokened crossword page and Settings; Go live opens the d
   expect(await screen.findByRole("dialog", { name: "Go live: Crossword One" })).toBeInTheDocument();
 });
 
+it("says the channel is going live once the dialog starts the run", async () => {
+  const base = global.fetch as jest.Mock;
+  global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    const json = (body: unknown, status = 200) => ({ ok: status < 400, status, json: async () => body }) as Response;
+    if (u === "/api/streams" && init?.method === "POST") return json({ id: "run-1", sceneId: "xw", status: "scheduled" }, 201);
+    if (u === "/api/streams")
+      return json({
+        youtubeConfigured: true,
+        accounts: [{ channelId: "UCx", channelTitle: "Puzzles TV" }],
+        encoders: [{ id: "gpu", name: "GPU", url: "ws://g", enabled: true, hasPassword: false, use: "channels", occupancy: { state: "free", label: "free", canQueueVideo: true, queued: 0 } }],
+        slots: [],
+        runs: [],
+      });
+    return base(url, init);
+  }) as typeof fetch;
+  render(<DeskPage sceneId="xw" />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Go live" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Go live" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.mouseDown(within(dialog).getByRole("combobox", { name: "YouTube channel" }));
+  fireEvent.click(screen.getByRole("option", { name: "Puzzles TV" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Go live on Puzzles TV" }));
+  expect(await screen.findByText(/Crossword One is going live/)).toBeInTheDocument();
+});
+
 it("polls the state every 2 s", async () => {
   jest.useFakeTimers();
   render(<DeskPage sceneId="xw" />);

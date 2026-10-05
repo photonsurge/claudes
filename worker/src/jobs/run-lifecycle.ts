@@ -28,7 +28,7 @@ import { publishChapters } from "../stream/chapters";
 import { publishThumbnail } from "../stream/thumbnail";
 import { goLive as doGoLive, finishRun } from "../stream/lifecycle";
 import { reconcileSlots } from "../stream/slots";
-import { endpointForEncoderId, provisionEncoderScene, refreshEncoderScene } from "../stream/encoders";
+import { borrowingRun, endpointForEncoderId, provisionEncoderScene, refreshEncoderScene } from "../stream/encoders";
 import { probe } from "../obs/client";
 import { finalizeScriptRun, startScriptPlay } from "../stream/script-run";
 import { advanceRenderQueues, controlRender, queueRender } from "../stream/render-queue";
@@ -215,9 +215,23 @@ export async function testEncoder(job: Job) {
  * browser source with the channel's tokened /watch URL into this encoder's OBS and
  * switch to it. Resolves (never rejects) with a structured ok/error for the UI.
  */
+/**
+ * Refusal for a manual Provision/Refresh while a run shows another channel on
+ * the encoder (crossword plan §10): it would swap that run's live picture.
+ */
+async function borrowedRefusal(encoderId?: string): Promise<string | null> {
+  const run = await borrowingRun(encoderId);
+  return run
+    ? `run ${run.id} is showing channel "${run.sceneId}" on this encoder — ` +
+        `it goes back to its own channel when that run ends. Stop the run first.`
+    : null;
+}
+
 export async function provisionEncoder(job: Job) {
   const encoderId = job.data?.data?.encoderId ? String(job.data.data.encoderId) : undefined;
   try {
+    const refused = await borrowedRefusal(encoderId);
+    if (refused) return { ok: false, error: refused };
     const res = await provisionEncoderScene(encoderId);
     return { ok: true, ...res };
   } catch (err) {
@@ -232,6 +246,8 @@ export async function provisionEncoder(job: Job) {
 export async function refreshEncoder(job: Job) {
   const encoderId = job.data?.data?.encoderId ? String(job.data.data.encoderId) : undefined;
   try {
+    const refused = await borrowedRefusal(encoderId);
+    if (refused) return { ok: false, error: refused };
     const res = await refreshEncoderScene(encoderId);
     return { ok: true, ...res };
   } catch (err) {

@@ -39,7 +39,8 @@ let encoderOwnScene: string | null = "default";
 jest.mock("./encoders", () => ({
   watchBaseUrl: () => "http://localhost:10100",
   encoderOwnSceneId: jest.fn(async () => encoderOwnScene),
-  restoreEncoderScene: jest.fn(async () => ({ idle: false, url: "https://x/watch/volcano?token=t" })),
+  idleEncoderScene: jest.fn(async () => ({ url: "about:blank" })),
+  withEncoderLock: (_e: unknown, fn: () => Promise<unknown>) => fn(),
   endpointForRun: jest.fn(async () => ({ url: "ws://obs-test:4455" })),
   provisionEncoderScene: jest.fn(async () => ({
     sceneId: "default",
@@ -87,6 +88,7 @@ jest.mock("@photonsurge/shared/bull/bull", () => ({ getQueue: jest.fn(() => fake
 // In-memory run store standing in for the Mongo data-access layer.
 const runs = new Map<string, any>();
 const accounts = new Map<string, any>();
+const slots = new Map<string, any>();
 const ACTIVE = new Set(["scheduled", "awaiting-ingest", "live", "ending"]);
 const db = {
   getRun: jest.fn(async (id: string) => (runs.has(id) ? { ...runs.get(id) } : null)),
@@ -97,6 +99,7 @@ const db = {
   }),
   listRuns: jest.fn(async () => [...runs.values()]),
   getYoutubeAccount: jest.fn(async (id?: string) => (id ? accounts.get(id) ?? null : null)),
+  getStreamSlot: jest.fn(async (id: string) => slots.get(id) ?? null),
   // Mirrors the real accessor: same-encoder publishing runs conflict ("" → env).
   activeRunForEncoder: jest.fn(async (encoderId: string, excludeRunId?: string) =>
     [...runs.values()].find(
@@ -110,11 +113,11 @@ const db = {
 };
 jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: jest.fn(async () => db) }));
 
-import { goLive, finishRun } from "./lifecycle";
+import { goLive, finishRun, rearmLiveRuns } from "./lifecycle";
 import { startMonitor } from "./monitor";
 import * as obs from "../obs/client";
 import * as yt from "../youtube/client";
-import { provisionEncoderScene, restoreEncoderScene } from "./encoders";
+import { idleEncoderScene, provisionEncoderScene } from "./encoders";
 
 const OBS_IDLE = {
   outputActive: false,
@@ -141,6 +144,7 @@ const setRun = (r: any) => runs.set(r.id, r);
 beforeEach(() => {
   runs.clear();
   accounts.clear();
+  slots.clear();
   encoderOwnScene = "default";
   channelYoutube = { title: "", description: "", thumbnailUrl: "" };
   jest.clearAllMocks();
@@ -545,15 +549,88 @@ describe("going live on a crossword channel", () => {
     await goLive("cw");
     expect(provisionEncoderScene).toHaveBeenCalledWith("gpu-1", { sceneId: "daily" });
     setRun({ ...runs.get("cw"), status: "live", startAt: Date.now() });
+    (provisionEncoderScene as jest.Mock).mockClear();
     await finishRun("cw", "manual");
-    expect(restoreEncoderScene).toHaveBeenCalledWith("gpu-1");
+    expect(provisionEncoderScene).toHaveBeenCalledWith("gpu-1"); // its own scene, no override
   });
 
   it("leaves an encoder alone after a run on its own channel", async () => {
     ytRun("wx", "default", {}, { encoderId: "gpu-1" });
     await goLive("wx");
     setRun({ ...runs.get("wx"), status: "live", startAt: Date.now() });
+    (provisionEncoderScene as jest.Mock).mockClear();
     await finishRun("wx", "manual");
-    expect(restoreEncoderScene).not.toHaveBeenCalled();
+    expect(provisionEncoderScene).not.toHaveBeenCalled();
+    expect(idleEncoderScene).not.toHaveBeenCalled();
+  });
+
+  it("hands the encoder back when the run fails after provisioning (stream key refused)", async () => {
+    channelYoutube = crossword({ accountId: "UC-cw" });
+    accounts.set("UC-cw", { id: "UC-cw", refreshTokenEnc: "v1.x" });
+    encoderOwnScene = "volcano";
+    (obs.setStreamKey as jest.Mock).mockRejectedValueOnce(new Error("OBS said no"));
+    ytRun("cw", "daily", {}, { encoderId: "gpu-1" });
+    await goLive("cw");
+    expect(runs.get("cw").status).toBe("failed");
+    const calls = (provisionEncoderScene as jest.Mock).mock.calls;
+    expect(calls[0]).toEqual(["gpu-1", { sceneId: "daily" }]);
+    expect(calls.at(-1)).toEqual(["gpu-1"]);
+  });
+
+  it("an encoder bound to no channel goes idle, not to the main channel", async () => {
+    channelYoutube = crossword({ accountId: "UC-cw" });
+    accounts.set("UC-cw", { id: "UC-cw", refreshTokenEnc: "v1.x" });
+    encoderOwnScene = null;
+    ytRun("cw", "daily", {}, { encoderId: "gpu-spare" });
+    await goLive("cw");
+    (provisionEncoderScene as jest.Mock).mockClear();
+    await finishRun("cw", "manual");
+    expect(idleEncoderScene).toHaveBeenCalledWith("gpu-spare");
+    expect(provisionEncoderScene).not.toHaveBeenCalled();
+  });
+
+  it("skips the hand-back while the run's standing slot is still on (the recycle shows it again)", async () => {
+    encoderOwnScene = "volcano";
+    slots.set("slot-1", { id: "slot-1", enabled: true });
+    ytRun("wx", "atlantic", {}, { encoderId: "gpu-1", slotId: "slot-1" });
+    await goLive("wx");
+    (provisionEncoderScene as jest.Mock).mockClear();
+    await finishRun("wx", "auto");
+    expect(provisionEncoderScene).not.toHaveBeenCalled();
+
+    // Slot turned off: the last run hands the encoder back.
+    slots.set("slot-1", { id: "slot-1", enabled: false });
+    ytRun("wx2", "atlantic", {}, { encoderId: "gpu-1", slotId: "slot-1" });
+    await goLive("wx2");
+    (provisionEncoderScene as jest.Mock).mockClear();
+    await finishRun("wx2", "auto");
+    expect(provisionEncoderScene).toHaveBeenCalledWith("gpu-1");
+  });
+
+  it("escapes a % in the channel name in the default title", async () => {
+    channelYoutube = crossword({ accountId: "UC-cw", name: "Top %A Puzzles" });
+    accounts.set("UC-cw", { id: "UC-cw", refreshTokenEnc: "v1.x" });
+    ytRun("cw", "daily");
+    await goLive("cw");
+    expect((yt.createBroadcast as jest.Mock).mock.calls[0][1].title).toMatch(/^Top %A Puzzles — Live crossword — /);
+  });
+});
+
+describe("rearmLiveRuns", () => {
+  it("finishes a run a restart left \"ending\", and hands its encoder back", async () => {
+    encoderOwnScene = "volcano";
+    setRun({
+      id: "half",
+      sceneId: "daily",
+      encoderId: "gpu-1",
+      status: "ending",
+      phase: "live",
+      startAt: Date.now() - 60_000,
+      platforms: { youtube: { broadcastId: "b1", accountId: "UC-cw" } },
+    });
+    await rearmLiveRuns();
+    expect(runs.get("half").status).toBe("ended");
+    expect(obs.stopStream).toHaveBeenCalled();
+    expect(provisionEncoderScene).toHaveBeenCalledWith("gpu-1");
   });
 });

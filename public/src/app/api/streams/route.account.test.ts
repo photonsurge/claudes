@@ -11,6 +11,12 @@ jest.mock("../../../lib/require-admin", () => ({ requireAdmin: jest.fn(async () 
 jest.mock("@photonsurge/shared/bull/bull-queue", () => ({ sendToFore: jest.fn() }));
 
 const scenes: Record<string, any> = {};
+const encoders: Record<string, any> = {
+  "gpu-atl": { id: "gpu-atl", name: "Atlantic GPU", enabled: true, use: "channels", sceneId: "atlantic" },
+  "gpu-spare": { id: "gpu-spare", name: "Spare", enabled: true, use: "channels" },
+  "gpu-slot": { id: "gpu-slot", name: "Slot GPU", enabled: true, use: "channels" },
+};
+let slots: any[] = [];
 const accounts: Record<string, any> = {
   "UC-weather": { id: "UC-weather", channelTitle: "Weather", refreshTokenEnc: "x", connectedAt: 2 },
   "UC-cw": { id: "UC-cw", channelTitle: "Crosswords", refreshTokenEnc: "x", connectedAt: 1 },
@@ -21,7 +27,8 @@ const db = {
   getScene: jest.fn(async (id: string) => scenes[id] ?? null),
   activeRunForScene: jest.fn(async () => null),
   activeRunForEncoder: jest.fn(async () => null),
-  getStreamEncoder: jest.fn(async () => null),
+  getStreamEncoder: jest.fn(async (id: string) => encoders[id] ?? null),
+  listStreamSlots: jest.fn(async () => slots),
   encoderForScene: jest.fn(async () => null),
   // The real accessor: an id → that account; none → the most recently connected one.
   getYoutubeAccount: jest.fn(async (id?: string) => (id ? accounts[id] ?? null : accounts["UC-weather"])),
@@ -48,6 +55,7 @@ beforeEach(() => {
   scenes.bare = { id: "bare", name: "Bare Crossword", surface: "crossword", youtube: { accountId: "" } };
   scenes.atlantic = { id: "atlantic", name: "Atlantic", surface: "globe" };
   scenes.pinned = { id: "pinned", name: "Pinned", youtube: { accountId: "UC-cw" } };
+  slots = [];
   db.createRun.mockClear();
   (sendToFore as jest.Mock).mockClear();
 });
@@ -109,5 +117,49 @@ describe("a weather channel", () => {
     const res = await goLive("default");
     expect(res.status).toBe(201);
     expect(createdAccount()).toBe("UC-weather");
+  });
+});
+
+// The Go live dialog's encoder rules, sent as `strictEncoder` (crossword plan §10).
+describe("strictEncoder (the Go live dialog)", () => {
+  it("refuses a crossword run with no encoder (never auto onto the default OBS)", async () => {
+    const res = await goLive("daily", { strictEncoder: true });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/pick an encoder/);
+    expect(db.createRun).not.toHaveBeenCalled();
+  });
+
+  it("refuses the env encoder for a crossword run", async () => {
+    const res = await goLive("daily", { strictEncoder: true, encoderId: "env" });
+    expect(res.status).toBe(400);
+  });
+
+  it("takes a crossword run on a picked encoder", async () => {
+    const res = await goLive("daily", { strictEncoder: true, encoderId: "gpu-spare" });
+    expect(res.status).toBe(201);
+    expect(db.createRun.mock.calls.at(-1)![0].encoderId).toBe("gpu-spare");
+  });
+
+  it("refuses an encoder held by an enabled always-on slot, by encoder or by its bound channel", async () => {
+    slots = [{ id: "s1", name: "Overnight", enabled: true, encoderId: "gpu-slot", sceneId: "x" }];
+    let res = await goLive("daily", { strictEncoder: true, encoderId: "gpu-slot" });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/held by always-on slot "Overnight"/);
+
+    slots = [{ id: "s2", enabled: true, sceneId: "atlantic" }]; // no encoder named: its channel's encoder
+    res = await goLive("daily", { strictEncoder: true, encoderId: "gpu-atl" });
+    expect(res.status).toBe(409);
+    expect(db.createRun).not.toHaveBeenCalled();
+  });
+
+  it("a disabled slot holds nothing", async () => {
+    slots = [{ id: "s1", enabled: false, encoderId: "gpu-slot", sceneId: "x" }];
+    expect((await goLive("daily", { strictEncoder: true, encoderId: "gpu-slot" })).status).toBe(201);
+  });
+
+  it("without the flag (the /admin/streams form) the old rules stand", async () => {
+    slots = [{ id: "s1", enabled: true, encoderId: "gpu-slot", sceneId: "x" }];
+    expect((await goLive("daily", { encoderId: "gpu-slot" })).status).toBe(201);
+    expect((await goLive("daily")).status).toBe(201);
   });
 });

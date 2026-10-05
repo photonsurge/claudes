@@ -49,7 +49,14 @@ import {
   outputInFlight,
   type ObsStreamStatus,
 } from "../obs/client";
-import { encoderOwnSceneId, endpointForRun, provisionEncoderScene, restoreEncoderScene, watchBaseUrl } from "./encoders";
+import {
+  encoderOwnSceneId,
+  endpointForRun,
+  idleEncoderScene,
+  provisionEncoderScene,
+  watchBaseUrl,
+  withEncoderLock,
+} from "./encoders";
 import {
   getYoutubeClient,
   createBroadcast,
@@ -85,8 +92,10 @@ export { stopAllMonitors };
 
 function defaultTitle(run: Run, channel?: ChannelYoutube): string {
   const day = new Date().toISOString().slice(0, 10);
-  if (channel?.surface === "crossword") return `${channel.name || run.sceneId} — Live crossword — ${day}`;
-  return `Live — ${run.sceneId} — ${day}`;
+  // The result goes through formatStreamTitle: a "%" in a name is literal.
+  const name = (channel?.name || run.sceneId).replace(/%/g, "%%");
+  if (channel?.surface === "crossword") return `${name} — Live crossword — ${day}`;
+  return `Live — ${run.sceneId.replace(/%/g, "%%")} — ${day}`;
 }
 
 /**
@@ -353,7 +362,9 @@ export async function goLive(runId: string): Promise<void> {
  */
 async function provisionForRun(run: Run): Promise<void> {
   try {
-    const p = await provisionEncoderScene(run.encoderId, { sceneId: run.sceneId });
+    // Under the encoder's lock, so a hand-back of the same encoder by a run
+    // that just ended can't land on top of this one (§10).
+    const p = await withEncoderLock(run.encoderId, () => provisionEncoderScene(run.encoderId, { sceneId: run.sceneId }));
     const swept =
       p.removedInputs.length || p.removedScenes.length
         ? ` (swept ${p.removedInputs.length} stray source(s), ${p.removedScenes.length} scene(s))`
@@ -378,23 +389,39 @@ async function provisionForScript(run: Run): Promise<void> {
   log(TAG, `offline test ${run.id}: OBS scene "${p.sceneName}" → ${p.url}`);
 }
 
+/** Phases from which goLive has (or may have) provisioned the run's encoder. */
+const PROVISIONED_PHASES = new Set<Run["phase"]>(["bound", "obs-config", "obs-start", "confirmed", "live"]);
+
 /**
  * Hand an encoder a channel run borrowed back to its own scene (crossword plan
  * §10): when the run's channel is not the one the encoder is bound to, its own
- * channel (or, for a video encoder, the blank idle page) is provisioned again.
- * Only after a run that reached OBS, and never while another run holds the
- * encoder. Best-effort: a restore that fails is logged, never fails the finish.
+ * channel is provisioned again — or, for a video encoder or a registered one
+ * bound to no channel, the blank idle page. Only after a run that got as far as
+ * provisioning (the "bound" phase is persisted just before it, so a run that
+ * fails at the stream key or StartStream is still handed back). Skipped while
+ * another run holds the encoder (checked under the encoder's lock, so a new
+ * go-live can't interleave) and while the run's standing slot is still on: its
+ * next recycle provisions the same scene again. Best-effort: a failure is
+ * logged, never fails the finish.
  */
 async function restoreBorrowedEncoder(run: Run): Promise<void> {
   if (isScriptRun(run)) return; // script-run.ts restores a render's encoder itself
-  if (!run.obs?.configured && !run.startAt) return;
+  if (!run.platforms?.youtube || !PROVISIONED_PHASES.has(run.phase)) return;
   try {
     const own = await encoderOwnSceneId(run.encoderId);
     if (own === run.sceneId) return;
-    const other = await (await getAppDb()).activeRunForEncoder(encoderKeyForRun(run), run.id);
-    if (other) return;
-    const res = await restoreEncoderScene(run.encoderId);
-    log(TAG, `run ${run.id}: encoder ${encoderKeyForRun(run)} ${res.idle ? "idle (blank page)" : `back on ${res.url}`}`);
+    const db = await getAppDb();
+    if (run.slotId) {
+      const slot = await db.getStreamSlot(run.slotId);
+      if (slot?.enabled) return;
+    }
+    const url = await withEncoderLock(run.encoderId, async () => {
+      if (await db.activeRunForEncoder(encoderKeyForRun(run), run.id)) return null;
+      return own === null
+        ? (await idleEncoderScene(run.encoderId)).url
+        : (await provisionEncoderScene(run.encoderId)).url;
+    });
+    if (url) log(TAG, `run ${run.id}: encoder ${encoderKeyForRun(run)} ${own === null ? "idle (blank page)" : `back on ${url}`}`);
   } catch (err) {
     log(TAG, `run ${run.id}: encoder restore skipped`, String((err as Error)?.message ?? err));
   }
@@ -659,14 +686,16 @@ async function healthTick(run: Run): Promise<number> {
 export async function finishRun(
   runId: string,
   reason: "manual" | "auto",
-  opts: { fail?: { step: string; message: string } } = {},
+  opts: { fail?: { step: string; message: string }; resume?: boolean } = {},
 ): Promise<void> {
   const db = await getAppDb();
   const run = await db.getRun(runId);
   if (!run) return;
 
-  // Idempotency: covers the auto/manual race + a BullMQ retry.
-  if (run.status === "ending" || runIsFinished(run.status)) {
+  // Idempotency: covers the auto/manual race + a BullMQ retry. `resume` takes
+  // over a finish a restart cut short (the run was left "ending").
+  const resuming = opts.resume && run.status === "ending";
+  if (!resuming && (run.status === "ending" || runIsFinished(run.status))) {
     await cancelAutoEnd(runId);
     stopMonitor(runId);
     stopChatPoll(runId);
@@ -744,8 +773,14 @@ export async function finishRun(
  */
 export async function rearmLiveRuns(): Promise<void> {
   const db = await getAppDb();
-  const runs = await db.listRuns({ status: ["live", "awaiting-ingest"] });
+  const runs = await db.listRuns({ status: ["live", "awaiting-ingest", "ending"] });
   for (const run of runs) {
+    // A finish the restart cut short: complete it (YouTube, OBS, status, the
+    // encoder's hand-back) instead of leaving the run "ending" for ever.
+    if (run.status === "ending") {
+      await finishRun(run.id, "auto", { resume: true });
+      continue;
+    }
     // A live video render whose play the restart cut short is ended and failed
     // here; one that hasn't started its script yet has its start re-armed (§6.5
     // step 5). Otherwise it is rearmed like any run (the safety cap ends it).

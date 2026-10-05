@@ -75,6 +75,7 @@ it("posts the one-off run with the channel, encoder, account, privacy, title tem
     privacy: "unlisted",
     durationMs: 45 * 60_000,
     platforms: { youtube: true },
+    strictEncoder: true, // the server applies the dialog's encoder rules too
   });
   await waitFor(() => expect(onStarted).toHaveBeenCalled());
   expect(onClose).toHaveBeenCalled();
@@ -149,4 +150,60 @@ it("says the channel is busy when it already has a run on air", async () => {
   snapshot = { ...SNAPSHOT, runs: [{ id: "r1", sceneId: "word-up", status: "live" }] };
   render(<GoLiveDialog open scene={CROSSWORD} onClose={jest.fn()} />);
   expect(await screen.findByRole("button", { name: "Channel busy" })).toBeDisabled();
+});
+
+describe("a crossword channel's encoder (never auto)", () => {
+  it("offers no auto option", async () => {
+    render(<GoLiveDialog open scene={CROSSWORD} onClose={jest.fn()} />);
+    await screen.findByRole("button", { name: "Go live on Word Up TV" });
+    fireEvent.mouseDown(encoderSelect());
+    expect(within(screen.getByRole("listbox")).queryByRole("option", { name: /auto/ })).toBeNull();
+  });
+
+  it("without a free encoder of its own starts on the first free channel encoder", async () => {
+    snapshot = {
+      ...SNAPSHOT,
+      encoders: [
+        ...SNAPSHOT.encoders.slice(0, 2),
+        { ...SNAPSHOT.encoders[2], sceneId: "elsewhere" },
+      ],
+    };
+    render(<GoLiveDialog open scene={CROSSWORD} onClose={jest.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Go live on Word Up TV" }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].encoderId).toBe("gpu-3");
+  });
+
+  it("with no free encoder at all it can't go live, and says why", async () => {
+    snapshot = { ...SNAPSHOT, encoders: SNAPSHOT.encoders.slice(0, 2) };
+    render(<GoLiveDialog open scene={CROSSWORD} onClose={jest.fn()} />);
+    expect(await screen.findByText(/No encoder is free/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Go live on Word Up TV" })).toBeDisabled();
+  });
+
+  it("a weather channel keeps auto", async () => {
+    render(<GoLiveDialog open scene={WEATHER} onClose={jest.fn()} />);
+    await screen.findByRole("button", { name: "Go live on the default channel" });
+    fireEvent.mouseDown(encoderSelect());
+    expect(within(screen.getByRole("listbox")).getByRole("option", { name: /auto/ })).toBeInTheDocument();
+  });
+});
+
+describe("a weather channel whose stored account can't be used", () => {
+  it("names the stored account as needing reconnecting, not 'Default channel', and can't go live on it", async () => {
+    render(<GoLiveDialog open scene={{ ...WEATHER, youtubeAccountId: "UCstale" }} onClose={jest.fn()} />);
+    const go = await screen.findByRole("button", { name: "Go live" });
+    await waitFor(() => expect(go).toBeDisabled());
+    expect(youtubeSelect()).toHaveTextContent("Stale TV (stored, needs reconnecting)");
+    expect(youtubeSelect()).not.toHaveTextContent("Default channel");
+    fireEvent.mouseDown(youtubeSelect());
+    fireEvent.click(screen.getByRole("option", { name: "Weather TV" }));
+    expect(screen.getByRole("button", { name: "Go live on Weather TV" })).toBeEnabled();
+  });
+
+  it("says when the stored account is not connected at all", async () => {
+    render(<GoLiveDialog open scene={{ ...WEATHER, youtubeAccountId: "UCgone" }} onClose={jest.fn()} />);
+    await waitFor(() => expect(youtubeSelect()).toHaveTextContent("UCgone (stored, not connected)"));
+    expect(screen.getByRole("button", { name: "Go live" })).toBeDisabled();
+  });
 });

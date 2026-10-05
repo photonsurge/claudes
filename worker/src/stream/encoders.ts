@@ -101,15 +101,48 @@ async function resolveEncoderScene(
 }
 
 /**
- * The scene an encoder shows when no run has borrowed it: its bound channel, the
- * main channel for an unbound or env encoder, and null for a video encoder (it
- * idles on a blank page instead). Restoring after a run compares against this.
+ * The scene an encoder shows when no run has borrowed it: its bound channel, or
+ * the main channel for the env encoder (the legacy single OBS). Null for a
+ * video encoder and for a registered encoder bound to no channel: those idle on
+ * a blank page instead, so a hand-back never starts a main-channel globe on a
+ * GPU nobody asked for. Restoring after a run compares against this.
  */
 export async function encoderOwnSceneId(encoderId?: string): Promise<string | null> {
   const key = encoderId && encoderId !== ENV_ENCODER_ID ? encoderId : undefined;
-  const enc = key ? await (await getAppDb()).getStreamEncoder(key) : null;
+  if (!key) return MAIN_SCENE_ID;
+  const enc = await (await getAppDb()).getStreamEncoder(key);
   if (encoderUse(enc) === "videos") return null;
-  return enc?.sceneId || MAIN_SCENE_ID;
+  return enc?.sceneId || null;
+}
+
+// One OBS change at a time per encoder, in this process (the worker is one
+// process): a run's provision and another run's hand-back of the same encoder
+// queue behind each other instead of interleaving.
+const encoderLocks = new Map<string, Promise<unknown>>();
+
+/** Run `fn` holding the encoder's lock ("env" for the env encoder). */
+export function withEncoderLock<T>(encoderId: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const key = encoderId || ENV_ENCODER_ID;
+  const prev = encoderLocks.get(key) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  const tail = next.catch(() => {});
+  encoderLocks.set(key, tail);
+  void tail.then(() => {
+    if (encoderLocks.get(key) === tail) encoderLocks.delete(key);
+  });
+  return next;
+}
+
+/**
+ * A run showing another channel on this encoder right now (a channel run on a
+ * picked encoder, or a video render), or null. A manual Provision or Refresh of
+ * the encoder's own channel would swap that run's live picture, so the admin
+ * actions refuse while one exists.
+ */
+export async function borrowingRun(encoderId?: string): Promise<Run | null> {
+  const run = await (await getAppDb()).activeRunForEncoder(encoderId || ENV_ENCODER_ID);
+  if (!run) return null;
+  return run.sceneId !== (await encoderOwnSceneId(encoderId)) ? (run as Run) : null;
 }
 
 /** OBS names for a video encoder's idle state: a blank page, no globe. */
